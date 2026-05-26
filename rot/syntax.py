@@ -143,6 +143,8 @@ class Parser:
             return self._parse_try_catch()
         if tok.kind == "THROW":
             return self._parse_throw()
+        if tok.kind == "IMPORT":
+            return self._parse_import()
         # Otherwise: parse as expression, then check what follows.
         # `=` or compound (+=, -=, ...) → convert to assign/index-assign.
         expr = self._parse_expression()
@@ -204,6 +206,12 @@ class Parser:
         self._consume("THROW")
         value = self._parse_expression()
         return ast.ThrowStmt(value=value)
+
+    def _parse_import(self) -> ast.ImportStmt:
+        self._consume("IMPORT")
+        path_tok = self._consume("STRING_LIT")
+        path = _decode_string_escapes(path_tok.lexeme[1:-1])
+        return ast.ImportStmt(path=path)
 
     def _parse_class_def(self) -> ast.ClassDef:
         self._consume("CLASS")

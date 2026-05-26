@@ -10,6 +10,7 @@ callables — they're the language's only built-ins so far.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Callable
 
 from . import ast
@@ -221,6 +222,14 @@ class Interpreter:
         # Everything else lives in rot/builtins.py.
         for name, fn in BUILTINS.items():
             self.env.set(name, fn)
+        # Module-system state.
+        self._loaded_modules: set[str] = set()
+        self._source_dir: "str | None" = None
+
+    def set_source_dir(self, source_dir: "str | None") -> None:
+        """Tell the interpreter where the current source file lives so
+        `import "rel/path"` can resolve relative to it."""
+        self._source_dir = source_dir
 
     def execute(self, program: ast.Program) -> None:
         for stmt in program.body:
@@ -282,6 +291,9 @@ class Interpreter:
         if isinstance(stmt, ast.ThrowStmt):
             value = self._evaluate(stmt.value)
             raise _ThrowSignal(value)
+        if isinstance(stmt, ast.ImportStmt):
+            self._import_file(stmt.path)
+            return
         if isinstance(stmt, ast.TryCatch):
             try:
                 self._execute_block(stmt.try_block)
@@ -432,3 +444,46 @@ def _builtin_cout(*args: Any) -> None:
 
 def _builtin_coutln(*args: Any) -> None:
     print(*(_stringify(a) for a in args), sep="")
+
+
+# Module-loading helpers attached as Interpreter methods below.
+
+def _resolve_import_path(self: "Interpreter", path: str) -> str:
+    if not path.endswith(".rot"):
+        path = path + ".rot"
+    if os.path.isabs(path):
+        return os.path.abspath(path)
+    base = self._source_dir if self._source_dir else os.getcwd()
+    return os.path.abspath(os.path.join(base, path))
+
+
+def _import_file(self: "Interpreter", path: str) -> None:
+    abs_path = _resolve_import_path(self, path)
+    if abs_path in self._loaded_modules:
+        return  # cache: a file imports at most once per interpreter
+    self._loaded_modules.add(abs_path)
+
+    if not os.path.exists(abs_path):
+        raise InterpreterError(f"cannot find module {path!r}")
+
+    with open(abs_path) as f:
+        source = f.read()
+
+    # Lazy imports break the lexer/syntax → interpreter → builtins cycle.
+    from .lexer import Lexer
+    from .syntax import Parser
+
+    tokens = Lexer().tokenize(source)
+    program = Parser(tokens).parse()
+
+    # Switch source dir so relative imports inside the imported file
+    # resolve against ITS directory.
+    prior_dir = self._source_dir
+    self._source_dir = os.path.dirname(abs_path)
+    try:
+        self.execute(program)
+    finally:
+        self._source_dir = prior_dir
+
+
+Interpreter._import_file = _import_file  # type: ignore[attr-defined]

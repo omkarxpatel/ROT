@@ -49,11 +49,15 @@ class Compiler:
 
         return program
 
-    def run(self, source: str) -> None:
+    def run(self, source: str, source_path: "str | None" = None) -> None:
         program = self.parse(source)
         if self.trace:
             print(f"\n\n{Fore.RED}Process 3 - Interpreter (output):\n")
         started = time.time()
-        Interpreter().execute(program)
+        interp = Interpreter()
+        if source_path is not None:
+            import os
+            interp.set_source_dir(os.path.dirname(os.path.abspath(source_path)))
+        interp.execute(program)
         if self.trace:
             print(f"\nExecution time: {round(time.time() - started, 7)}s")

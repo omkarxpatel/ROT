@@ -55,7 +55,7 @@ def main() -> None:
             if not args.trace:
                 print(f"OK — {args.file} parsed cleanly.")
             return
-        compiler.run(source)
+        compiler.run(source, source_path=str(source_path))
     except RotError as err:
         print(f"rot error: {err}", file=sys.stderr)
         sys.exit(1)

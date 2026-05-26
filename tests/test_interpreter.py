@@ -776,6 +776,101 @@ def test_for_loop_var_is_local():
     assert _run(src) == "2\n"
 
 
+def test_import_basic(tmp_path):
+    lib = tmp_path / "lib.rot"
+    lib.write_text('funct double(x) { return x * 2 }\n')
+    main_src = f'import "{lib}"\ncoutln(double(7))'
+
+    import contextlib, io
+    from rot.compiler import Compiler
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        Compiler(trace=False).run(main_src)
+    assert captured.getvalue() == "14\n"
+
+
+def test_import_resolves_relative_to_source_dir(tmp_path):
+    lib = tmp_path / "helper.rot"
+    lib.write_text('funct greet(name) { return "hi " + name }\n')
+    main = tmp_path / "app.rot"
+    main.write_text('import "helper.rot"\ncoutln(greet("rot"))')
+
+    import contextlib, io
+    from rot.compiler import Compiler
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        Compiler(trace=False).run(main.read_text(), source_path=str(main))
+    assert captured.getvalue() == "hi rot\n"
+
+
+def test_import_adds_extension_if_omitted(tmp_path):
+    lib = tmp_path / "math2.rot"
+    lib.write_text('funct sq(x) { return x * x }\n')
+    main = tmp_path / "use.rot"
+    main.write_text('import "math2"\ncoutln(sq(6))')   # no .rot extension
+
+    import contextlib, io
+    from rot.compiler import Compiler
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        Compiler(trace=False).run(main.read_text(), source_path=str(main))
+    assert captured.getvalue() == "36\n"
+
+
+def test_import_is_cached_does_not_re_execute(tmp_path):
+    """Importing the same file twice runs it once — the second call is a no-op.
+    We verify by having the library `coutln` something at module-load time."""
+    lib = tmp_path / "noisy.rot"
+    lib.write_text('coutln("loaded")\nfunct x() { return 1 }\n')
+    main = tmp_path / "main.rot"
+    main.write_text(
+        f'import "noisy"\n'
+        f'import "noisy"\n'  # second import is cached, no second print
+        f'coutln(x())'
+    )
+
+    import contextlib, io
+    from rot.compiler import Compiler
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        Compiler(trace=False).run(main.read_text(), source_path=str(main))
+    # "loaded" should appear once.
+    assert captured.getvalue() == "loaded\n1\n"
+
+
+def test_import_missing_file_raises(tmp_path):
+    main = tmp_path / "broken.rot"
+    main.write_text('import "nonexistent"')
+    with pytest.raises(InterpreterError):
+        import contextlib, io
+        from rot.compiler import Compiler
+        with contextlib.redirect_stdout(io.StringIO()):
+            Compiler(trace=False).run(main.read_text(), source_path=str(main))
+
+
+def test_imported_class_is_usable(tmp_path):
+    lib = tmp_path / "shapes.rot"
+    lib.write_text(
+        'class Square {\n'
+        '    init(side) { this.side = side }\n'
+        '    area() { return this.side * this.side }\n'
+        '}\n'
+    )
+    main = tmp_path / "demo.rot"
+    main.write_text(
+        f'import "shapes"\n'
+        f's = Square(4)\n'
+        f'coutln(s.area())'
+    )
+
+    import contextlib, io
+    from rot.compiler import Compiler
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        Compiler(trace=False).run(main.read_text(), source_path=str(main))
+    assert captured.getvalue() == "16\n"
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'

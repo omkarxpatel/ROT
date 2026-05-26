@@ -2,6 +2,16 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.11.0] - 2026-05-26
+
+### Added
+- **`import "path"`**: loads a `.rot` file and executes its top-level statements in the current scope. Function and class definitions become available to the importing file.
+- **Path resolution**: paths starting with `/` are absolute; otherwise relative to the directory of the importing file. `.rot` extension is appended automatically if missing.
+- **Cached**: importing the same file twice runs it once. Prevents both wasted work and circular-import infinite loops.
+- `Interpreter.set_source_dir(path)` + `_source_dir` tracking + `_loaded_modules: set[str]` cache.
+- `Compiler.run` and CLI now thread `source_path` through so `import "rel/path"` resolves against the right directory.
+- New AST node `ImportStmt(path)`, new keyword `import`.
+
 ## [2.10.0] - 2026-05-26
 
 ### Changed

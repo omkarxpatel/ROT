@@ -189,10 +189,15 @@ class ThrowStmt:
     value: Expression
 
 
+@dataclass
+class ImportStmt:
+    path: str
+
+
 Statement = Union[
     ExprStmt, FuncDef, IfStmt, Assign, Return, WhileStmt,
     ForStmt, IndexAssign, MemberAssign, BreakStmt, ContinueStmt,
-    ClassDef, TryCatch, ThrowStmt,
+    ClassDef, TryCatch, ThrowStmt, ImportStmt,
 ]
 
 

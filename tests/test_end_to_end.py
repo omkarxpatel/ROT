@@ -24,6 +24,6 @@ def test_example_produces_expected_output(rot_file: pathlib.Path):
 
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):
-        Compiler(trace=False).run(source)
+        Compiler(trace=False).run(source, source_path=str(rot_file))
 
     assert captured.getvalue() == expected
