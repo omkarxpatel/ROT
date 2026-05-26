@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.2] - 2026-05-26
+
+### Added
+- Status badges under the README title: CI run status (live from GHA), latest semver tag, supported Python versions, and a link to `CHANGELOG.md`. All four are clickable and refresh automatically against the GitHub repo and shields.io.
+
 ## [1.6.1] - 2026-05-26
 
 ### Fixed
