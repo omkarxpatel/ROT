@@ -11,9 +11,7 @@ def test_cout_inserts_end_kwarg_for_no_newline():
     result = _parse(
         ("cout", "PRINT"),
         ("(", "L_PAREN"),
-        ('"', "QUOTE"),
-        ("hi", "IDENT"),
-        ('"', "QUOTE"),
+        ('"hi"', "STRING_LIT"),
         (")", "R_PAREN"),
     )
     assert result == 'print("hi", end="")'
@@ -23,9 +21,7 @@ def test_coutln_uses_default_print_newline():
     result = _parse(
         ("coutln", "PRINTLN"),
         ("(", "L_PAREN"),
-        ('"', "QUOTE"),
-        ("hi", "IDENT"),
-        ('"', "QUOTE"),
+        ('"hi"', "STRING_LIT"),
         (")", "R_PAREN"),
     )
     assert result == 'print("hi")'

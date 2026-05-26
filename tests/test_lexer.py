@@ -12,11 +12,26 @@ def test_cout_call_tokenization():
     assert _lex('cout("hi")') == [
         ("cout", "PRINT"),
         ("(", "L_PAREN"),
-        ('"', "QUOTE"),
-        ("hi", "IDENT"),
-        ('"', "QUOTE"),
+        ('"hi"', "STRING_LIT"),
         (")", "R_PAREN"),
     ]
+
+
+def test_string_literal_can_contain_spaces_and_punctuation():
+    tokens = _lex('coutln("hello, world!")')
+    assert tokens == [
+        ("coutln", "PRINTLN"),
+        ("(", "L_PAREN"),
+        ('"hello, world!"', "STRING_LIT"),
+        (")", "R_PAREN"),
+    ]
+
+
+def test_unterminated_string_literal_raises():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize('coutln("oops')
+    assert exc_info.value.line == 1
+    assert exc_info.value.col == 8
 
 
 def test_keyword_vs_identifier_classification():

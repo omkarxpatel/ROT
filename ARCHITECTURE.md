@@ -1,12 +1,12 @@
 # Architecture
 
-A walkthrough of how `rot` is currently built (as of `v1.4.2`) and where the project is heading. This document is for anyone curious about the internals — separate from `README.md`, which is the elevator pitch.
+A walkthrough of how `rot` is currently built (as of `v1.6.0`) and where the project is heading. This document is for anyone curious about the internals — separate from `README.md`, which is the elevator pitch.
 
 For release-by-release history see [`CHANGELOG.md`](CHANGELOG.md). For the current version see [`rot/__init__.py`](rot/__init__.py).
 
 ---
 
-# Part 1 — How it works today (v1.4.2)
+# Part 1 — How it works today (v1.6.0)
 
 ## The pipeline at a glance
 
@@ -54,22 +54,24 @@ Three stages, plus the orchestrator. The `Compiler` ties them together; the CLI 
 | [`rot/__main__.py`](rot/__main__.py) | `python -m rot` entry | 5 |
 | [`rot/cli.py`](rot/cli.py) | argparse CLI surface | ~60 |
 | [`rot/compiler.py`](rot/compiler.py) | orchestrates lex → parse → exec | ~55 |
-| [`rot/lexer.py`](rot/lexer.py) | source text → tokens | ~70 |
-| [`rot/parser.py`](rot/parser.py) | tokens → Python source string | ~70 |
-| [`rot/keywords.py`](rot/keywords.py) | KEYWORDS / TOKEN_PATTERNS / PY_EQUIVALENT tables | ~60 |
+| [`rot/lexer.py`](rot/lexer.py) | hand-rolled char-by-char tokenizer | ~120 |
+| [`rot/parser.py`](rot/parser.py) | tokens → Python source string (the transpiler) | ~70 |
+| [`rot/ast.py`](rot/ast.py) | AST node dataclasses | ~40 |
+| [`rot/syntax.py`](rot/syntax.py) | recursive-descent parser: tokens → AST | ~100 |
+| [`rot/keywords.py`](rot/keywords.py) | `KEYWORDS` + `PY_EQUIVALENT` lookups | ~30 |
 | [`rot/token.py`](rot/token.py) | `Token` dataclass | 10 |
 | [`rot/errors.py`](rot/errors.py) | `LexerError` / `ParserError` carrying `(line, col)` | ~20 |
 
-Total: ~350 lines of language code, ~150 lines of tests.
+Total: ~500 lines of language code, ~250 lines of tests.
 
 ## Stage 1 — the Lexer
 
-The lexer in `rot/lexer.py` walks the source string from left to right, trying each `(regex, kind)` entry from `TOKEN_PATTERNS` in order. The first regex that matches consumes characters; a `Token` is produced; `line` and `col` advance.
+`rot/lexer.py` is a hand-rolled, character-by-character scanner (as of v1.6.0 — the original was a regex-pattern walk). At each position it dispatches on the next character — digit → scan a number; lowercase letter → scan an identifier; `"` → scan a string literal; `/` followed by `/` → scan a comment; etc. — and emits a `Token`.
 
-The full table of patterns lives in `rot/keywords.py`. Three tables, each with one job:
+Two lookups live in `rot/keywords.py`:
 
 ```python
-KEYWORDS = {                # reserved-word lookup
+KEYWORDS = {           # reserved-word lookup
     "cout":   "PRINT",
     "coutln": "PRINTLN",
     "funct":  "FUNCTION",
@@ -78,26 +80,9 @@ KEYWORDS = {                # reserved-word lookup
     "else":   "ELSE",
 }
 
-TOKEN_PATTERNS = [          # ordered (regex, kind) list
-    (r"//[^\n]*", "COMMENT"),
-    (r"\d+",      "NUMBER"),
-    (r"[a-z]+",   None),     # ← kind=None means "identifier or keyword"
-    (r'"',        "QUOTE"),
-    (r"\+",       "ADDITION"),
-    (r"=",        "SETVALUE"),
-    (r"\(",       "L_PAREN"),
-    (r"\)",       "R_PAREN"),
-    (r"\{",       "L_CURLY"),
-    (r"\}",       "R_CURLY"),
-    (r"\|",       "COMMA"),
-    (r"\n",       "NEWLINE"),
-    (r"[ \t]+",   "SPACE"),
-    # ...
-]
-
-PY_EQUIVALENT = {           # token kind → Python source for the parser
+PY_EQUIVALENT = {      # token kind → Python source (used by the transpiler)
     "PRINT":    "print",
-    "PRINTLN":  "print*",   # asterisk is a marker the parser strips
+    "PRINTLN":  "print*",   # asterisk is a marker the transpiler strips
     "FUNCTION": "def",
     "L_CURLY":  ":",        # `{` → `:`
     "R_CURLY":  "",         # `}` → nothing (Python uses indentation)
@@ -106,21 +91,19 @@ PY_EQUIVALENT = {           # token kind → Python source for the parser
 }
 ```
 
-When the lexer matches `[a-z]+` (kind `None`), it looks the matched lexeme up in `KEYWORDS`. If found → that's the kind (`cout` → `PRINT`). If not found → `IDENT`.
+When the scanner consumes a run of lowercase letters, it looks the lexeme up in `KEYWORDS`. If found → that's the kind (`cout` → `PRINT`). If not found → `IDENT`.
 
-Order matters in `TOKEN_PATTERNS`. `//[^\n]*` is tried **before** `/`, so a comment is matched as one COMMENT token instead of two DIVISION tokens.
+String literals are scanned as one token: `"hello world"` becomes a single `STRING_LIT` whose lexeme includes the surrounding quotes. (Pre-v1.6.0 the regex lexer broke strings into `QUOTE` / `IDENT` / `QUOTE`.)
 
 ### Example: lexing `cout("hi")`
 
 ```
-position    kind        lexeme
-─────────────────────────────────
-  0         PRINT       'cout'
-  4         L_PAREN     '('
-  5         QUOTE       '"'
-  6         IDENT       'hi'
-  8         QUOTE       '"'
-  9         R_PAREN     ')'
+position    kind         lexeme
+──────────────────────────────────
+  0         PRINT        'cout'
+  4         L_PAREN      '('
+  5         STRING_LIT   '"hi"'
+  9         R_PAREN      ')'
 ```
 
 ### Error path
@@ -131,9 +114,11 @@ If no regex matches the current character, the lexer raises `LexerError("unexpec
 rot error: line 1:11: unexpected character '@'
 ```
 
-## Stage 2 — the "Parser"
+## Stage 2 — the Transpiler (`rot/parser.py`)
 
-The class is named `Parser` for historical reasons but doesn't actually *parse* in the linguistic sense — it builds no tree. It's a token-to-Python-source translator:
+Misleading name: the class is called `Parser` for historical reasons but doesn't actually *parse* in the linguistic sense. It builds no tree. It's a token-to-Python-source translator.
+
+(As of v1.6.0 there's a **real** recursive-descent parser in `rot/syntax.py` that builds an AST — see [Stage 2.5](#stage-25--the-ast-builder-new-in-v160). The transpiler is still on the active compile path while the AST is being developed; the two coexist.)
 
 ```python
 for i, token in enumerate(tokens):
@@ -163,6 +148,36 @@ End result:
 ### Special case 2: COMMENT translation
 
 `COMMENT` tokens have lexemes like `// foo`. The parser emits `"# " + lexeme[2:]` so `// foo` becomes `#  foo` (the leading slash-pair is replaced; the space after is the user's).
+
+## Stage 2.5 — the AST builder (new in v1.6.0)
+
+`rot/ast.py` defines the AST node types as dataclasses:
+
+```python
+Program(body: list[Statement])
+ExprStmt(expr: Expression)
+Call(callee: Expression, args: list[Expression])
+Identifier(name: str)
+NumberLit(value: int)
+StringLit(value: str)
+```
+
+`rot/syntax.py:Parser` consumes the token stream and builds a `Program` via recursive descent. Phase 1 grammar:
+
+```
+program     := stmt*
+stmt        := expr_stmt
+expr_stmt   := expr
+expr        := call | atom
+call        := callable '(' args ')'
+args        := ( expr ('|' expr)* )?
+callable    := IDENT | 'cout' | 'coutln'
+atom        := callable | NUMBER | STRING_LIT
+```
+
+Whitespace, newlines, and comments are stripped before parsing — Phase 1 doesn't care about source layout.
+
+The AST is **not yet on the active compile path** — `Compiler.compile()` still uses the transpiler (`rot/parser.py`) to go straight from tokens to Python. The AST is exercised by `tests/test_syntax.py` and is ready to become primary in Phase 2 (semantic analysis) and Phase 3 (the tree-walking interpreter that drops `exec()`).
 
 ## Stage 3 — Compiler orchestration
 
@@ -212,8 +227,7 @@ $ python -m rot --version                           # print version
 - **Identifiers are lowercase only.** Uppercase input raises a `LexerError`. By design — keywords are lowercase, so identifiers are too.
 - **`|` is the parameter separator** (not `,`). Quirky on purpose. `funct hi(x | y)` → `def hi(x,y)` in Python.
 - **`{ }` blocks but indentation in output.** `{` → `:` and `}` → `""`. The user's indentation in the `.rot` source carries through to Python.
-- **Strings aren't single tokens.** `"hi"` is three tokens: `QUOTE`, `IDENT`, `QUOTE`. They get concatenated back together by the parser.
-- **`==` works by accident.** Two `=` tokens emit `=` each, so the output has `==`. There's no `EqualEqual` token.
+- **`==` works by accident.** Two `=` tokens emit `=` each, so the output has `==`. There's no `EqualEqual` token. (A future v1.7+ change will introduce real multi-character operator tokens.)
 
 ---
 
@@ -223,60 +237,17 @@ The current pipeline leans on Python for everything past tokenizing: there's no 
 
 The roadmap below mirrors how compiler courses are taught and how real languages were built historically. Each phase is a real milestone you can demo.
 
-## Phase 1 — hand-rolled lexer + AST (planned: `v1.6.0`)
+## Phase 1 — hand-rolled lexer + AST ✓ (shipped in `v1.6.0`)
 
-Two things, neither breaking:
+Two things landed:
 
-### Hand-rolled lexer
+- **Hand-rolled lexer** in `rot/lexer.py` — no regex involvement at all. Same `Token` output as before, with one upgrade: `"hello world"` is a single `STRING_LIT` token, so strings can contain arbitrary content.
+- **AST + recursive-descent parser** — `rot/ast.py` defines the node dataclasses; `rot/syntax.py:Parser` builds a `Program` from a token list. See [Stage 2.5](#stage-25--the-ast-builder-new-in-v160) above for details.
 
-Replace the regex pattern walk with a character-by-character scanner. Same input, same `Token` output, same tests pass — but no regex involvement at all. Why bother? Because:
-
-- A regex map can't easily express **context-sensitive** rules (e.g. "inside a string literal, don't lex keywords").
-- It's the foundation for proper string-literal handling: `"hello world"` should be **one** `STRING_LIT` token, not three.
-- It paves the way for multi-character operators (`==`, `<=`, `>=`, `!=`) as proper tokens instead of accidents.
-
-Shape:
-
-```python
-class Lexer:
-    def tokenize(self) -> list[Token]:
-        while not self._at_end():
-            self._scan_token()
-        return self.tokens
-
-    def _scan_token(self) -> None:
-        ch = self._peek()
-        if ch == "/" and self._peek(1) == "/":
-            self._scan_comment()
-        elif ch == "\n":         self._add("\n", "NEWLINE"); self._advance()
-        elif ch.isspace():       self._scan_horizontal_space()
-        elif ch.isdigit():       self._scan_number()
-        elif ch.isalpha():       self._scan_identifier_or_keyword()
-        elif ch == '"':          self._scan_string_literal()
-        elif ch in OPERATORS:    self._scan_operator()
-        else:
-            raise LexerError(f"unexpected character {ch!r}", self.line, self.col)
-```
-
-### AST node types + recursive-descent parser
-
-A new module `rot/ast.py` defines the tree nodes:
-
-```python
-@dataclass class Program:     body: list[Statement]
-@dataclass class FuncDef:     name: str; params: list[str]; body: list[Statement]
-@dataclass class IfStmt:      cond: Expr; then: list[Statement]; elif_branches: list[...]
-@dataclass class ExprStmt:    expr: Expr
-@dataclass class Call:        callee: Expr; args: list[Expr]
-@dataclass class BinaryOp:    op: str; left: Expr; right: Expr
-@dataclass class Identifier:  name: str
-@dataclass class NumberLit:   value: int
-@dataclass class StringLit:   value: str
-```
-
-A new `Parser` class consumes the token list and produces a `Program` node. Recursive-descent: one function per grammar rule. Pratt parsing for expressions to handle operator precedence cleanly.
-
-For phase 1 the AST is built **alongside** the existing pipeline — the CLI still goes tokens → string → exec. The AST is exercised by tests, ready to become primary in the next phase.
+Still pending for later in v1.x:
+- `FuncDef`, `IfStmt`, `BinaryOp` nodes + grammar rules to populate them.
+- Multi-character operator tokens (`==`, `<=`, `>=`, `!=`) replacing the current "two `=`s by accident" trick.
+- Pratt parsing for expression precedence once arithmetic / comparison operators are real tokens.
 
 ## Phase 2 — semantic analysis (planned: `v1.7.0`)
 

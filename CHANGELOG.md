@@ -2,6 +2,26 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-05-26
+
+Phase 1 of v2 lands. None of this changes the user-facing CLI behavior — the v1 transpiler still drives the active compile path — but the architecture is now ready to grow a real AST-driven pipeline in the next phase.
+
+### Added
+- `rot/ast.py` — AST node dataclasses: `Program`, `ExprStmt`, `Call`, `Identifier`, `NumberLit`, `StringLit`. `Statement` and `Expression` type aliases for clarity.
+- `rot/syntax.py:Parser` — recursive-descent parser that consumes a `Token` list and builds a `Program` AST. Phase 1 grammar covers expression-statements with function calls, identifiers, and literals (no `FuncDef` / `IfStmt` / `BinaryOp` yet — those come in v1.7+).
+- `tests/test_syntax.py` — 8 tests exercising AST construction end-to-end (lex → parse → assert tree shape). Covers string-literal calls, multi-arg calls, no-arg calls, nested calls, bare identifiers, number/string atoms, and `ParserError` on truncated input.
+- New lexer tests for spaced / punctuated string literals and unterminated-string error path.
+
+### Changed
+- **Lexer is now hand-rolled** (`rot/lexer.py`). The regex `TOKEN_PATTERNS` table is gone. The scanner dispatches character-by-character: digit → number, lowercase letter → identifier-or-keyword, `"` → string literal, etc. Same `Token` shape, same line/col tracking, same `LexerError` API.
+- **String literals are now single tokens** (`STRING_LIT`) instead of `QUOTE` / `IDENT` / `QUOTE` triplets. Strings can now contain spaces and punctuation (`"hello, world"` lexes cleanly). The v1 transpiler handles this transparently because `STRING_LIT` falls back to its lexeme.
+- `rot/keywords.py` shrunk by ~half: `TOKEN_PATTERNS` removed (dead now that the lexer is hand-rolled). Just `KEYWORDS` and `PY_EQUIVALENT` remain.
+- `ARCHITECTURE.md` updated to describe v1.6.0 architecture, the new modules, and the existence of two "parsers" (the v1 transpiler in `rot/parser.py` and the real recursive-descent parser in `rot/syntax.py`).
+
+### Removed
+- `TOKEN_PATTERNS` list from `rot/keywords.py` and the `re` import / `_COMPILED_PATTERNS` cache from `rot/lexer.py`.
+- The "strings aren't single tokens" behavioral quirk from `ARCHITECTURE.md`.
+
 ## [1.5.1] - 2026-05-26
 
 ### Changed
