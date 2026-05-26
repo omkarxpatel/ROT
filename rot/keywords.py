@@ -29,7 +29,6 @@ TOKEN_PATTERNS: list[tuple[str, str | None]] = [
     (r"//[^\n]*",   "COMMENT"),
     (r"\d+",        "NUMBER"),
     (r"[a-z]+",     None),
-    (r"[A-Z]+",     None),
     (r'"',          "QUOTE"),
     (r"'",          "SINGLE_QUOTE"),
     (r"\+",         "ADDITION"),

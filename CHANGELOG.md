@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] - 2026-05-26
+
+### Removed
+- Vestigial `[A-Z]+` pattern from `TOKEN_PATTERNS`. The rot language is lowercase by design — keywords (`cout`, `funct`, …) and identifiers all match `[a-z]+`. Uppercase input now raises `LexerError` (`unexpected character 'H'`) instead of being silently classified as `STRING`. Locked in with `test_uppercase_identifiers_are_unsupported`.
+
 ## [1.4.1] - 2026-05-26
 
 ### Removed

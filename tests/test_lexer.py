@@ -54,3 +54,9 @@ def test_comment_consumes_to_end_of_line():
 def test_closing_brace_is_a_real_token():
     tokens = _lex("}")
     assert tokens == [("}", "R_CURLY")]
+
+
+def test_uppercase_identifiers_are_unsupported():
+    # rot keywords and identifiers are lowercase by design.
+    with pytest.raises(LexerError):
+        Lexer().tokenize("HELLO")
