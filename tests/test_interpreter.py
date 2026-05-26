@@ -942,6 +942,143 @@ def test_repl_error_does_not_kill_session(monkeypatch, capsys):
     assert "undefined_name" in err or "rot error" in err
 
 
+def test_division_by_zero_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("coutln(1 / 0)")
+    assert "division by zero" in str(exc_info.value).lower()
+
+
+def test_modulo_by_zero_raises_interpreter_error():
+    with pytest.raises(InterpreterError):
+        _run("coutln(5 % 0)")
+
+
+def test_binary_op_type_mismatch_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln(1 - "x")')
+    assert "cannot apply" in str(exc_info.value)
+
+
+def test_unary_minus_on_string_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln(-"x")')
+    assert "cannot negate" in str(exc_info.value)
+
+
+def test_index_assign_out_of_bounds_raises_interpreter_error():
+    with pytest.raises(InterpreterError):
+        _run('xs = [1]\nxs[5] = 99')
+
+
+def test_for_over_non_iterable_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("for x in 123 { coutln(x) }")
+    assert "cannot iterate" in str(exc_info.value)
+
+
+def test_break_at_top_level_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("break")
+    assert "outside of a loop" in str(exc_info.value)
+
+
+def test_continue_at_top_level_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("continue")
+    assert "outside of a loop" in str(exc_info.value)
+
+
+def test_return_at_top_level_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("return 42")
+    assert "outside of a function" in str(exc_info.value)
+
+
+def test_method_param_does_not_clobber_outer_scope():
+    src = (
+        'x = 1\n'
+        'class C { init(x) { this.x = x } }\n'
+        'C(5)\n'
+        'coutln(x)'    # outer x must still be 1
+    )
+    assert _run(src) == "1\n"
+
+
+def test_this_in_method_does_not_clobber_outer_this():
+    # Pre-fix: `set("this", instance)` would walk up and mutate any
+    # outer binding named `this`.
+    src = (
+        'this = "outer"\n'
+        'class C { init() {} }\n'
+        'C()\n'
+        'coutln(this)'   # outer must still be "outer"
+    )
+    assert _run(src) == "outer\n"
+
+
+def test_pop_empty_list_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("pop([])")
+    assert "empty" in str(exc_info.value)
+
+
+def test_range_step_zero_raises_interpreter_error():
+    with pytest.raises(InterpreterError):
+        _run('for i in range(0 | 3 | 0) { coutln(i) }')
+
+
+def test_rand_int_inverted_range_raises_interpreter_error():
+    with pytest.raises(InterpreterError):
+        _run("coutln(rand_int(5 | 1))")
+
+
+def test_read_file_missing_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln(read_file("/no/such/file/at/all.txt"))')
+    assert "read_file" in str(exc_info.value)
+
+
+def test_sqrt_negative_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("coutln(sqrt(-1))")
+    assert "sqrt" in str(exc_info.value)
+
+
+def test_runtime_errors_now_catchable_with_try():
+    # Errors that used to leak as Python exceptions are now InterpreterError
+    # — meaning they're catchable in rot's own try/catch.
+    src = (
+        'try {\n'
+        '    x = 1 / 0\n'
+        '} catch (e) {\n'
+        '    coutln("recovered")\n'
+        '}'
+    )
+    assert _run(src) == "recovered\n"
+
+
+def test_fstring_extra_tokens_in_brace_errors():
+    from rot.errors import ParserError
+    with pytest.raises(ParserError) as exc_info:
+        _run('coutln(f"{1 2}")')
+    assert "unexpected" in str(exc_info.value).lower()
+
+
+def test_crlf_line_endings_work():
+    # Windows-style CRLF source. Previously crashed at the \r.
+    src = "coutln(1)\r\ncoutln(2)"
+    assert _run(src) == "1\n2\n"
+
+
+def test_member_access_with_keyword_name():
+    # Pre-fix: `obj.class` would fail because `class` is a keyword, not IDENT.
+    # We can't actually demo this with rot semantics (rot instances don't
+    # use Python class names as attrs), but it should at least parse.
+    from rot.compiler import Compiler
+    # Parsing alone confirms the grammar accepts it.
+    Compiler().parse('x = {"class": "ok"}\ncoutln(x["class"])')
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'

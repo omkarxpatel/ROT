@@ -42,17 +42,26 @@ def _num(x: Any) -> Any:
 # ==== I/O ===================================================================
 
 def _builtin_input(prompt: Any = "") -> str:
-    return input(str(prompt) if prompt != "" else "")
+    try:
+        return input(str(prompt) if prompt != "" else "")
+    except EOFError:
+        raise InterpreterError("input: end of input stream")
 
 
 def _read_file(path: Any) -> str:
-    with open(str(path)) as f:
-        return f.read()
+    try:
+        with open(str(path)) as f:
+            return f.read()
+    except OSError as e:
+        raise InterpreterError(f"read_file: {e}")
 
 
 def _write_file(path: Any, content: Any) -> None:
-    with open(str(path), "w") as f:
-        f.write(str(content))
+    try:
+        with open(str(path), "w") as f:
+            f.write(str(content))
+    except OSError as e:
+        raise InterpreterError(f"write_file: {e}")
 
 
 # ==== Collection helpers ====================================================
@@ -63,7 +72,10 @@ def _builtin_range(*args: Any) -> list:
     if len(args) == 2:
         return list(range(int(args[0]), int(args[1])))
     if len(args) == 3:
-        return list(range(int(args[0]), int(args[1]), int(args[2])))
+        step = int(args[2])
+        if step == 0:
+            raise InterpreterError("range: step argument must not be zero")
+        return list(range(int(args[0]), int(args[1]), step))
     raise InterpreterError(f"range() takes 1-3 args, got {len(args)}")
 
 
@@ -76,9 +88,12 @@ def _builtin_append(lst: list, item: Any) -> None:
 def _builtin_pop(lst: list, *rest: Any) -> Any:
     if not isinstance(lst, list):
         raise InterpreterError(f"pop: expected list, got {type(lst).__name__}")
-    if rest:
-        return lst.pop(int(rest[0]))
-    return lst.pop()
+    try:
+        if rest:
+            return lst.pop(int(rest[0]))
+        return lst.pop()
+    except IndexError:
+        raise InterpreterError("pop: cannot pop from empty list")
 
 
 # ==== Math ==================================================================
@@ -162,7 +177,17 @@ def _is_func(x: Any) -> bool:
 # ==== Random ================================================================
 
 def _rand_int(a: Any, b: Any) -> int:
-    return random.randint(int(a), int(b))
+    lo, hi = int(a), int(b)
+    if lo > hi:
+        raise InterpreterError(f"rand_int: low ({lo}) > high ({hi})")
+    return random.randint(lo, hi)
+
+
+def _safe_sqrt(x: Any) -> float:
+    try:
+        return math.sqrt(x)
+    except ValueError as e:
+        raise InterpreterError(f"sqrt: {e}")
 
 
 def _rand_float() -> float:
@@ -197,7 +222,7 @@ BUILTINS: dict[str, Any] = {
     "min": _builtin_min,
     "max": _builtin_max,
     "pow": pow,
-    "sqrt": math.sqrt,
+    "sqrt": _safe_sqrt,
     "floor": math.floor,
     "ceil": math.ceil,
     "round": _builtin_round,

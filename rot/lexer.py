@@ -26,7 +26,6 @@ _SINGLE_CHAR_TOKENS: dict[str, str] = {
     "[": "L_BRACKET",
     "]": "R_BRACKET",
     "|": "COMMA",
-    "'": "SINGLE_QUOTE",
     ".": "DOT",
     ":": "COLON",
 }
@@ -94,6 +93,12 @@ class Lexer:
             self._scan_comment(start_line, start_col)
         elif ch == "\n":
             self._advance()
+            self._add("\n", "NEWLINE", start_line, start_col)
+        elif ch == "\r":
+            # CRLF on Windows: treat as a single newline. Also handle bare \r.
+            self._advance()
+            if self._peek() == "\n":
+                self._advance()
             self._add("\n", "NEWLINE", start_line, start_col)
         elif ch == " " or ch == "\t":
             self._scan_horizontal_space(start_line, start_col)

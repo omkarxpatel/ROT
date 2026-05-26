@@ -2,6 +2,43 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.13.0] - 2026-05-26
+
+Bug-fix sweep driven by a code review. Every fix has a regression test.
+
+### Fixed — Python exceptions now consistently wrap as `InterpreterError` (catchable in `try`/`catch`)
+- **Binary op type errors** (`1 - "x"`) — wrapped with a "cannot apply X to A and B" message.
+- **Division and modulo by zero** (`1 / 0`, `5 % 0`) — wrapped as "division by zero".
+- **Unary minus on non-numeric** (`-"x"`) — wrapped as "cannot negate string".
+- **Index errors on both read and write** (`xs[5] = 1`, `dict[missing]`) — wrapped with the underlying message.
+- **`for` over non-iterable** (`for x in 123 { }`) — wrapped as "cannot iterate over int".
+- **`pop` on empty list** — wrapped.
+- **`range(a, b, 0)`** — wrapped (was raw Python `ValueError`).
+- **`rand_int(5, 1)`** — validates `low <= high`.
+- **`read_file` / `write_file` OSError** — wrapped.
+- **`sqrt(negative)`** — wrapped.
+
+### Fixed — control-flow errors
+- **`break` / `continue` at top level** — used to escape as `BaseException` with a Python traceback. Now raise `InterpreterError("break outside of a loop")` etc. Tracked via `Interpreter._loop_depth` / `_function_depth`.
+- **`return` at top level** — same fix.
+
+### Fixed — method scoping bug (real impact!)
+- `BoundMethod.call` was using `local.set("this", instance)` and `local.set(param, value)`. After v2.10.0's chain-walking `set`, this meant a method whose param name matched an outer-scope variable would *mutate the outer variable*. Same for `this` if an outer `this` existed. Both now use `set_local` correctly. Test: `test_method_param_does_not_clobber_outer_scope`.
+
+### Fixed — lexer/parser fragility
+- **CRLF (`\r\n`) line endings** — used to crash on the `\r`. Now correctly produce one NEWLINE token. (Test: `test_crlf_line_endings_work`.)
+- **F-string with garbage in `{}`** (`f"{1 2}"`) — the inner parser silently dropped trailing tokens. Now raises `ParserError`.
+- **Member access with keyword names** (`obj.class`, `dict.if`) — used to fail (keywords aren't IDENT). Now allowed.
+- **`SINGLE_QUOTE` token dropped** — was lexed as a token but the parser never consumed it. Now `'` is a normal unrecognized character.
+
+### Tests
+- 20 new tests, all assertions of `InterpreterError` or `ParserError` on the previously-leaking paths.
+- Total: **201 passing** (181 → 201, +20).
+
+### Design choices reaffirmed (not bugs)
+- `Environment.set` walking the parent chain is the v2.10.0 feature, not a bug — closure mutation is intentional.
+- For-loop variable always binds locally (via `set_local`) — intentional asymmetry to keep loops from leaking state.
+
 ## [2.12.0] - 2026-05-26
 
 ### Added

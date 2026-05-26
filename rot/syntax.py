@@ -348,7 +348,17 @@ class Parser:
 
     def _parse_member_tail(self, target: ast.Expression) -> ast.MemberAccess:
         self._consume("DOT")
-        name_tok = self._consume("IDENT")
+        # Allow keyword tokens after `.` — `obj.class`, `obj.if`, etc. all
+        # parse as member access with the keyword's lexeme as the name.
+        name_tok = self._peek()
+        if name_tok is None:
+            raise ParserError("expected member name after `.`")
+        if name_tok.kind != "IDENT" and not name_tok.lexeme.isidentifier():
+            raise ParserError(
+                f"expected member name after `.`, got {name_tok.kind}",
+                name_tok.line, name_tok.col,
+            )
+        self._advance()
         return ast.MemberAccess(target=target, member=name_tok.lexeme)
 
     def _parse_dict_literal(self) -> ast.DictLit:
@@ -483,7 +493,16 @@ class Parser:
             if not expr_text:
                 raise ParserError("empty `{}` in f-string", line, col)
             inner_tokens = Lexer().tokenize(expr_text)
-            expr = Parser(inner_tokens)._parse_expression()
+            inner_parser = Parser(inner_tokens)
+            expr = inner_parser._parse_expression()
+            # Inner parser must consume every token — otherwise the f-string
+            # has garbage like `{1 2}` and we'd silently drop it.
+            if not inner_parser._at_end():
+                leftover = inner_parser._peek()
+                raise ParserError(
+                    f"unexpected token {leftover.lexeme!r} in f-string expression",
+                    line, col,
+                )
             parts.append(("expr", expr))
             i = end_brace + 1
 

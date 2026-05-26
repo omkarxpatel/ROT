@@ -134,12 +134,14 @@ class RotFunction:
 
         prior = interpreter.env
         interpreter.env = local
+        interpreter._function_depth += 1
         try:
             interpreter._execute_block(self.decl.body)
         except _ReturnSignal as signal:
             return signal.value
         finally:
             interpreter.env = prior
+            interpreter._function_depth -= 1
         return None  # fell off the end without `return`
 
 
@@ -198,17 +200,21 @@ class BoundMethod:
                 f"argument(s), got {len(args)}"
             )
         local = Environment(parent=self.closure)
-        local.set("this", self.instance)
+        # set_local (not set) so `this` and params can't clobber outer-scope
+        # variables of the same name via the chain-walk in set().
+        local.set_local("this", self.instance)
         for param, value in zip(self.decl.params, args):
-            local.set(param, value)
+            local.set_local(param, value)
         prior = interpreter.env
         interpreter.env = local
+        interpreter._function_depth += 1
         try:
             interpreter._execute_block(self.decl.body)
         except _ReturnSignal as signal:
             return signal.value
         finally:
             interpreter.env = prior
+            interpreter._function_depth -= 1
         return None
 
 
@@ -225,6 +231,10 @@ class Interpreter:
         # Module-system state.
         self._loaded_modules: set[str] = set()
         self._source_dir: "str | None" = None
+        # Context tracking — used so `break`/`continue`/`return` at top level
+        # raise a clear InterpreterError instead of escaping as BaseException.
+        self._loop_depth: int = 0
+        self._function_depth: int = 0
 
     def set_source_dir(self, source_dir: "str | None") -> None:
         """Tell the interpreter where the current source file lives so
@@ -261,32 +271,52 @@ class Interpreter:
                 self.env.set(stmt.name, op_fn(current, new_value))
             return
         if isinstance(stmt, ast.Return):
+            if self._function_depth == 0:
+                raise InterpreterError("`return` outside of a function")
             value = self._evaluate(stmt.value) if stmt.value is not None else None
             raise _ReturnSignal(value)
         if isinstance(stmt, ast.WhileStmt):
-            while self._evaluate(stmt.cond):
-                try:
-                    self._execute_block(stmt.body)
-                except _ContinueSignal:
-                    continue
-                except _BreakSignal:
-                    break
+            self._loop_depth += 1
+            try:
+                while self._evaluate(stmt.cond):
+                    try:
+                        self._execute_block(stmt.body)
+                    except _ContinueSignal:
+                        continue
+                    except _BreakSignal:
+                        break
+            finally:
+                self._loop_depth -= 1
             return
         if isinstance(stmt, ast.ForStmt):
             iterable = self._evaluate(stmt.iter)
-            for item in iterable:
-                # for-loop var binds at the current scope, not walking up
-                self.env.set_local(stmt.var, item)
-                try:
-                    self._execute_block(stmt.body)
-                except _ContinueSignal:
-                    continue
-                except _BreakSignal:
-                    break
+            try:
+                iterator = iter(iterable)
+            except TypeError:
+                raise InterpreterError(
+                    f"cannot iterate over {type(iterable).__name__}"
+                )
+            self._loop_depth += 1
+            try:
+                for item in iterator:
+                    # for-loop var binds at the current scope, not walking up
+                    self.env.set_local(stmt.var, item)
+                    try:
+                        self._execute_block(stmt.body)
+                    except _ContinueSignal:
+                        continue
+                    except _BreakSignal:
+                        break
+            finally:
+                self._loop_depth -= 1
             return
         if isinstance(stmt, ast.BreakStmt):
+            if self._loop_depth == 0:
+                raise InterpreterError("`break` outside of a loop")
             raise _BreakSignal()
         if isinstance(stmt, ast.ContinueStmt):
+            if self._loop_depth == 0:
+                raise InterpreterError("`continue` outside of a loop")
             raise _ContinueSignal()
         if isinstance(stmt, ast.ThrowStmt):
             value = self._evaluate(stmt.value)
@@ -311,13 +341,16 @@ class Interpreter:
             target = self._evaluate(stmt.target)
             index = self._evaluate(stmt.index)
             new_value = self._evaluate(stmt.value)
-            if stmt.op == "=":
-                target[index] = new_value
-            else:
-                op_fn = _BINARY_OPS.get(stmt.op)
-                if op_fn is None:
-                    raise InterpreterError(f"unknown compound op {stmt.op!r}")
-                target[index] = op_fn(target[index], new_value)
+            try:
+                if stmt.op == "=":
+                    target[index] = new_value
+                else:
+                    op_fn = _BINARY_OPS.get(stmt.op)
+                    if op_fn is None:
+                        raise InterpreterError(f"unknown compound op {stmt.op!r}")
+                    target[index] = op_fn(target[index], new_value)
+            except (IndexError, KeyError, TypeError) as e:
+                raise InterpreterError(f"index error: {e}")
             return
         if isinstance(stmt, ast.MemberAssign):
             target = self._evaluate(stmt.target)
@@ -417,13 +450,26 @@ class Interpreter:
             op = _BINARY_OPS.get(expr.op)
             if op is None:
                 raise InterpreterError(f"unknown operator {expr.op!r}")
-            return op(left, right)
+            try:
+                return op(left, right)
+            except ZeroDivisionError:
+                raise InterpreterError("division by zero")
+            except TypeError as e:
+                raise InterpreterError(
+                    f"cannot apply {expr.op!r} to {type(left).__name__} "
+                    f"and {type(right).__name__}: {e}"
+                )
         raise InterpreterError(f"cannot evaluate {type(expr).__name__}")
 
     def _evaluate_unary(self, expr: ast.UnaryOp) -> Any:
         operand = self._evaluate(expr.operand)
         if expr.op == "-":
-            return -operand
+            try:
+                return -operand
+            except TypeError:
+                raise InterpreterError(
+                    f"cannot negate {type(operand).__name__}"
+                )
         if expr.op == "not":
             return not operand
         raise InterpreterError(f"unknown unary operator {expr.op!r}")
