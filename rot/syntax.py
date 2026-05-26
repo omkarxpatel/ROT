@@ -63,7 +63,8 @@ _INFIX_PRECEDENCE: dict[str, int] = {
 # Token kinds that can start an expression (used to detect bare `return`).
 _EXPR_STARTS = {
     "IDENT", "PRINT", "PRINTLN", "NUMBER", "STRING_LIT",
-    "TRUE", "FALSE", "NULL", "L_PAREN", "L_BRACKET", "L_CURLY",
+    "TRUE", "FALSE", "NULL", "THIS",
+    "L_PAREN", "L_BRACKET", "L_CURLY",
     "SUBTRACTION", "NOT",
 }
 
@@ -136,6 +137,8 @@ class Parser:
         if tok.kind == "CONTINUE":
             self._advance()
             return ast.ContinueStmt()
+        if tok.kind == "CLASS":
+            return self._parse_class_def()
         # Otherwise: parse as expression, then check what follows.
         # `=` or compound (+=, -=, ...) → convert to assign/index-assign.
         expr = self._parse_expression()
@@ -180,6 +183,28 @@ class Parser:
         iter_expr = self._parse_expression()
         body = self._parse_block()
         return ast.ForStmt(var=var_tok.lexeme, iter=iter_expr, body=body)
+
+    def _parse_class_def(self) -> ast.ClassDef:
+        self._consume("CLASS")
+        name_tok = self._consume("IDENT")
+        self._consume("L_CURLY")
+        methods: list[ast.FuncDef] = []
+        while not self._check("R_CURLY"):
+            if self._at_end():
+                raise ParserError("unterminated class body")
+            method_name = self._consume("IDENT").lexeme
+            self._consume("L_PAREN")
+            params: list[str] = []
+            if not self._check("R_PAREN"):
+                params.append(self._consume("IDENT").lexeme)
+                while self._check("COMMA"):
+                    self._advance()
+                    params.append(self._consume("IDENT").lexeme)
+            self._consume("R_PAREN")
+            body = self._parse_block()
+            methods.append(ast.FuncDef(name=method_name, params=params, body=body))
+        self._consume("R_CURLY")
+        return ast.ClassDef(name=name_tok.lexeme, methods=methods)
 
     def _parse_return(self) -> ast.Return:
         self._consume("RETURN")
@@ -347,6 +372,9 @@ class Parser:
         if tok is None:
             raise ParserError("unexpected end of input")
 
+        if tok.kind == "THIS":
+            self._advance()
+            return ast.Identifier(name="this")
         if tok.kind == "L_PAREN":
             self._advance()
             expr = self._parse_expression()

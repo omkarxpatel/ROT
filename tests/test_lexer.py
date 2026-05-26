@@ -71,10 +71,12 @@ def test_closing_brace_is_a_real_token():
     assert tokens == [("}", "R_CURLY")]
 
 
-def test_uppercase_identifiers_are_unsupported():
-    # rot keywords and identifiers are lowercase by design.
-    with pytest.raises(LexerError):
-        Lexer().tokenize("HELLO")
+def test_uppercase_identifiers_supported_for_class_names():
+    # Class names conventionally start capitalized (Point, Counter, etc.).
+    # Identifier rule since v2.6.0: [A-Za-z_][A-Za-z_0-9]*
+    assert _lex("Point") == [("Point", "IDENT")]
+    assert _lex("x1") == [("x1", "IDENT")]
+    assert _lex("MyClass") == [("MyClass", "IDENT")]
 
 
 def test_multi_char_operators_are_single_tokens():

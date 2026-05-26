@@ -1,0 +1,19 @@
+class Counter {
+    init(start) {
+        this.count = start
+    }
+
+    inc() {
+        this.count += 1
+    }
+
+    show() {
+        coutln("count is " + this.count)
+    }
+}
+
+c = Counter(10)
+c.inc()
+c.inc()
+c.inc()
+c.show()

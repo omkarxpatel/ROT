@@ -2,6 +2,23 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] - 2026-05-26
+
+### Added
+- **Classes**: `class Name { method() { ... } init(...) { ... } }`. Methods declared without `funct` keyword.
+  - New `ClassDef(name, methods)` AST node.
+  - New keywords: `class`, `this`.
+  - `init` method is the constructor; called when the class is invoked with `()`. A class with no `init` accepts no args.
+  - `this` refers to the current instance inside method bodies.
+  - Fields are set via `this.field = value` and read via `this.field`.
+  - Method calls (`instance.method()`) return a `BoundMethod` from member access; calling it binds `this`.
+- New interpreter types: `RotClass`, `RotInstance`, `BoundMethod`.
+- **Uppercase identifiers**: identifier rule extended to `[A-Za-z_][A-Za-z_0-9]*`. Class names conventionally start capitalized (`Point`, `Counter`); this lets `MyClass` and `x1` lex naturally.
+- `examples/counter.rot` (Counter with init/inc/show).
+
+### Fixed
+- `THIS` token added to `_EXPR_STARTS` so `return this.x` parses as `return <expression>` rather than bare `return` (which would have returned `null`).
+
 ## [2.5.0] - 2026-05-26
 
 ### Added

@@ -409,6 +409,80 @@ def test_dict_methods_via_member_access():
     assert _run(src) == "3\n"
 
 
+def test_class_def_instance_field_assign_in_init():
+    src = (
+        'class Point {\n'
+        '    init(x | y) {\n'
+        '        this.x = x\n'
+        '        this.y = y\n'
+        '    }\n'
+        '}\n'
+        'p = Point(3 | 4)\n'
+        'coutln(p.x)\n'
+        'coutln(p.y)'
+    )
+    assert _run(src) == "3\n4\n"
+
+
+def test_class_method_call_uses_this():
+    src = (
+        'class Counter {\n'
+        '    init(start) { this.count = start }\n'
+        '    inc() { this.count += 1 }\n'
+        '    get() { return this.count }\n'
+        '}\n'
+        'c = Counter(10)\n'
+        'c.inc()\n'
+        'c.inc()\n'
+        'c.inc()\n'
+        'coutln(c.get())'
+    )
+    assert _run(src) == "13\n"
+
+
+def test_class_with_no_init_takes_no_args():
+    src = (
+        'class Empty {\n'
+        '    greet() { coutln("hello") }\n'
+        '}\n'
+        'e = Empty()\n'
+        'e.greet()'
+    )
+    assert _run(src) == "hello\n"
+
+
+def test_class_with_no_init_rejects_args():
+    src = 'class Empty {}\nEmpty(1)'
+    with pytest.raises(InterpreterError):
+        _run(src)
+
+
+def test_class_method_calls_other_method():
+    src = (
+        'class Adder {\n'
+        '    init(x) { this.x = x }\n'
+        '    double() { return this.x * 2 }\n'
+        '    quadruple() { return this.double() * 2 }\n'
+        '}\n'
+        'a = Adder(5)\n'
+        'coutln(a.quadruple())'
+    )
+    assert _run(src) == "20\n"
+
+
+def test_class_fields_are_independent_per_instance():
+    src = (
+        'class Box {\n'
+        '    init(v) { this.value = v }\n'
+        '}\n'
+        'a = Box("first")\n'
+        'b = Box("second")\n'
+        'coutln(a.value)\n'
+        'coutln(b.value)'
+    )
+    assert _run(src) == "first\nsecond\n"
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'

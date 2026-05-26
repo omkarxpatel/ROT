@@ -171,9 +171,16 @@ class ContinueStmt:
     pass
 
 
+@dataclass
+class ClassDef:
+    name: str
+    methods: list[FuncDef] = field(default_factory=list)
+
+
 Statement = Union[
     ExprStmt, FuncDef, IfStmt, Assign, Return, WhileStmt,
     ForStmt, IndexAssign, MemberAssign, BreakStmt, ContinueStmt,
+    ClassDef,
 ]
 
 

@@ -57,14 +57,14 @@ _SOLO_FALLBACK: dict[str, str] = {
 
 
 def _is_identifier_start(ch: str) -> bool:
-    # Identifiers start with a lowercase letter or underscore.
-    return ch == "_" or (ch.isalpha() and ch.islower())
+    # Identifiers start with a letter (upper or lower) or underscore.
+    # Uppercase added in v2.6.0 — class names conventionally start capitalized.
+    return ch == "_" or ch.isalpha()
 
 
 def _is_identifier_continuation(ch: str) -> bool:
-    # ...and continue with letters / underscores. Digits are intentionally
-    # excluded for now to keep `x1` lexing as two tokens (identifier + number).
-    return _is_identifier_start(ch)
+    # ...and continue with letters / underscores / digits.
+    return _is_identifier_start(ch) or ch.isdigit()
 
 
 class Lexer:

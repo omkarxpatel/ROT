@@ -62,6 +62,17 @@ class Emitter:
                 self._write(f"{target}.{stmt.member} = {value}")
             else:
                 self._write(f"{target}.{stmt.member} {stmt.op}= {value}")
+        elif isinstance(stmt, ast.ClassDef):
+            self._write(f"class {stmt.name}:")
+            self.depth += 1
+            if not stmt.methods:
+                self._write("pass")
+            for method in stmt.methods:
+                name = "__init__" if method.name == "init" else method.name
+                params = ", ".join(["self"] + method.params)
+                self._write(f"def {name}({params}):")
+                self._emit_block(method.body)
+            self.depth -= 1
         elif isinstance(stmt, ast.Return):
             if stmt.value is None:
                 self._write("return")

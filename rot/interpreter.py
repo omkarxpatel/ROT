@@ -129,6 +129,75 @@ class RotFunction:
         return None  # fell off the end without `return`
 
 
+class RotClass:
+    """A user-defined class. Callable — invoking it constructs an instance."""
+
+    def __init__(self, name: str, methods: dict[str, ast.FuncDef], closure: Environment) -> None:
+        self.name = name
+        self.methods = methods
+        self.closure = closure
+
+    def call(self, args: list[Any], interpreter: "Interpreter") -> "RotInstance":
+        instance = RotInstance(self)
+        init = self.methods.get("init")
+        if init is not None:
+            BoundMethod(instance, init, self.closure).call(args, interpreter)
+        elif args:
+            raise InterpreterError(
+                f"class {self.name!r} has no init but was called with {len(args)} arg(s)"
+            )
+        return instance
+
+
+class RotInstance:
+    """An instance of a RotClass — fields stored in a dict, methods looked
+    up on the class."""
+
+    def __init__(self, cls: RotClass) -> None:
+        self.cls = cls
+        self.fields: dict[str, Any] = {}
+
+    def get_member(self, name: str) -> Any:
+        if name in self.fields:
+            return self.fields[name]
+        method = self.cls.methods.get(name)
+        if method is not None:
+            return BoundMethod(self, method, self.cls.closure)
+        raise InterpreterError(f"no member {name!r} on {self.cls.name} instance")
+
+    def set_member(self, name: str, value: Any) -> None:
+        self.fields[name] = value
+
+
+class BoundMethod:
+    """A method already bound to an instance — `this` is the captured instance."""
+
+    def __init__(self, instance: RotInstance, decl: ast.FuncDef, closure: Environment) -> None:
+        self.instance = instance
+        self.decl = decl
+        self.closure = closure
+
+    def call(self, args: list[Any], interpreter: "Interpreter") -> Any:
+        if len(args) != len(self.decl.params):
+            raise InterpreterError(
+                f"method {self.decl.name!r} takes {len(self.decl.params)} "
+                f"argument(s), got {len(args)}"
+            )
+        local = Environment(parent=self.closure)
+        local.set("this", self.instance)
+        for param, value in zip(self.decl.params, args):
+            local.set(param, value)
+        prior = interpreter.env
+        interpreter.env = local
+        try:
+            interpreter._execute_block(self.decl.body)
+        except _ReturnSignal as signal:
+            return signal.value
+        finally:
+            interpreter.env = prior
+        return None
+
+
 class Interpreter:
     def __init__(self) -> None:
         self.env = Environment()
@@ -153,6 +222,10 @@ class Interpreter:
             return
         if isinstance(stmt, ast.FuncDef):
             self.env.set(stmt.name, RotFunction(stmt, self.env))
+            return
+        if isinstance(stmt, ast.ClassDef):
+            method_map = {m.name: m for m in stmt.methods}
+            self.env.set(stmt.name, RotClass(stmt.name, method_map, self.env))
             return
         if isinstance(stmt, ast.IfStmt):
             self._execute_if(stmt)
@@ -210,6 +283,17 @@ class Interpreter:
         if isinstance(stmt, ast.MemberAssign):
             target = self._evaluate(stmt.target)
             new_value = self._evaluate(stmt.value)
+            # rot instances use set_member; everything else falls back to setattr.
+            if isinstance(target, RotInstance):
+                if stmt.op == "=":
+                    target.set_member(stmt.member, new_value)
+                else:
+                    op_fn = _BINARY_OPS.get(stmt.op)
+                    if op_fn is None:
+                        raise InterpreterError(f"unknown compound op {stmt.op!r}")
+                    current = target.get_member(stmt.member)
+                    target.set_member(stmt.member, op_fn(current, new_value))
+                return
             if stmt.op == "=":
                 try:
                     setattr(target, stmt.member, new_value)
@@ -270,6 +354,10 @@ class Interpreter:
                 raise InterpreterError(f"index error: {e}")
         if isinstance(expr, ast.MemberAccess):
             target = self._evaluate(expr.target)
+            # rot instances have their own member lookup; everything else
+            # falls back to Python's getattr (strings, lists, dicts, etc.).
+            if isinstance(target, RotInstance):
+                return target.get_member(expr.member)
             try:
                 return getattr(target, expr.member)
             except AttributeError:
@@ -304,7 +392,7 @@ class Interpreter:
     def _evaluate_call(self, expr: ast.Call) -> Any:
         callee = self._evaluate(expr.callee)
         args = [self._evaluate(a) for a in expr.args]
-        if isinstance(callee, RotFunction):
+        if isinstance(callee, (RotFunction, RotClass, BoundMethod)):
             return callee.call(args, self)
         if callable(callee):
             return callee(*args)

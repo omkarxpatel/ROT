@@ -31,4 +31,6 @@ KEYWORDS: dict[str, str] = {
     "in":       "IN",
     "break":    "BREAK",
     "continue": "CONTINUE",
+    "class":    "CLASS",
+    "this":     "THIS",
 }
