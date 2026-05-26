@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] - 2026-05-26
+
+### Removed
+- The `result[-5:] == "print"` defensive guard in `Parser.parse`. Tracing every realistic flow showed the condition is never reached (the lexer eats identifiers greedily, and `cout`/`coutln` always have a `(` immediately following). Added `examples/multiple_prints.rot` as a regression test exercising consecutive `cout`/`coutln` calls.
+
 ## [1.4.0] - 2026-05-26
 
 ### Added

@@ -24,10 +24,6 @@ class Parser:
             elif parsed == "print*":
                 parsed = parsed.rstrip("*")
 
-            if parsed == "print" and result[-5:] == "print":
-                self._log(i, token.lexeme, parsed, token.kind)
-                continue
-
             result += parsed
             self._log(i, token.lexeme, parsed, token.kind)
 
