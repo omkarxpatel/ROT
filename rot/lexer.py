@@ -36,6 +36,11 @@ _TWO_CHAR_TOKENS: dict[tuple[str, str], tuple[str, str]] = {
     ("!", "="): ("!=", "NEQ"),
     ("<", "="): ("<=", "LE"),
     (">", "="): (">=", "GE"),
+    ("+", "="): ("+=", "PLUS_EQ"),
+    ("-", "="): ("-=", "MINUS_EQ"),
+    ("*", "="): ("*=", "STAR_EQ"),
+    ("/", "="): ("/=", "SLASH_EQ"),
+    ("%", "="): ("%=", "PERCENT_EQ"),
 }
 
 
@@ -124,6 +129,12 @@ class Lexer:
         start = self.pos
         while self._peek().isdigit():
             self._advance()
+        # Optional fractional part: only consume `.` if followed by a digit
+        # (so `3.foo` lexes as NUMBER('3') + '.' + IDENT, not NUMBER('3.')).
+        if self._peek() == "." and self._peek(1).isdigit():
+            self._advance()  # consume `.`
+            while self._peek().isdigit():
+                self._advance()
         self._add(self.source[start : self.pos], "NUMBER", line, col)
 
     def _scan_identifier_or_keyword(self, line: int, col: int) -> None:
@@ -138,7 +149,13 @@ class Lexer:
         start = self.pos
         self._advance()  # opening "
         while not self._at_end() and self._peek() != '"':
-            self._advance()
+            # Backslash escapes: consume `\` plus the next char as a unit
+            # so `\"` doesn't terminate the string.
+            if self._peek() == "\\":
+                self._advance()  # consume backslash
+                if self._at_end():
+                    break
+            self._advance()  # consume next char (escaped or not)
         if self._at_end():
             raise LexerError("unterminated string literal", line, col)
         self._advance()  # closing "

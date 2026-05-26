@@ -336,6 +336,29 @@ def test_boolean_and_null_literals():
     assert _expr("null") == ast.NullLit()
 
 
+def test_float_literal_parses_to_float_value():
+    e = _expr("3.14")
+    assert isinstance(e, ast.NumberLit)
+    assert e.value == 3.14
+    assert isinstance(e.value, float)
+
+
+def test_int_literal_stays_int():
+    e = _expr("42")
+    assert isinstance(e, ast.NumberLit)
+    assert e.value == 42
+    assert isinstance(e.value, int) and not isinstance(e.value, bool)
+
+
+def test_compound_assign_carries_op():
+    program = _parse("x += 1")
+    stmt = program.body[0]
+    assert isinstance(stmt, ast.Assign)
+    assert stmt.op == "+"
+    assert stmt.name == "x"
+    assert stmt.value == ast.NumberLit(1)
+
+
 def test_modulo_has_same_precedence_as_multiplication():
     # `a + b % c` → `a + (b % c)`.
     assert _expr("a + b % c") == ast.BinaryOp(

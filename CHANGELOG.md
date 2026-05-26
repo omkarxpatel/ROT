@@ -2,6 +2,17 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-05-26
+
+### Added
+- **Float literals**: `3.14` lexes as one `NUMBER` token; parser produces `NumberLit(value=3.14)` as a Python float.
+- **String escape sequences**: `\n`, `\t`, `\r`, `\0`, `\"`, `\'`, `\\` all decoded by `_decode_string_escapes` in `rot/syntax.py`. Escaped quotes inside strings no longer terminate them.
+- **`+` auto-coerces to string**: if either operand is a string, both are stringified (rot-style: `null`, `true`, `false`, lowercase). Lets you write `"count: " + 42`.
+- **Compound assignment**: `+=`, `-=`, `*=`, `/=`, `%=`. New two-char tokens `PLUS_EQ` / `MINUS_EQ` / `STAR_EQ` / `SLASH_EQ` / `PERCENT_EQ`. `ast.Assign.op` field carries `"="` for plain or the binary op for compound.
+
+### Changed
+- **`cout`/`coutln` print rot-style**: `null` instead of `None`, `true`/`false` instead of `True`/`False`. The output now matches what you'd write in source. Tests updated accordingly.
+
 ## [2.2.0] - 2026-05-26
 
 The "you can actually write programs in this" release. **Fizzbuzz runs end-to-end.**

@@ -143,3 +143,34 @@ def test_modulo_is_a_single_char_token():
         ("%", "MODULO"),
         (" ", "SPACE"), ("b", "IDENT"),
     ]
+
+
+def test_float_literals():
+    tokens = _lex("3.14")
+    assert tokens == [("3.14", "NUMBER")]
+
+    # `3.foo` should be NUMBER('3'), then `.` then IDENT — but `.` isn't
+    # lexable yet, so this is just verifying the boundary behavior:
+    tokens = _lex("42")
+    assert tokens == [("42", "NUMBER")]
+
+
+def test_string_literal_with_escapes():
+    tokens = _lex(r'"hello\nworld"')
+    assert tokens == [(r'"hello\nworld"', "STRING_LIT")]
+
+    # Escaped quote inside a string should not terminate it.
+    tokens = _lex(r'"he said \"hi\""')
+    assert tokens == [(r'"he said \"hi\""', "STRING_LIT")]
+
+
+def test_compound_assign_tokens():
+    assert _lex("x += 1") == [
+        ("x", "IDENT"), (" ", "SPACE"),
+        ("+=", "PLUS_EQ"),
+        (" ", "SPACE"), ("1", "NUMBER"),
+    ]
+    assert _lex("-=")[0] == ("-=", "MINUS_EQ")
+    assert _lex("*=")[0] == ("*=", "STAR_EQ")
+    assert _lex("/=")[0] == ("/=", "SLASH_EQ")
+    assert _lex("%=")[0] == ("%=", "PERCENT_EQ")

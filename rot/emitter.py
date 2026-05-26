@@ -36,7 +36,8 @@ class Emitter:
             self._write(f"while {self._expr(stmt.cond)}:")
             self._emit_block(stmt.body)
         elif isinstance(stmt, ast.Assign):
-            self._write(f"{stmt.name} = {self._expr(stmt.value)}")
+            op = stmt.op if stmt.op != "=" else "="
+            self._write(f"{stmt.name} {op}= {self._expr(stmt.value)}" if stmt.op != "=" else f"{stmt.name} = {self._expr(stmt.value)}")
         elif isinstance(stmt, ast.Return):
             if stmt.value is None:
                 self._write("return")

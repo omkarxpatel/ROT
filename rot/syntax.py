@@ -67,6 +67,43 @@ _EXPR_STARTS = {
 }
 
 
+_COMPOUND_ASSIGN_TOKENS: dict[str, str] = {
+    "PLUS_EQ":    "+",
+    "MINUS_EQ":   "-",
+    "STAR_EQ":    "*",
+    "SLASH_EQ":   "/",
+    "PERCENT_EQ": "%",
+}
+
+
+_ESCAPE_SEQUENCES: dict[str, str] = {
+    "n":  "\n",
+    "t":  "\t",
+    "r":  "\r",
+    "0":  "\0",
+    '"':  '"',
+    "'":  "'",
+    "\\": "\\",
+}
+
+
+def _decode_string_escapes(raw: str) -> str:
+    """Decode backslash escapes inside a string literal's content
+    (with surrounding quotes already stripped)."""
+    out: list[str] = []
+    i = 0
+    while i < len(raw):
+        ch = raw[i]
+        if ch == "\\" and i + 1 < len(raw):
+            esc = raw[i + 1]
+            out.append(_ESCAPE_SEQUENCES.get(esc, esc))
+            i += 2
+        else:
+            out.append(ch)
+            i += 1
+    return "".join(out)
+
+
 class Parser:
     def __init__(self, tokens: list[Token]) -> None:
         self.tokens = [t for t in tokens if t.kind not in _SKIP_KINDS]
@@ -90,13 +127,24 @@ class Parser:
             return self._parse_while_stmt()
         if tok.kind == "RETURN":
             return self._parse_return()
-        # Assignment: IDENT '=' expr — one-token lookahead distinguishes
-        # from a bare-identifier expression statement.
+        # Assignment: IDENT '=' expr (or compound `+=`, `-=`, etc.) —
+        # one-token lookahead distinguishes from a bare-identifier
+        # expression statement.
         if tok.kind == "IDENT":
             after = self._peek(1)
-            if after is not None and after.kind == "SETVALUE":
-                return self._parse_assign()
+            if after is not None:
+                if after.kind == "SETVALUE":
+                    return self._parse_assign()
+                if after.kind in _COMPOUND_ASSIGN_TOKENS:
+                    return self._parse_compound_assign()
         return ast.ExprStmt(expr=self._parse_expression())
+
+    def _parse_compound_assign(self) -> ast.Assign:
+        name_tok = self._consume("IDENT")
+        op_tok = self._advance()
+        op = _COMPOUND_ASSIGN_TOKENS[op_tok.kind]
+        value = self._parse_expression()
+        return ast.Assign(name=name_tok.lexeme, value=value, op=op)
 
     def _parse_while_stmt(self) -> ast.WhileStmt:
         self._consume("WHILE")
@@ -242,10 +290,13 @@ class Parser:
             return ast.Identifier(name=tok.lexeme)
         if tok.kind == "NUMBER":
             self._advance()
-            return ast.NumberLit(value=int(tok.lexeme))
+            return ast.NumberLit(
+                value=float(tok.lexeme) if "." in tok.lexeme else int(tok.lexeme)
+            )
         if tok.kind == "STRING_LIT":
             self._advance()
-            return ast.StringLit(value=tok.lexeme[1:-1])
+            # Strip surrounding quotes, then decode `\n`, `\t`, `\"`, etc.
+            return ast.StringLit(value=_decode_string_escapes(tok.lexeme[1:-1]))
         if tok.kind == "TRUE":
             self._advance()
             return ast.BoolLit(value=True)

@@ -105,14 +105,14 @@ def test_function_returns_value():
     assert _run(src) == "5\n"
 
 
-def test_bare_return_yields_none():
+def test_bare_return_yields_null():
     src = 'funct nothing() { return }\ncoutln(nothing())'
-    assert _run(src) == "None\n"
+    assert _run(src) == "null\n"
 
 
-def test_falling_off_function_end_returns_none():
+def test_falling_off_function_end_returns_null():
     src = 'funct silent() { x = 1 }\ncoutln(silent())'
-    assert _run(src) == "None\n"
+    assert _run(src) == "null\n"
 
 
 def test_early_return_short_circuits_remaining_statements():
@@ -158,14 +158,14 @@ def test_modulo_arithmetic():
     assert _run("coutln(15 % 5)") == "0\n"
 
 
-def test_boolean_literals_print_capitalized():
-    # Python's bool repr is True/False (capitalized); rot inherits.
-    assert _run("coutln(true)") == "True\n"
-    assert _run("coutln(false)") == "False\n"
+def test_boolean_literals_print_lowercase():
+    # rot uses lowercase `true`/`false` in source, so cout/coutln render the same.
+    assert _run("coutln(true)") == "true\n"
+    assert _run("coutln(false)") == "false\n"
 
 
-def test_null_literal():
-    assert _run("coutln(null)") == "None\n"
+def test_null_literal_prints_lowercase():
+    assert _run("coutln(null)") == "null\n"
 
 
 def test_and_or_short_circuit():
@@ -174,19 +174,55 @@ def test_and_or_short_circuit():
         'funct oops() { return 1 / 0 }\n'
         'coutln(true or oops())'
     )
-    assert _run(src) == "True\n"
+    assert _run(src) == "true\n"
 
 
 def test_not_inverts_truthiness():
-    assert _run("coutln(not true)") == "False\n"
-    assert _run("coutln(not false)") == "True\n"
-    assert _run("coutln(not (1 == 1))") == "False\n"
+    assert _run("coutln(not true)") == "false\n"
+    assert _run("coutln(not false)") == "true\n"
+    assert _run("coutln(not (1 == 1))") == "false\n"
 
 
 def test_str_num_len_builtins():
     assert _run('coutln(str(42))') == "42\n"
     assert _run('coutln(num("100"))') == "100\n"
     assert _run('coutln(len("hello"))') == "5\n"
+
+
+def test_float_literal_evaluates():
+    assert _run("coutln(3.14)") == "3.14\n"
+
+
+def test_string_concatenation_with_number_coerces():
+    assert _run('coutln("count: " + 42)') == "count: 42\n"
+
+
+def test_string_concatenation_with_bool_uses_rot_style():
+    assert _run('coutln("flag: " + true)') == "flag: true\n"
+
+
+def test_string_escapes_are_decoded():
+    assert _run(r'cout("a\nb")') == "a\nb"
+    assert _run(r'cout("tab\there")') == "tab\there"
+
+
+def test_escaped_quote_in_string():
+    assert _run(r'coutln("she said \"hi\"")') == 'she said "hi"\n'
+
+
+def test_compound_assign_plus():
+    assert _run("x = 5\nx += 3\ncoutln(x)") == "8\n"
+
+
+def test_compound_assign_all_ops():
+    assert _run("x = 10\nx -= 3\ncoutln(x)") == "7\n"
+    assert _run("x = 4\nx *= 3\ncoutln(x)") == "12\n"
+    assert _run("x = 10\nx /= 4\ncoutln(x)") == "2.5\n"
+    assert _run("x = 10\nx %= 3\ncoutln(x)") == "1\n"
+
+
+def test_compound_assign_string_concat():
+    assert _run('s = "hello"\ns += " world"\ncoutln(s)') == "hello world\n"
 
 
 def test_fizzbuzz_first_15():

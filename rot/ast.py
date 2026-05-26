@@ -23,7 +23,7 @@ class Identifier:
 
 @dataclass
 class NumberLit:
-    value: int
+    value: "int | float"
 
 
 @dataclass
@@ -100,6 +100,8 @@ class IfStmt:
 class Assign:
     name: str
     value: Expression
+    # `=` for plain assignment, `+`/`-`/`*`/`/`/`%` for compound assign.
+    op: str = "="
 
 
 @dataclass

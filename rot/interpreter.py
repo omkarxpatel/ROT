@@ -27,8 +27,26 @@ class _ReturnSignal(BaseException):
         self.value = value
 
 
+def _plus(a: Any, b: Any) -> Any:
+    """`+` with string coercion: if either side is a string, both become
+    strings and concatenate. Otherwise, regular numeric addition."""
+    if isinstance(a, str) or isinstance(b, str):
+        return _stringify(a) + _stringify(b)
+    return a + b
+
+
+def _stringify(x: Any) -> str:
+    """Convert a value to its rot-style string form.
+    `null` -> 'null', booleans -> 'true'/'false', numbers/strings as-is."""
+    if x is None:
+        return "null"
+    if isinstance(x, bool):
+        return "true" if x else "false"
+    return str(x)
+
+
 _BINARY_OPS: dict[str, Callable[[Any, Any], Any]] = {
-    "+":  lambda a, b: a + b,
+    "+":  _plus,
     "-":  lambda a, b: a - b,
     "*":  lambda a, b: a * b,
     "/":  lambda a, b: a / b,
@@ -126,7 +144,15 @@ class Interpreter:
             self._execute_if(stmt)
             return
         if isinstance(stmt, ast.Assign):
-            self.env.set(stmt.name, self._evaluate(stmt.value))
+            new_value = self._evaluate(stmt.value)
+            if stmt.op == "=":
+                self.env.set(stmt.name, new_value)
+            else:
+                current = self.env.get(stmt.name)
+                op_fn = _BINARY_OPS.get(stmt.op)
+                if op_fn is None:
+                    raise InterpreterError(f"unknown compound op {stmt.op!r}")
+                self.env.set(stmt.name, op_fn(current, new_value))
             return
         if isinstance(stmt, ast.Return):
             value = self._evaluate(stmt.value) if stmt.value is not None else None
@@ -203,8 +229,8 @@ class Interpreter:
 
 
 def _builtin_cout(*args: Any) -> None:
-    print(*args, sep="", end="")
+    print(*(_stringify(a) for a in args), sep="", end="")
 
 
 def _builtin_coutln(*args: Any) -> None:
-    print(*args, sep="")
+    print(*(_stringify(a) for a in args), sep="")
