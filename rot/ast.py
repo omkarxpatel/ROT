@@ -177,10 +177,22 @@ class ClassDef:
     methods: list[FuncDef] = field(default_factory=list)
 
 
+@dataclass
+class TryCatch:
+    try_block: Block
+    catch_var: str
+    catch_block: Block
+
+
+@dataclass
+class ThrowStmt:
+    value: Expression
+
+
 Statement = Union[
     ExprStmt, FuncDef, IfStmt, Assign, Return, WhileStmt,
     ForStmt, IndexAssign, MemberAssign, BreakStmt, ContinueStmt,
-    ClassDef,
+    ClassDef, TryCatch, ThrowStmt,
 ]
 
 

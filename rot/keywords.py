@@ -33,4 +33,7 @@ KEYWORDS: dict[str, str] = {
     "continue": "CONTINUE",
     "class":    "CLASS",
     "this":     "THIS",
+    "try":      "TRY",
+    "catch":    "CATCH",
+    "throw":    "THROW",
 }

@@ -2,6 +2,18 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.7.0] - 2026-05-26
+
+### Added
+- **`try { ... } catch (e) { ... }`**: error handling. New `TryCatch(try_block, catch_var, catch_block)` AST node.
+- **`throw expr`**: raise any value (string, dict, instance — whatever). New `ThrowStmt(value)` AST node.
+- New `_ThrowSignal(BaseException)` carries user-thrown values up to the nearest `try`.
+- `catch` clause binds the caught value to the named variable. Catches:
+  - `throw`-raised values directly.
+  - Python `Exception` subclasses (`InterpreterError`, `ZeroDivisionError`, etc.) — exposed as their `str(e)` representation.
+  - Control-flow signals (`return` / `break` / `continue`) are NOT caught — they subclass `BaseException` directly.
+- New keywords: `try`, `catch`, `throw`.
+
 ## [2.6.0] - 2026-05-26
 
 ### Added

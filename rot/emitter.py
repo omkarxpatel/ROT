@@ -73,6 +73,13 @@ class Emitter:
                 self._write(f"def {name}({params}):")
                 self._emit_block(method.body)
             self.depth -= 1
+        elif isinstance(stmt, ast.TryCatch):
+            self._write("try:")
+            self._emit_block(stmt.try_block)
+            self._write(f"except Exception as {stmt.catch_var}:")
+            self._emit_block(stmt.catch_block)
+        elif isinstance(stmt, ast.ThrowStmt):
+            self._write(f"raise Exception({self._expr(stmt.value)})")
         elif isinstance(stmt, ast.Return):
             if stmt.value is None:
                 self._write("return")

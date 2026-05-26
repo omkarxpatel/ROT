@@ -483,6 +483,82 @@ def test_class_fields_are_independent_per_instance():
     assert _run(src) == "first\nsecond\n"
 
 
+def test_throw_caught_by_try():
+    src = (
+        'try {\n'
+        '    throw "oops"\n'
+        '} catch (e) {\n'
+        '    coutln("caught: " + e)\n'
+        '}'
+    )
+    assert _run(src) == "caught: oops\n"
+
+
+def test_runtime_error_caught():
+    src = (
+        'try {\n'
+        '    x = 1 / 0\n'
+        '} catch (e) {\n'
+        '    coutln("got error")\n'
+        '}'
+    )
+    assert _run(src) == "got error\n"
+
+
+def test_undefined_name_caught():
+    src = (
+        'try {\n'
+        '    coutln(nonexistent)\n'
+        '} catch (e) {\n'
+        '    coutln("undefined caught")\n'
+        '}'
+    )
+    assert _run(src) == "undefined caught\n"
+
+
+def test_throw_with_dict_value():
+    src = (
+        'try {\n'
+        '    throw {"code": 42 | "msg": "boom"}\n'
+        '} catch (e) {\n'
+        '    coutln(e["code"])\n'
+        '    coutln(e["msg"])\n'
+        '}'
+    )
+    assert _run(src) == "42\nboom\n"
+
+
+def test_uncaught_throw_propagates():
+    src = 'throw "untouched"'
+    # Without an enclosing try, _ThrowSignal escapes execute() — Python
+    # surfaces it as a BaseException.
+    with pytest.raises(BaseException):
+        _run(src)
+
+
+def test_try_block_runs_to_completion_on_success():
+    src = (
+        'try {\n'
+        '    coutln("ok")\n'
+        '} catch (e) {\n'
+        '    coutln("should not print")\n'
+        '}'
+    )
+    assert _run(src) == "ok\n"
+
+
+def test_throw_in_function_caught_by_caller():
+    src = (
+        'funct bad() { throw "from inside" }\n'
+        'try {\n'
+        '    bad()\n'
+        '} catch (e) {\n'
+        '    coutln(e)\n'
+        '}'
+    )
+    assert _run(src) == "from inside\n"
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'

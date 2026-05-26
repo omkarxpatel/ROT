@@ -37,6 +37,14 @@ class _ContinueSignal(BaseException):
     pass
 
 
+class _ThrowSignal(BaseException):
+    """User-raised exception value (via the `throw` statement). Caught by
+    `try { ... } catch (e) { ... }`."""
+
+    def __init__(self, value: "Any") -> None:
+        self.value = value
+
+
 def _plus(a: Any, b: Any) -> Any:
     """`+` with string coercion: if either side is a string, both become
     strings and concatenate. Otherwise, regular numeric addition."""
@@ -268,6 +276,22 @@ class Interpreter:
             raise _BreakSignal()
         if isinstance(stmt, ast.ContinueStmt):
             raise _ContinueSignal()
+        if isinstance(stmt, ast.ThrowStmt):
+            value = self._evaluate(stmt.value)
+            raise _ThrowSignal(value)
+        if isinstance(stmt, ast.TryCatch):
+            try:
+                self._execute_block(stmt.try_block)
+            except _ThrowSignal as signal:
+                self.env.set(stmt.catch_var, signal.value)
+                self._execute_block(stmt.catch_block)
+            except Exception as e:
+                # Captures InterpreterError, ZeroDivisionError, KeyError, etc.
+                # Control-flow signals (_Return / _Break / _Continue / _Throw)
+                # subclass BaseException, so they aren't caught here.
+                self.env.set(stmt.catch_var, str(e))
+                self._execute_block(stmt.catch_block)
+            return
         if isinstance(stmt, ast.IndexAssign):
             target = self._evaluate(stmt.target)
             index = self._evaluate(stmt.index)

@@ -139,6 +139,10 @@ class Parser:
             return ast.ContinueStmt()
         if tok.kind == "CLASS":
             return self._parse_class_def()
+        if tok.kind == "TRY":
+            return self._parse_try_catch()
+        if tok.kind == "THROW":
+            return self._parse_throw()
         # Otherwise: parse as expression, then check what follows.
         # `=` or compound (+=, -=, ...) → convert to assign/index-assign.
         expr = self._parse_expression()
@@ -183,6 +187,23 @@ class Parser:
         iter_expr = self._parse_expression()
         body = self._parse_block()
         return ast.ForStmt(var=var_tok.lexeme, iter=iter_expr, body=body)
+
+    def _parse_try_catch(self) -> ast.TryCatch:
+        self._consume("TRY")
+        try_block = self._parse_block()
+        self._consume("CATCH")
+        self._consume("L_PAREN")
+        catch_var = self._consume("IDENT").lexeme
+        self._consume("R_PAREN")
+        catch_block = self._parse_block()
+        return ast.TryCatch(
+            try_block=try_block, catch_var=catch_var, catch_block=catch_block
+        )
+
+    def _parse_throw(self) -> ast.ThrowStmt:
+        self._consume("THROW")
+        value = self._parse_expression()
+        return ast.ThrowStmt(value=value)
 
     def _parse_class_def(self) -> ast.ClassDef:
         self._consume("CLASS")
