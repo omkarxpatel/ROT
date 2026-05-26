@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-05-26
+
+### Added
+- GitHub Actions workflow `.github/workflows/tests.yml` running `pytest tests/ -v` on every push to main and every pull request, across Python 3.9 / 3.10 / 3.11 / 3.12.
+
 ## [1.4.3] - 2026-05-26
 
 ### Added
