@@ -5,7 +5,7 @@
 [![python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 [![changelog](https://img.shields.io/badge/changelog-md-lightgrey)](CHANGELOG.md)
 
-**R**eflexive **O**perational **T**ransducer — a small custom programming language built as a learning project for understanding how languages are designed and implemented. The current version is a Python-based transpiler — `.rot` source is tokenized, parsed against a keyword table, transformed into equivalent Python, and executed via `exec()`. Future versions replace `exec()` with a real interpreter, then a bytecode VM, then native codegen (see "Roadmap" below).
+**R**ecursive-descent **O**ptimizing **T**ranspiler — a small custom programming language built as a learning project for understanding how languages are designed and implemented. The current version is a Python-based transpiler — `.rot` source is tokenized, parsed against a keyword table, transformed into equivalent Python, and executed via `exec()`. Future versions replace `exec()` with a real interpreter, then a bytecode VM, then native codegen (see "Roadmap" below).
 
 See [`rot/__init__.py`](rot/__init__.py) for the current version and [`CHANGELOG.md`](CHANGELOG.md) for release history.
 

@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.4] - 2026-05-26
+
+### Changed
+- README backronym swapped: `rot` now stands for **Recursive-descent Optimizing Transpiler**. Grounded in the actual recursive-descent parser shipped in v1.6.0; "optimizing" remains aspirational.
+
 ## [1.6.3] - 2026-05-26
 
 ### Added
