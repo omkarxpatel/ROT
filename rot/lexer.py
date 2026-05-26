@@ -43,7 +43,7 @@ class Lexer:
                 continue
 
             lexeme = match.group(0)
-            resolved_kind = kind if kind is not None else KEYWORDS.get(lexeme, "STRING")
+            resolved_kind = kind if kind is not None else KEYWORDS.get(lexeme, "IDENT")
 
             token = Token(lexeme, resolved_kind, self.line, self.col)
             self.tokens.append(token)

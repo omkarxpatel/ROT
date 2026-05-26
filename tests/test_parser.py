@@ -12,7 +12,7 @@ def test_cout_inserts_end_kwarg_for_no_newline():
         ("cout", "PRINT"),
         ("(", "L_PAREN"),
         ('"', "QUOTE"),
-        ("hi", "STRING"),
+        ("hi", "IDENT"),
         ('"', "QUOTE"),
         (")", "R_PAREN"),
     )
@@ -24,7 +24,7 @@ def test_coutln_uses_default_print_newline():
         ("coutln", "PRINTLN"),
         ("(", "L_PAREN"),
         ('"', "QUOTE"),
-        ("hi", "STRING"),
+        ("hi", "IDENT"),
         ('"', "QUOTE"),
         (")", "R_PAREN"),
     )
@@ -35,11 +35,11 @@ def test_function_def_translates_to_python_def():
     result = _parse(
         ("funct", "FUNCTION"),
         (" ", "SPACE"),
-        ("hi", "STRING"),
+        ("hi", "IDENT"),
         ("(", "L_PAREN"),
-        ("x", "STRING"),
+        ("x", "IDENT"),
         ("|", "COMMA"),
-        ("y", "STRING"),
+        ("y", "IDENT"),
         (")", "R_PAREN"),
         (" ", "SPACE"),
         ("{", "L_CURLY"),
@@ -49,7 +49,7 @@ def test_function_def_translates_to_python_def():
 
 def test_unknown_token_kind_falls_through_to_lexeme():
     result = _parse(
-        ("z", "STRING"),
+        ("z", "IDENT"),
         ("=", "SETVALUE"),
         ("1", "NUMBER"),
     )

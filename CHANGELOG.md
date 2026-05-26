@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] - 2026-05-26
+
+### Changed
+- Renamed the lexer's `[a-z]+` fallback token kind from `STRING` to `IDENT`. The old name was a vestige from v1.0.0 and conflicted with the natural meaning of "string literal" (which is what `"hello"` will be once Phase 1 of v2 adds proper string-literal tokenization). Tests and ARCHITECTURE.md updated.
+
 ## [1.5.0] - 2026-05-26
 
 ### Added

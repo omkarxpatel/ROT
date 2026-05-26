@@ -106,7 +106,7 @@ PY_EQUIVALENT = {           # token kind → Python source for the parser
 }
 ```
 
-When the lexer matches `[a-z]+` (kind `None`), it looks the matched lexeme up in `KEYWORDS`. If found → that's the kind (`cout` → `PRINT`). If not found → `STRING` (legacy name for "generic identifier").
+When the lexer matches `[a-z]+` (kind `None`), it looks the matched lexeme up in `KEYWORDS`. If found → that's the kind (`cout` → `PRINT`). If not found → `IDENT`.
 
 Order matters in `TOKEN_PATTERNS`. `//[^\n]*` is tried **before** `/`, so a comment is matched as one COMMENT token instead of two DIVISION tokens.
 
@@ -118,7 +118,7 @@ position    kind        lexeme
   0         PRINT       'cout'
   4         L_PAREN     '('
   5         QUOTE       '"'
-  6         STRING      'hi'
+  6         IDENT       'hi'
   8         QUOTE       '"'
   9         R_PAREN     ')'
 ```
@@ -212,7 +212,7 @@ $ python -m rot --version                           # print version
 - **Identifiers are lowercase only.** Uppercase input raises a `LexerError`. By design — keywords are lowercase, so identifiers are too.
 - **`|` is the parameter separator** (not `,`). Quirky on purpose. `funct hi(x | y)` → `def hi(x,y)` in Python.
 - **`{ }` blocks but indentation in output.** `{` → `:` and `}` → `""`. The user's indentation in the `.rot` source carries through to Python.
-- **Strings aren't single tokens.** `"hi"` is three tokens: `QUOTE`, `STRING`, `QUOTE`. They get concatenated back together by the parser.
+- **Strings aren't single tokens.** `"hi"` is three tokens: `QUOTE`, `IDENT`, `QUOTE`. They get concatenated back together by the parser.
 - **`==` works by accident.** Two `=` tokens emit `=` each, so the output has `==`. There's no `EqualEqual` token.
 
 ---

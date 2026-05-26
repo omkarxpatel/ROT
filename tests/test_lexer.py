@@ -13,7 +13,7 @@ def test_cout_call_tokenization():
         ("cout", "PRINT"),
         ("(", "L_PAREN"),
         ('"', "QUOTE"),
-        ("hi", "STRING"),
+        ("hi", "IDENT"),
         ('"', "QUOTE"),
         (")", "R_PAREN"),
     ]
@@ -26,7 +26,7 @@ def test_keyword_vs_identifier_classification():
     assert _lex("if")[0] == ("if", "IF")
     assert _lex("else")[0] == ("else", "ELSE")
     assert _lex("elseif")[0] == ("elseif", "ELIF")
-    assert _lex("hi")[0] == ("hi", "STRING")
+    assert _lex("hi")[0] == ("hi", "IDENT")
 
 
 def test_position_tracking_across_newlines():
