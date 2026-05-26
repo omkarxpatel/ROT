@@ -712,6 +712,70 @@ def test_str_builtin_uses_rot_style():
     assert _run("coutln(str(42))") == "42\n"
 
 
+def test_closure_can_mutate_enclosing_variable():
+    """The headline v2.10.0 feature — counter closures now work."""
+    src = (
+        'funct make_counter() {\n'
+        '    count = 0\n'
+        '    funct inc() { count += 1 }\n'
+        '    inc()\n'
+        '    inc()\n'
+        '    inc()\n'
+        '    coutln(count)\n'
+        '}\n'
+        'make_counter()'
+    )
+    assert _run(src) == "3\n"
+
+
+def test_assignment_in_function_mutates_global():
+    src = (
+        'x = 10\n'
+        'funct change() { x = 99 }\n'
+        'change()\n'
+        'coutln(x)'
+    )
+    assert _run(src) == "99\n"
+
+
+def test_function_param_shadows_outer():
+    src = (
+        'x = 10\n'
+        'funct foo(x) { x = 99 }\n'   # x is a param, set_local — local scope
+        'foo(5)\n'
+        'coutln(x)'                     # global x unchanged
+    )
+    assert _run(src) == "10\n"
+
+
+def test_nested_closure_mutates_outer_scope():
+    src = (
+        'funct outer() {\n'
+        '    x = 1\n'
+        '    funct middle() {\n'
+        '        funct inner() { x = 99 }\n'
+        '        inner()\n'
+        '    }\n'
+        '    middle()\n'
+        '    coutln(x)\n'
+        '}\n'
+        'outer()'
+    )
+    assert _run(src) == "99\n"
+
+
+def test_for_loop_var_is_local():
+    # Loop variable shouldn't leak as a global if `i` isn't already declared.
+    src = (
+        'for i in range(3) {\n'
+        '    nothing = i\n'
+        '}\n'
+        # After the loop, `i` is still bound at this scope (last iter value).
+        'coutln(i)'
+    )
+    assert _run(src) == "2\n"
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'

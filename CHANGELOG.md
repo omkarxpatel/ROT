@@ -2,6 +2,14 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.10.0] - 2026-05-26
+
+### Changed
+- **`Environment.set` now walks the parent chain.** If `name` is already bound anywhere up the chain, that binding is mutated. Otherwise a new binding is created in the current scope.
+- This makes the **counter-closure idiom work** — `count += 1` inside an inner function now mutates the `count` declared in an enclosing function.
+- New `Environment.set_local(name, value)` bypasses the chain walk for cases that must always bind locally: function parameters, `this` inside method calls, `for`-loop iteration variable.
+- Trade-off: deliberately shadowing an outer variable by re-using its name no longer works (assignment finds the outer one). Use a different name to shadow, or rely on parameter binding (which is local).
+
 ## [2.9.0] - 2026-05-26
 
 ### Added

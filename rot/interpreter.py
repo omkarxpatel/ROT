@@ -73,7 +73,18 @@ _BINARY_OPS: dict[str, Callable[[Any, Any], Any]] = {
 
 
 class Environment:
-    """A lexically-scoped variable binding map."""
+    """A lexically-scoped variable binding map.
+
+    `set(name, value)` walks the parent chain — if `name` is already
+    bound anywhere up the chain, the existing binding is mutated.
+    Otherwise a new binding is created in the current scope.
+
+    This means closures can mutate enclosing-scope variables (the
+    common `counter` idiom works), at the cost of being unable to
+    deliberately shadow an outer variable by re-using its name. Use a
+    different name to shadow, or a function parameter (params are
+    bound directly via `set_local`, bypassing the chain walk).
+    """
 
     def __init__(self, parent: "Environment | None" = None) -> None:
         self.values: dict[str, Any] = {}
@@ -87,6 +98,19 @@ class Environment:
         raise InterpreterError(f"name {name!r} is not defined")
 
     def set(self, name: str, value: Any) -> None:
+        env: "Environment | None" = self
+        while env is not None:
+            if name in env.values:
+                env.values[name] = value
+                return
+            env = env.parent
+        # Not found anywhere — declare in current scope.
+        self.values[name] = value
+
+    def set_local(self, name: str, value: Any) -> None:
+        """Bind in THIS scope, never walking the chain. Used for function
+        parameters and for `this` in methods — these must always be local
+        even if the same name exists in an outer scope."""
         self.values[name] = value
 
 
@@ -105,7 +129,7 @@ class RotFunction:
             )
         local = Environment(parent=self.closure)
         for param, value in zip(self.decl.params, args):
-            local.set(param, value)
+            local.set_local(param, value)
 
         prior = interpreter.env
         interpreter.env = local
@@ -242,7 +266,8 @@ class Interpreter:
         if isinstance(stmt, ast.ForStmt):
             iterable = self._evaluate(stmt.iter)
             for item in iterable:
-                self.env.set(stmt.var, item)
+                # for-loop var binds at the current scope, not walking up
+                self.env.set_local(stmt.var, item)
                 try:
                     self._execute_block(stmt.body)
                 except _ContinueSignal:
