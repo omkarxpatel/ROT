@@ -559,6 +559,110 @@ def test_throw_in_function_caught_by_caller():
     assert _run(src) == "from inside\n"
 
 
+def test_math_builtins():
+    assert _run("coutln(abs(-5))") == "5\n"
+    assert _run("coutln(min(3 | 1 | 2))") == "1\n"
+    assert _run("coutln(max(3 | 1 | 2))") == "3\n"
+    assert _run("coutln(min([3 | 1 | 2]))") == "1\n"
+    assert _run("coutln(pow(2 | 10))") == "1024\n"
+    assert _run("coutln(sqrt(16))") == "4.0\n"
+    assert _run("coutln(floor(3.9))") == "3\n"
+    assert _run("coutln(ceil(3.1))") == "4\n"
+    assert _run("coutln(round(2.7))") == "3\n"
+
+
+def test_math_constants():
+    # pi and e are bound as numeric constants.
+    assert _run("coutln(round(pi | 2))") == "3.14\n"
+    assert _run("coutln(round(e | 2))") == "2.72\n"
+
+
+def test_type_builtin():
+    assert _run("coutln(type(42))") == "int\n"
+    assert _run("coutln(type(3.14))") == "float\n"
+    assert _run('coutln(type("hi"))') == "string\n"
+    assert _run("coutln(type([1 | 2]))") == "list\n"
+    assert _run('coutln(type({"a": 1}))') == "dict\n"
+    assert _run("coutln(type(true))") == "bool\n"
+    assert _run("coutln(type(null))") == "null\n"
+
+
+def test_type_of_class_instance_is_class_name():
+    src = (
+        'class Foo {}\n'
+        'f = Foo()\n'
+        'coutln(type(f))'
+    )
+    assert _run(src) == "Foo\n"
+
+
+def test_is_x_predicates():
+    assert _run("coutln(is_num(42))") == "true\n"
+    assert _run("coutln(is_num(3.14))") == "true\n"
+    assert _run('coutln(is_num("hi"))') == "false\n"
+    assert _run('coutln(is_str("hi"))') == "true\n"
+    assert _run("coutln(is_list([1]))") == "true\n"
+    assert _run('coutln(is_dict({"a": 1}))') == "true\n"
+    assert _run("coutln(is_bool(true))") == "true\n"
+    assert _run("coutln(is_null(null))") == "true\n"
+    assert _run("coutln(is_null(0))") == "false\n"
+
+
+def test_input_builtin(monkeypatch):
+    monkeypatch.setattr("builtins.input", lambda prompt="": "alice")
+    src = 'name = input("name? ")\ncoutln("hi " + name)'
+    assert _run(src) == "hi alice\n"
+
+
+def test_file_io_round_trip(tmp_path):
+    target = tmp_path / "scratch.txt"
+    src = (
+        f'write_file("{target}" | "hello\\nfile")\n'
+        f'content = read_file("{target}")\n'
+        f'coutln(content)'
+    )
+    # The content contains a literal newline after decoding, so output
+    # is "hello\nfile\n" (with trailing newline from coutln).
+    assert _run(src) == "hello\nfile\n"
+
+
+def test_rand_int_returns_value_in_range():
+    src = (
+        'x = rand_int(1 | 10)\n'
+        'coutln(x >= 1 and x <= 10)'
+    )
+    assert _run(src) == "true\n"
+
+
+def test_rand_float_returns_0_to_1():
+    src = (
+        'x = rand_float()\n'
+        'coutln(x >= 0 and x < 1)'
+    )
+    assert _run(src) == "true\n"
+
+
+def test_assert_passes_silently_on_true():
+    assert _run("assert(true)\ncoutln(\"ok\")") == "ok\n"
+
+
+def test_assert_throws_on_false():
+    with pytest.raises(InterpreterError):
+        _run('assert(false | "boom")')
+
+
+def test_assert_caught_in_try_block():
+    src = (
+        'try {\n'
+        '    assert(1 == 2 | "math broke")\n'
+        '} catch (e) {\n'
+        '    coutln(e)\n'
+        '}'
+    )
+    out = _run(src)
+    assert "math broke" in out
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'

@@ -2,6 +2,20 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.8.0] - 2026-05-26
+
+### Added
+- **`rot/builtins.py`** — dedicated module hosting the standard library. Registry `BUILTINS: dict[str, Any]` is iterated at `Interpreter.__init__` to bind everything into the global env.
+- **~25 new built-in functions and constants**:
+  - I/O: `input(prompt)`, `read_file(path)`, `write_file(path, content)`.
+  - Math: `abs`, `min`, `max`, `pow`, `sqrt`, `floor`, `ceil`, `round`, plus constants `pi`, `e`. `min`/`max` accept either a single iterable or multiple args.
+  - Type introspection: `type(x)` (returns rot-style names: `"int"`, `"string"`, `"list"`, the class name for instances, etc.), `is_num`, `is_str`, `is_list`, `is_dict`, `is_bool`, `is_null`, `is_func`.
+  - Random: `rand_int(a, b)`, `rand_float()`.
+  - Assertions: `assert(cond)` / `assert(cond, message)` — raises `InterpreterError` on false (catchable in `try`/`catch`).
+
+### Changed
+- Moved existing built-ins (`str`, `num`, `len`, `range`, `append`, `pop`) from `rot/interpreter.py` into `rot/builtins.py` for clean separation.
+
 ## [2.7.0] - 2026-05-26
 
 ### Added

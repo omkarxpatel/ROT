@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from . import ast
+from .builtins import BUILTINS
 from .errors import InterpreterError
 
 
@@ -76,19 +77,6 @@ _BINARY_OPS: dict[str, Callable[[Any, Any], Any]] = {
     "==": lambda a, b: a == b,
     "!=": lambda a, b: a != b,
 }
-
-
-def _num(x: Any) -> Any:
-    """Built-in `num()`: convert to int if integer-shaped, else float."""
-    if isinstance(x, bool):
-        return int(x)
-    if isinstance(x, (int, float)):
-        return x
-    s = str(x)
-    try:
-        return int(s)
-    except ValueError:
-        return float(s)
 
 
 class Environment:
@@ -209,16 +197,13 @@ class BoundMethod:
 class Interpreter:
     def __init__(self) -> None:
         self.env = Environment()
+        # `cout` / `coutln` stay defined locally because they use the
+        # interpreter-internal _stringify (matters for rot-style null/true/false).
         self.env.set("cout", _builtin_cout)
         self.env.set("coutln", _builtin_coutln)
-        # Conversion + introspection built-ins.
-        self.env.set("str", str)
-        self.env.set("num", _num)
-        self.env.set("len", len)
-        # Collection built-ins.
-        self.env.set("range", _builtin_range)
-        self.env.set("append", _builtin_append)
-        self.env.set("pop", _builtin_pop)
+        # Everything else lives in rot/builtins.py.
+        for name, fn in BUILTINS.items():
+            self.env.set(name, fn)
 
     def execute(self, program: ast.Program) -> None:
         for stmt in program.body:
@@ -429,30 +414,3 @@ def _builtin_cout(*args: Any) -> None:
 
 def _builtin_coutln(*args: Any) -> None:
     print(*(_stringify(a) for a in args), sep="")
-
-
-def _builtin_range(*args: Any) -> list:
-    """Built-in `range`: `range(n)` → 0..n-1; `range(a, b)` → a..b-1;
-    `range(a, b, step)` → with step. Returns a real list so `for` can
-    iterate without iterator-protocol complexity."""
-    if len(args) == 1:
-        return list(range(int(args[0])))
-    if len(args) == 2:
-        return list(range(int(args[0]), int(args[1])))
-    if len(args) == 3:
-        return list(range(int(args[0]), int(args[1]), int(args[2])))
-    raise InterpreterError(f"range() takes 1-3 args, got {len(args)}")
-
-
-def _builtin_append(lst: list, item: Any) -> None:
-    if not isinstance(lst, list):
-        raise InterpreterError(f"append: expected list, got {type(lst).__name__}")
-    lst.append(item)
-
-
-def _builtin_pop(lst: list, *rest: Any) -> Any:
-    if not isinstance(lst, list):
-        raise InterpreterError(f"pop: expected list, got {type(lst).__name__}")
-    if rest:
-        return lst.pop(int(rest[0]))
-    return lst.pop()
