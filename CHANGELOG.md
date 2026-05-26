@@ -2,6 +2,19 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-05-26
+
+### Added
+- **Member access**: `obj.attr` and `obj.method(args)`. New `MemberAccess(target, member)` AST node. Interpreter uses Python `getattr` — meaning every string/list/dict method ships for free (`s.upper()`, `xs.sort()`, `d.keys()`, `"a,b,c".split(",")`).
+- **Member assignment**: `obj.field = value` and `obj.field += 1`. New `MemberAssign(target, member, value, op)` AST node.
+- **Dictionaries**: `{key: value | key2: value2}` literal (`|` separator, `:` for key/value). Empty dict `{}` works. New `DictLit(pairs)` AST node. Indexed with `d[key]`, assigned with `d[key] = value`. Iteration yields keys (matches Python semantics).
+- New tokens: `DOT` (`.`), `COLON` (`:`).
+
+### Changed
+- `_parse_atom_or_call` chains member/index/call in a single loop so `arr[0].foo().bar` works.
+- `_make_assign` knows about `MemberAccess` targets — `obj.x = v` desugars to `MemberAssign`.
+- `_EXPR_STARTS` includes `L_CURLY` (for dict literals in `return` position etc.). Block parsing is unambiguous because `_parse_block` is only invoked from statement contexts (`funct`, `if`, etc.); a `{` in expression position is always a dict.
+
 ## [2.4.0] - 2026-05-26
 
 ### Added

@@ -27,6 +27,8 @@ _SINGLE_CHAR_TOKENS: dict[str, str] = {
     "]": "R_BRACKET",
     "|": "COMMA",
     "'": "SINGLE_QUOTE",
+    ".": "DOT",
+    ":": "COLON",
 }
 
 

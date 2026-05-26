@@ -342,6 +342,73 @@ def test_string_iteration():
     assert _run(src) == "a\nb\nc\n"
 
 
+def test_string_method_via_member_access():
+    # `.upper()` is Python's str method, exposed for free via member access.
+    assert _run('coutln("hello".upper())') == "HELLO\n"
+
+
+def test_list_method_via_member_access():
+    src = (
+        'xs = [3 | 1 | 2]\n'
+        'xs.sort()\n'
+        'coutln(xs[0])'
+    )
+    assert _run(src) == "1\n"
+
+
+def test_string_split():
+    src = (
+        'parts = "a,b,c".split(",")\n'
+        'coutln(parts[0])\n'
+        'coutln(parts[2])'
+    )
+    assert _run(src) == "a\nc\n"
+
+
+def test_empty_dict_literal():
+    src = "d = {}\ncoutln(len(d))"
+    assert _run(src) == "0\n"
+
+
+def test_dict_literal_and_access():
+    src = (
+        'd = {"name": "alice" | "age": 30}\n'
+        'coutln(d["name"])\n'
+        'coutln(d["age"])'
+    )
+    assert _run(src) == "alice\n30\n"
+
+
+def test_dict_assignment_creates_key():
+    src = (
+        'd = {}\n'
+        'd["score"] = 100\n'
+        'coutln(d["score"])'
+    )
+    assert _run(src) == "100\n"
+
+
+def test_dict_iteration_yields_keys():
+    src = (
+        'd = {"a": 1 | "b": 2}\n'
+        'count = 0\n'
+        'for k in d {\n'
+        '    count += 1\n'
+        '}\n'
+        'coutln(count)'
+    )
+    assert _run(src) == "2\n"
+
+
+def test_dict_methods_via_member_access():
+    # Python's dict.keys() returns a view; len works on it.
+    src = (
+        'd = {"a": 1 | "b": 2 | "c": 3}\n'
+        'coutln(len(d.keys()))'
+    )
+    assert _run(src) == "3\n"
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'

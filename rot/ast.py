@@ -71,9 +71,20 @@ class Index:
     index: "Expression"
 
 
+@dataclass
+class MemberAccess:
+    target: "Expression"
+    member: str
+
+
+@dataclass
+class DictLit:
+    pairs: list[tuple["Expression", "Expression"]] = field(default_factory=list)
+
+
 Expression = Union[
     Identifier, NumberLit, StringLit, BoolLit, NullLit, Call, BinaryOp, UnaryOp,
-    ListLit, Index,
+    ListLit, Index, MemberAccess, DictLit,
 ]
 
 
@@ -143,6 +154,14 @@ class IndexAssign:
 
 
 @dataclass
+class MemberAssign:
+    target: Expression
+    member: str
+    value: Expression
+    op: str = "="
+
+
+@dataclass
 class BreakStmt:
     pass
 
@@ -154,7 +173,7 @@ class ContinueStmt:
 
 Statement = Union[
     ExprStmt, FuncDef, IfStmt, Assign, Return, WhileStmt,
-    ForStmt, IndexAssign, BreakStmt, ContinueStmt,
+    ForStmt, IndexAssign, MemberAssign, BreakStmt, ContinueStmt,
 ]
 
 

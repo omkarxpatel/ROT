@@ -207,6 +207,24 @@ class Interpreter:
                     raise InterpreterError(f"unknown compound op {stmt.op!r}")
                 target[index] = op_fn(target[index], new_value)
             return
+        if isinstance(stmt, ast.MemberAssign):
+            target = self._evaluate(stmt.target)
+            new_value = self._evaluate(stmt.value)
+            if stmt.op == "=":
+                try:
+                    setattr(target, stmt.member, new_value)
+                except (AttributeError, TypeError) as e:
+                    raise InterpreterError(f"cannot set member {stmt.member!r}: {e}")
+            else:
+                op_fn = _BINARY_OPS.get(stmt.op)
+                if op_fn is None:
+                    raise InterpreterError(f"unknown compound op {stmt.op!r}")
+                current = getattr(target, stmt.member)
+                try:
+                    setattr(target, stmt.member, op_fn(current, new_value))
+                except (AttributeError, TypeError) as e:
+                    raise InterpreterError(f"cannot set member {stmt.member!r}: {e}")
+            return
         raise InterpreterError(f"cannot execute statement {type(stmt).__name__}")
 
     def _execute_if(self, stmt: ast.IfStmt) -> None:
@@ -241,6 +259,8 @@ class Interpreter:
             return self._evaluate_unary(expr)
         if isinstance(expr, ast.ListLit):
             return [self._evaluate(e) for e in expr.elements]
+        if isinstance(expr, ast.DictLit):
+            return {self._evaluate(k): self._evaluate(v) for k, v in expr.pairs}
         if isinstance(expr, ast.Index):
             target = self._evaluate(expr.target)
             index = self._evaluate(expr.index)
@@ -248,6 +268,14 @@ class Interpreter:
                 return target[index]
             except (IndexError, KeyError, TypeError) as e:
                 raise InterpreterError(f"index error: {e}")
+        if isinstance(expr, ast.MemberAccess):
+            target = self._evaluate(expr.target)
+            try:
+                return getattr(target, expr.member)
+            except AttributeError:
+                raise InterpreterError(
+                    f"no member {expr.member!r} on {type(target).__name__}"
+                )
         if isinstance(expr, ast.BinaryOp):
             # `and` / `or` short-circuit, so they can't go through the
             # straight-eval table — operands shouldn't always be evaluated.

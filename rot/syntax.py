@@ -63,7 +63,7 @@ _INFIX_PRECEDENCE: dict[str, int] = {
 # Token kinds that can start an expression (used to detect bare `return`).
 _EXPR_STARTS = {
     "IDENT", "PRINT", "PRINTLN", "NUMBER", "STRING_LIT",
-    "TRUE", "FALSE", "NULL", "L_PAREN", "L_BRACKET",
+    "TRUE", "FALSE", "NULL", "L_PAREN", "L_BRACKET", "L_CURLY",
     "SUBTRACTION", "NOT",
 }
 
@@ -156,6 +156,10 @@ class Parser:
         if isinstance(target, ast.Index):
             return ast.IndexAssign(
                 target=target.target, index=target.index, value=value, op=op
+            )
+        if isinstance(target, ast.MemberAccess):
+            return ast.MemberAssign(
+                target=target.target, member=target.member, value=value, op=op
             )
         raise ParserError(
             f"invalid assignment target: {type(target).__name__}"
@@ -282,9 +286,33 @@ class Parser:
                 atom = self._parse_call_tail(atom)
             elif self._check("L_BRACKET"):
                 atom = self._parse_index_tail(atom)
+            elif self._check("DOT"):
+                atom = self._parse_member_tail(atom)
             else:
                 break
         return atom
+
+    def _parse_member_tail(self, target: ast.Expression) -> ast.MemberAccess:
+        self._consume("DOT")
+        name_tok = self._consume("IDENT")
+        return ast.MemberAccess(target=target, member=name_tok.lexeme)
+
+    def _parse_dict_literal(self) -> ast.DictLit:
+        self._consume("L_CURLY")
+        pairs: list[tuple[ast.Expression, ast.Expression]] = []
+        if not self._check("R_CURLY"):
+            pairs.append(self._parse_dict_pair())
+            while self._check("COMMA"):
+                self._advance()
+                pairs.append(self._parse_dict_pair())
+        self._consume("R_CURLY")
+        return ast.DictLit(pairs=pairs)
+
+    def _parse_dict_pair(self) -> tuple[ast.Expression, ast.Expression]:
+        key = self._parse_expression()
+        self._consume("COLON")
+        value = self._parse_expression()
+        return (key, value)
 
     def _parse_call_tail(self, callee: ast.Expression) -> ast.Call:
         self._consume("L_PAREN")
@@ -326,6 +354,8 @@ class Parser:
             return expr
         if tok.kind == "L_BRACKET":
             return self._parse_list_literal()
+        if tok.kind == "L_CURLY":
+            return self._parse_dict_literal()
         if tok.kind in _NAME_LIKE:
             self._advance()
             return ast.Identifier(name=tok.lexeme)

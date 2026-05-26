@@ -55,6 +55,13 @@ class Emitter:
             self._write("break")
         elif isinstance(stmt, ast.ContinueStmt):
             self._write("continue")
+        elif isinstance(stmt, ast.MemberAssign):
+            target = self._expr(stmt.target)
+            value = self._expr(stmt.value)
+            if stmt.op == "=":
+                self._write(f"{target}.{stmt.member} = {value}")
+            else:
+                self._write(f"{target}.{stmt.member} {stmt.op}= {value}")
         elif isinstance(stmt, ast.Return):
             if stmt.value is None:
                 self._write("return")
@@ -108,6 +115,11 @@ class Emitter:
             return f"[{inner}]"
         if isinstance(expr, ast.Index):
             return f"{self._expr_in_op(expr.target)}[{self._expr(expr.index)}]"
+        if isinstance(expr, ast.MemberAccess):
+            return f"{self._expr_in_op(expr.target)}.{expr.member}"
+        if isinstance(expr, ast.DictLit):
+            inner = ", ".join(f"{self._expr(k)}: {self._expr(v)}" for k, v in expr.pairs)
+            return f"{{{inner}}}"
         raise NotImplementedError(f"emit: expression {type(expr).__name__}")
 
     def _emit_call(self, call: ast.Call) -> str:
