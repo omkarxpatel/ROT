@@ -16,7 +16,11 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="rot",
         description="ROT language — runs .rot files directly via the tree-walking interpreter.",
     )
-    parser.add_argument("file", help=".rot source file to run")
+    parser.add_argument(
+        "file",
+        nargs="?",
+        help=".rot source file to run (omit to start an interactive REPL)",
+    )
     parser.add_argument(
         "--version",
         action="version",
@@ -32,12 +36,23 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="parse only — validate the program without interpreting it",
     )
+    parser.add_argument(
+        "--repl",
+        action="store_true",
+        help="start the interactive REPL (equivalent to invoking with no file)",
+    )
     return parser
 
 
 def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
+
+    # No file given (or --repl) → drop into REPL.
+    if args.repl or args.file is None:
+        from .repl import start_repl
+        start_repl()
+        return
 
     source_path = pathlib.Path(args.file)
     if source_path.suffix != ".rot":

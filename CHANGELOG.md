@@ -2,6 +2,18 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.12.0] - 2026-05-26
+
+### Added
+- **REPL** in `rot/repl.py`. Invocation: `python -m rot` (no file) or `python -m rot --repl`.
+- Features:
+  - Bare expressions echo their non-null value (Python-REPL style). Statements execute silently.
+  - **Multi-line input**: heuristic counts `{ [ (` outside strings; if unbalanced, prompt continues with `...` until balanced.
+  - **Persistent state**: a single `Interpreter` lives for the whole session. Variables and functions persist across inputs.
+  - **Errors don't kill the session**: caught and printed, prompt continues.
+  - **readline integration** (Unix): arrow keys, line editing, history work out of the box.
+- CLI: `file` argument is now optional. Omitting it (or passing `--repl`) starts the REPL.
+
 ## [2.11.0] - 2026-05-26
 
 ### Added

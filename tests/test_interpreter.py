@@ -871,6 +871,77 @@ def test_imported_class_is_usable(tmp_path):
     assert captured.getvalue() == "16\n"
 
 
+def test_repl_echoes_expression_value(monkeypatch, capsys):
+    inputs = iter(["1 + 2", "x = 5", "x * x"])
+    def mock_input(prompt=""):
+        try:
+            return next(inputs)
+        except StopIteration:
+            raise EOFError
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    start_repl()
+    out, _ = capsys.readouterr()
+    # "3" from 1+2, "25" from x*x. "x = 5" is a statement, no echo.
+    assert "3" in out
+    assert "25" in out
+
+
+def test_repl_persists_state_across_inputs(monkeypatch, capsys):
+    inputs = iter([
+        "funct double(n) { return n * 2 }",
+        "double(7)",
+    ])
+    def mock_input(prompt=""):
+        try:
+            return next(inputs)
+        except StopIteration:
+            raise EOFError
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    start_repl()
+    out, _ = capsys.readouterr()
+    assert "14" in out
+
+
+def test_repl_multiline_input(monkeypatch, capsys):
+    # Open brace on first line — REPL should keep reading until balanced.
+    inputs = iter([
+        "funct greet() {",
+        '    coutln("hello from repl")',
+        "}",
+        "greet()",
+    ])
+    def mock_input(prompt=""):
+        try:
+            return next(inputs)
+        except StopIteration:
+            raise EOFError
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    start_repl()
+    out, _ = capsys.readouterr()
+    assert "hello from repl" in out
+
+
+def test_repl_error_does_not_kill_session(monkeypatch, capsys):
+    inputs = iter([
+        "undefined_name()",          # raises InterpreterError
+        "coutln(\"still alive\")",   # should still execute
+    ])
+    def mock_input(prompt=""):
+        try:
+            return next(inputs)
+        except StopIteration:
+            raise EOFError
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    start_repl()
+    out, err = capsys.readouterr()
+    assert "still alive" in out
+    assert "undefined_name" in err or "rot error" in err
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'
