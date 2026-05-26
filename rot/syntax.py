@@ -417,6 +417,9 @@ class Parser:
             self._advance()
             # Strip surrounding quotes, then decode `\n`, `\t`, `\"`, etc.
             return ast.StringLit(value=_decode_string_escapes(tok.lexeme[1:-1]))
+        if tok.kind == "FSTRING":
+            self._advance()
+            return self._parse_fstring_content(tok.lexeme[1:-1], tok.line, tok.col)
         if tok.kind == "TRUE":
             self._advance()
             return ast.BoolLit(value=True)
@@ -447,6 +450,55 @@ class Parser:
         tok = self.tokens[self.pos]
         self.pos += 1
         return tok
+
+    def _parse_fstring_content(self, content: str, line: int, col: int) -> ast.Expression:
+        """Split f-string content into static text and `{expr}` interpolations,
+        then desugar to a chain of `+` operations (with `str(...)` wrapping the
+        expressions). No new AST node — uses existing StringLit / Call / BinaryOp.
+        """
+        from .lexer import Lexer  # local import to avoid load-time cycle
+
+        parts: list[tuple[str, "object"]] = []
+        i = 0
+        while i < len(content):
+            next_brace = content.find("{", i)
+            if next_brace == -1:
+                if i < len(content):
+                    parts.append(("static", content[i:]))
+                break
+            if next_brace > i:
+                parts.append(("static", content[i:next_brace]))
+            end_brace = content.find("}", next_brace + 1)
+            if end_brace == -1:
+                raise ParserError("unterminated `{` in f-string", line, col)
+            expr_text = content[next_brace + 1 : end_brace].strip()
+            if not expr_text:
+                raise ParserError("empty `{}` in f-string", line, col)
+            inner_tokens = Lexer().tokenize(expr_text)
+            expr = Parser(inner_tokens)._parse_expression()
+            parts.append(("expr", expr))
+            i = end_brace + 1
+
+        # Decode escapes in static segments.
+        decoded: list[tuple[str, "object"]] = []
+        for kind, value in parts:
+            if kind == "static":
+                decoded.append((kind, _decode_string_escapes(value)))  # type: ignore[arg-type]
+            else:
+                decoded.append((kind, value))
+
+        if not decoded:
+            return ast.StringLit(value="")
+
+        result: ast.Expression | None = None
+        for kind, value in decoded:
+            if kind == "static":
+                node: ast.Expression = ast.StringLit(value=value)  # type: ignore[arg-type]
+            else:
+                node = ast.Call(callee=ast.Identifier(name="str"), args=[value])  # type: ignore[list-item]
+            result = node if result is None else ast.BinaryOp(op="+", left=result, right=node)
+        assert result is not None
+        return result
 
     def _consume(self, kind: str) -> Token:
         if self._check(kind):

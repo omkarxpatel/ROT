@@ -2,6 +2,17 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.9.0] - 2026-05-26
+
+### Added
+- **F-strings** (Python-style): `f"hello, {name}"`. The lexer recognizes `f"..."` as a single `FSTRING` token; the parser splits the content into static segments and `{expr}` interpolations.
+- **No new AST node** — f-strings desugar to a chain of `+` over `StringLit` and `str(expr)` calls. Reuses existing nodes; the interpreter needs no changes.
+- Multi-interpolation, expressions inside braces (`f"{1 + 2}"`), escapes in static parts, and clear errors on unclosed/empty `{}`.
+
+### Changed
+- **`str()` builtin** now uses the rot-style stringifier (`null`/`true`/`false`). Previously was Python's `str` (which gives `None`/`True`/`False`). This makes `f"{true}"` render as `"true"` consistently.
+- `_stringify` helper moved from `rot/interpreter.py` to `rot/builtins.py` so both `cout`/`coutln` (interpreter-internal) and `str` (stdlib) can use the same definition.
+
 ## [2.8.0] - 2026-05-26
 
 ### Added

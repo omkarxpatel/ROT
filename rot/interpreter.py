@@ -46,22 +46,15 @@ class _ThrowSignal(BaseException):
         self.value = value
 
 
+from .builtins import _stringify
+
+
 def _plus(a: Any, b: Any) -> Any:
     """`+` with string coercion: if either side is a string, both become
     strings and concatenate. Otherwise, regular numeric addition."""
     if isinstance(a, str) or isinstance(b, str):
         return _stringify(a) + _stringify(b)
     return a + b
-
-
-def _stringify(x: Any) -> str:
-    """Convert a value to its rot-style string form.
-    `null` -> 'null', booleans -> 'true'/'false', numbers/strings as-is."""
-    if x is None:
-        return "null"
-    if isinstance(x, bool):
-        return "true" if x else "false"
-    return str(x)
 
 
 _BINARY_OPS: dict[str, Callable[[Any, Any], Any]] = {

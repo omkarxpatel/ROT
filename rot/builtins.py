@@ -15,6 +15,17 @@ from .errors import InterpreterError
 
 # ==== Conversion ============================================================
 
+def _stringify(x: Any) -> str:
+    """rot-style string conversion: `null` instead of `None`,
+    `true`/`false` instead of `True`/`False`. Used by `str()` and by
+    interpreter's cout/coutln to keep output consistent with source."""
+    if x is None:
+        return "null"
+    if isinstance(x, bool):
+        return "true" if x else "false"
+    return str(x)
+
+
 def _num(x: Any) -> Any:
     """Convert to int if integer-shaped, else float."""
     if isinstance(x, bool):
@@ -170,7 +181,7 @@ def _assert(cond: Any, *rest: Any) -> None:
 
 BUILTINS: dict[str, Any] = {
     # Conversions
-    "str": str,
+    "str": _stringify,
     "num": _num,
     "len": len,
     # I/O

@@ -663,6 +663,55 @@ def test_assert_caught_in_try_block():
     assert "math broke" in out
 
 
+def test_fstring_simple():
+    src = 'name = "alice"\ncoutln(f"hello, {name}!")'
+    assert _run(src) == "hello, alice!\n"
+
+
+def test_fstring_with_number():
+    src = 'x = 42\ncoutln(f"x = {x}")'
+    assert _run(src) == "x = 42\n"
+
+
+def test_fstring_with_expression():
+    src = 'coutln(f"sum = {1 + 2 * 3}")'
+    assert _run(src) == "sum = 7\n"
+
+
+def test_fstring_no_interpolation_is_just_string():
+    assert _run('coutln(f"plain text")') == "plain text\n"
+
+
+def test_fstring_multiple_interpolations():
+    src = 'a = 1\nb = 2\ncoutln(f"{a} + {b} = {a + b}")'
+    assert _run(src) == "1 + 2 = 3\n"
+
+
+def test_fstring_uses_rot_style_stringify():
+    # `true` should render as "true", not Python's "True".
+    assert _run('coutln(f"flag is {true}")') == "flag is true\n"
+    assert _run('coutln(f"empty is {null}")') == "empty is null\n"
+
+
+def test_fstring_unclosed_brace_errors():
+    from rot.errors import ParserError
+    with pytest.raises(ParserError):
+        _run('coutln(f"oops {x")')
+
+
+def test_fstring_empty_brace_errors():
+    from rot.errors import ParserError
+    with pytest.raises(ParserError):
+        _run('coutln(f"oops {}")')
+
+
+def test_str_builtin_uses_rot_style():
+    # Updated in v2.9.0 to match f-string conventions.
+    assert _run("coutln(str(true))") == "true\n"
+    assert _run("coutln(str(null))") == "null\n"
+    assert _run("coutln(str(42))") == "42\n"
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'

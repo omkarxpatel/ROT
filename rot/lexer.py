@@ -99,6 +99,8 @@ class Lexer:
             self._scan_horizontal_space(start_line, start_col)
         elif ch.isdigit():
             self._scan_number(start_line, start_col)
+        elif ch == "f" and self._peek(1) == '"':
+            self._scan_fstring(start_line, start_col)
         elif _is_identifier_start(ch):
             self._scan_identifier_or_keyword(start_line, start_col)
         elif ch == '"':
@@ -148,6 +150,22 @@ class Lexer:
         lexeme = self.source[start : self.pos]
         kind = KEYWORDS.get(lexeme, "IDENT")
         self._add(lexeme, kind, line, col)
+
+    def _scan_fstring(self, line: int, col: int) -> None:
+        self._advance()  # consume `f` prefix
+        start = self.pos  # position of opening "
+        self._advance()  # consume opening "
+        while not self._at_end() and self._peek() != '"':
+            if self._peek() == "\\":
+                self._advance()
+                if self._at_end():
+                    break
+            self._advance()
+        if self._at_end():
+            raise LexerError("unterminated f-string", line, col)
+        self._advance()  # consume closing "
+        # Lexeme is the string content with quotes — parser strips and splits.
+        self._add(self.source[start : self.pos], "FSTRING", line, col)
 
     def _scan_string_literal(self, line: int, col: int) -> None:
         start = self.pos
