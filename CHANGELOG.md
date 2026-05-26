@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.1] - 2026-05-26
+
+### Fixed
+- CI was failing with `ModuleNotFoundError: No module named 'rot'` because the GHA workflow invokes the bare `pytest` binary, which doesn't add the project root to `sys.path` the way `python -m pytest` does. Added a minimal `pyproject.toml` with `[tool.pytest.ini_options] pythonpath = ["."]` so pytest finds the package regardless of how it's invoked.
+
 ## [1.6.0] - 2026-05-26
 
 Phase 1 of v2 lands. None of this changes the user-facing CLI behavior — the v1 transpiler still drives the active compile path — but the architecture is now ready to grow a real AST-driven pipeline in the next phase.
