@@ -1,12 +1,12 @@
 # Architecture
 
-A walkthrough of how `rot` is currently built (as of `v1.6.0`) and where the project is heading. This document is for anyone curious about the internals — separate from `README.md`, which is the elevator pitch.
+A walkthrough of how `rot` is currently built (as of `v1.9.0`) and where the project is heading. This document is for anyone curious about the internals — separate from `README.md`, which is the elevator pitch.
 
 For release-by-release history see [`CHANGELOG.md`](CHANGELOG.md). For the current version see [`rot/__init__.py`](rot/__init__.py).
 
 ---
 
-# Part 1 — How it works today (v1.6.0)
+# Part 1 — How it works today (v1.9.0)
 
 ## The pipeline at a glance
 
@@ -23,15 +23,24 @@ For release-by-release history see [`CHANGELOG.md`](CHANGELOG.md). For the curre
                                            ▼
                           ┌──────────────────────────────────┐
                           │ Lexer (rot/lexer.py)             │
-                          │   regex pattern walk             │
+                          │   hand-rolled char-by-char       │
                           └────────────────┬─────────────────┘
                                            │ list[Token]
                                            │   Token(lexeme, kind,
                                            │         line, col)
                                            ▼
                           ┌──────────────────────────────────┐
-                          │ Parser (rot/parser.py)           │
-                          │   token → Python translator      │
+                          │ Parser (rot/syntax.py)           │
+                          │   recursive-descent, Pratt expr  │
+                          └────────────────┬─────────────────┘
+                                           │ ast.Program
+                                           │   FuncDef / IfStmt /
+                                           │   ExprStmt / Call /
+                                           │   BinaryOp / ...
+                                           ▼
+                          ┌──────────────────────────────────┐
+                          │ Emitter (rot/emitter.py)         │
+                          │   AST → Python source            │
                           └────────────────┬─────────────────┘
                                            │ python source (str)
                                            ▼
@@ -44,7 +53,7 @@ For release-by-release history see [`CHANGELOG.md`](CHANGELOG.md). For the curre
                                        program output
 ```
 
-Three stages, plus the orchestrator. The `Compiler` ties them together; the CLI ties the compiler to the user.
+Four stages, plus the orchestrator. The `Compiler` ties them together; the CLI ties the compiler to the user.
 
 ## The modules
 
@@ -53,16 +62,16 @@ Three stages, plus the orchestrator. The `Compiler` ties them together; the CLI 
 | [`rot/__init__.py`](rot/__init__.py) | `__version__` tag | 1 |
 | [`rot/__main__.py`](rot/__main__.py) | `python -m rot` entry | 5 |
 | [`rot/cli.py`](rot/cli.py) | argparse CLI surface | ~60 |
-| [`rot/compiler.py`](rot/compiler.py) | orchestrates lex → parse → exec | ~55 |
-| [`rot/lexer.py`](rot/lexer.py) | hand-rolled char-by-char tokenizer | ~120 |
-| [`rot/parser.py`](rot/parser.py) | tokens → Python source string (the transpiler) | ~70 |
-| [`rot/ast.py`](rot/ast.py) | AST node dataclasses | ~40 |
-| [`rot/syntax.py`](rot/syntax.py) | recursive-descent parser: tokens → AST | ~100 |
-| [`rot/keywords.py`](rot/keywords.py) | `KEYWORDS` + `PY_EQUIVALENT` lookups | ~30 |
+| [`rot/compiler.py`](rot/compiler.py) | orchestrates lex → parse → emit → exec | ~60 |
+| [`rot/lexer.py`](rot/lexer.py) | hand-rolled char-by-char tokenizer | ~150 |
+| [`rot/ast.py`](rot/ast.py) | AST node dataclasses | ~65 |
+| [`rot/syntax.py`](rot/syntax.py) | recursive-descent parser: tokens → AST (Pratt for expressions) | ~170 |
+| [`rot/emitter.py`](rot/emitter.py) | AST → Python source string | ~80 |
+| [`rot/keywords.py`](rot/keywords.py) | `KEYWORDS` lookup (`PY_EQUIVALENT` retired with the transpiler) | ~25 |
 | [`rot/token.py`](rot/token.py) | `Token` dataclass | 10 |
 | [`rot/errors.py`](rot/errors.py) | `LexerError` / `ParserError` carrying `(line, col)` | ~20 |
 
-Total: ~500 lines of language code, ~250 lines of tests.
+Total: ~650 lines of language code, ~450 lines of tests.
 
 ## Stage 1 — the Lexer
 
@@ -114,81 +123,86 @@ If no regex matches the current character, the lexer raises `LexerError("unexpec
 rot error: line 1:11: unexpected character '@'
 ```
 
-## Stage 2 — the Transpiler (`rot/parser.py`)
+## Stage 2 — the Parser (`rot/syntax.py`)
 
-Misleading name: the class is called `Parser` for historical reasons but doesn't actually *parse* in the linguistic sense. It builds no tree. It's a token-to-Python-source translator.
+A real recursive-descent parser. Consumes the token stream, produces an `ast.Program` whose body is a list of `Statement` nodes.
 
-(As of v1.6.0 there's a **real** recursive-descent parser in `rot/syntax.py` that builds an AST — see [Stage 2.5](#stage-25--the-ast-builder-new-in-v160). The transpiler is still on the active compile path while the AST is being developed; the two coexist.)
-
-```python
-for i, token in enumerate(tokens):
-    parsed = PY_EQUIVALENT.get(token.kind, token.lexeme)
-    # ... two special cases (see below) ...
-    result += parsed
-return result
-```
-
-When `kind` is in `PY_EQUIVALENT`, the Python equivalent is appended. Otherwise the raw lexeme is appended. `cout` → `print`, `funct` → `def`, `L_CURLY` (`{`) → `:`, etc.
-
-Two special cases live in the parser:
-
-### Special case 1: `cout` no-newline insertion
-
-`cout(...)` should print without a newline (matching `std::cout`). `coutln(...)` should print *with* a newline (Python's default). The trick:
-
-- `cout` → `print` (kind `PRINT`)
-- `coutln` → `print*` (kind `PRINTLN`, asterisk is a sentinel)
-
-When the parser sees `print` (from `cout`), it scans forward through the token list counting parens, finds the matching `)`, and **inserts** a synthetic `, end=""` token before it. When it sees `print*` (from `coutln`), it strips the asterisk.
-
-End result:
-- `cout("hi")` → `print("hi", end="")`
-- `coutln("hi")` → `print("hi")`
-
-### Special case 2: COMMENT translation
-
-`COMMENT` tokens have lexemes like `// foo`. The parser emits `"# " + lexeme[2:]` so `// foo` becomes `#  foo` (the leading slash-pair is replaced; the space after is the user's).
-
-## Stage 2.5 — the AST builder (new in v1.6.0)
-
-`rot/ast.py` defines the AST node types as dataclasses:
-
-```python
-Program(body: list[Statement])
-ExprStmt(expr: Expression)
-Call(callee: Expression, args: list[Expression])
-Identifier(name: str)
-NumberLit(value: int)
-StringLit(value: str)
-```
-
-`rot/syntax.py:Parser` consumes the token stream and builds a `Program` via recursive descent. Phase 1 grammar:
+Statement-level grammar (one rule per public method on the `Parser` class):
 
 ```
-program     := stmt*
-stmt        := expr_stmt
+stmt        := func_def | if_stmt | expr_stmt
+func_def    := 'funct' IDENT '(' params? ')' block
+params      := IDENT ('|' IDENT)*
+if_stmt     := 'if' '(' expr ')' block (elif_branch)* else_branch?
+elif_branch := 'elseif' '(' expr ')' block
+else_branch := 'else' block
+block       := '{' stmt* '}'
 expr_stmt   := expr
-expr        := call | atom
-call        := callable '(' args ')'
-args        := ( expr ('|' expr)* )?
-callable    := IDENT | 'cout' | 'coutln'
-atom        := callable | NUMBER | STRING_LIT
 ```
 
-Whitespace, newlines, and comments are stripped before parsing — Phase 1 doesn't care about source layout.
+Expression-level grammar uses **Pratt parsing** with precedence levels. Higher binds tighter:
 
-The AST is **not yet on the active compile path** — `Compiler.compile()` still uses the transpiler (`rot/parser.py`) to go straight from tokens to Python. The AST is exercised by `tests/test_syntax.py` and is ready to become primary in Phase 2 (semantic analysis) and Phase 3 (the tree-walking interpreter that drops `exec()`).
+```
+5  *  /                     factor
+4  +  -                     term
+3  <  <=  >  >=             comparison
+2  ==  !=                   equality
+```
 
-## Stage 3 — Compiler orchestration
+All operators are left-associative. Parenthesized expressions (`(1+2)*3`) work via the `atom` rule.
+
+> **Historical note:** v1.0.0 → v1.8.0 had a separate "transpiler" in `rot/parser.py` that walked tokens and concatenated Python strings directly — no tree, two special-case hacks (the `cout` end-kwarg insertion and `// → #` translation). It was retired in v1.9.0 once the AST + emitter could do the same job correctly.
+
+The AST node types live in `rot/ast.py`:
+
+```python
+@dataclass class Program:     body: list[Statement]
+@dataclass class ExprStmt:    expr: Expression
+@dataclass class FuncDef:     name; params; body
+@dataclass class IfStmt:      cond; then_block; elif_branches; else_block
+@dataclass class ElifBranch:  cond; body
+@dataclass class Block:       statements
+@dataclass class Call:        callee; args
+@dataclass class BinaryOp:    op; left; right
+@dataclass class Identifier:  name
+@dataclass class NumberLit:   value
+@dataclass class StringLit:   value
+```
+
+## Stage 3 — the Emitter (`rot/emitter.py`)
+
+Walks the AST and produces a Python source string. Each node maps to its Python form:
+
+```
+ExprStmt(expr)              → write expr as a statement line
+FuncDef(name, params, body) → `def name(params):` + indented body
+IfStmt(...)                 → `if cond:` / `elif cond:` / `else:` with blocks
+Call(Identifier("cout"),
+     args)                  → `print(args, end="")`
+Call(Identifier("coutln"),
+     args)                  → `print(args)`
+Call(callee, args)          → `callee(args)`   (general case)
+BinaryOp(op, l, r)          → `l op r` (children parenthesized if they
+                                         are themselves binary ops, so
+                                         precedence survives)
+Identifier(name)            → `name`
+NumberLit / StringLit       → `repr(value)`
+```
+
+Indentation tracked via a `depth` counter. `Block` increments before recursing, decrements after. Empty blocks emit `pass`.
+
+This is what replaced the v1 transpiler in v1.9.0 — same Python output for any program v1 handled, now derived from a real tree instead of token concatenation.
+
+## Stage 4 — Compiler orchestration
 
 ```python
 class Compiler:
-    def compile(source: str) -> str:           # lex + parse, return Python string
+    def compile(source: str) -> str:           # lex → parse → emit, return Python string
     def save(python_code: str, path: str) -> None
     def execute(python_code: str) -> None      # exec() the generated Python
 ```
 
-The split lets the CLI offer `--no-run` (transpile only) and tests skip `save()` and use `exec()` with a captured stdout.
+Internally `compile()` runs: `Lexer.tokenize()` → `Parser(tokens).parse()` → `Emitter().emit(program)`. The split lets the CLI offer `--no-run` (transpile only) and tests skip `save()` and use `exec()` with a captured stdout.
 
 The CLI assembles them based on flags:
 
@@ -214,20 +228,21 @@ $ python -m rot --version                           # print version
 
 ## The test suite
 
-`tests/` has three files:
+`tests/` has four files:
 
-- **`test_lexer.py`** — keyword vs identifier classification, line/col tracking, `LexerError` location, comment lexing, `R_CURLY`, uppercase rejection.
-- **`test_parser.py`** — `cout` vs `coutln` translation, function-def shape, fallback-to-lexeme behavior, empty-emission for `}`.
+- **`test_lexer.py`** — keyword vs identifier classification, line/col tracking, multi-char operator tokens, `LexerError` location, comment lexing, `R_CURLY`, uppercase rejection.
+- **`test_syntax.py`** — AST construction: call shapes, atoms, Pratt precedence/associativity, parenthesized grouping, `FuncDef` / `IfStmt` / `Block`, plus a full-program parse of `examples/functions.rot`.
+- **`test_emitter.py`** — AST → Python: `cout` vs `coutln` translation, function-def indentation, if/elif/else chains, precedence-preserving parens on binary ops.
 - **`test_end_to_end.py`** — every `examples/*.rot` paired with a `.expected` file. Runs through `Compiler.compile()`, `exec`s the result, asserts stdout matches.
 
-15 tests, ~30 ms total runtime.
+45 tests, ~30 ms total runtime.
 
 ## Behavioral quirks worth knowing
 
 - **Identifiers are lowercase only.** Uppercase input raises a `LexerError`. By design — keywords are lowercase, so identifiers are too.
 - **`|` is the parameter separator** (not `,`). Quirky on purpose. `funct hi(x | y)` → `def hi(x,y)` in Python.
 - **`{ }` blocks but indentation in output.** `{` → `:` and `}` → `""`. The user's indentation in the `.rot` source carries through to Python.
-- **`==` works by accident.** Two `=` tokens emit `=` each, so the output has `==`. There's no `EqualEqual` token. (A future v1.7+ change will introduce real multi-character operator tokens.)
+- **Multi-char operators are real tokens (since v1.7.0).** `==`, `!=`, `<=`, `>=` lex as single `EQ_EQ` / `NEQ` / `LE` / `GE` tokens. Lone `=`, `<`, `>` still produce `SETVALUE` / `LESSTHAN` / `GREATERTHAN`. `!` is only valid as part of `!=`.
 
 ---
 
@@ -237,19 +252,18 @@ The current pipeline leans on Python for everything past tokenizing: there's no 
 
 The roadmap below mirrors how compiler courses are taught and how real languages were built historically. Each phase is a real milestone you can demo.
 
-## Phase 1 — hand-rolled lexer + AST ✓ (shipped in `v1.6.0`)
+## Phase 1 — hand-rolled lexer + AST ✓ (shipped across v1.6.0 → v1.9.0)
 
-Two things landed:
+All landed:
 
-- **Hand-rolled lexer** in `rot/lexer.py` — no regex involvement at all. Same `Token` output as before, with one upgrade: `"hello world"` is a single `STRING_LIT` token, so strings can contain arbitrary content.
-- **AST + recursive-descent parser** — `rot/ast.py` defines the node dataclasses; `rot/syntax.py:Parser` builds a `Program` from a token list. See [Stage 2.5](#stage-25--the-ast-builder-new-in-v160) above for details.
+- **v1.6.0** — Hand-rolled char-by-char lexer; AST node dataclasses; recursive-descent parser for expression-statement calls.
+- **v1.7.0** — Multi-character operator tokens (`==`, `!=`, `<=`, `>=`); `BinaryOp` AST node; Pratt parsing with full precedence + associativity.
+- **v1.8.0** — `Block` / `FuncDef` / `IfStmt` AST nodes and their grammar rules. The full `examples/functions.rot` now parses to an AST.
+- **v1.9.0** — AST → Python emitter (`rot/emitter.py`) takes over the active compile path. The v1 transpiler is retired.
 
-Still pending for later in v1.x:
-- `FuncDef`, `IfStmt`, `BinaryOp` nodes + grammar rules to populate them.
-- Multi-character operator tokens (`==`, `<=`, `>=`, `!=`) replacing the current "two `=`s by accident" trick.
-- Pratt parsing for expression precedence once arithmetic / comparison operators are real tokens.
+End state: source goes `Lexer → Parser (AST) → Emitter → exec`. The Python `exec()` is the only thing standing between ROT and a self-hosted runtime.
 
-## Phase 2 — semantic analysis (planned: `v1.7.0`)
+## Phase 2 — semantic analysis (next: `v1.10.0`+)
 
 Walk the AST and resolve names. Build a scope tree. Catch:
 

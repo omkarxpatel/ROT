@@ -1,13 +1,12 @@
-"""Keyword and Python-equivalent lookups.
+"""Reserved-word lookup consulted by the lexer.
 
-Two tables:
+Only one table left: KEYWORDS. The lexer scans a run of lowercase
+letters, looks the lexeme up here, and tags the token as the kind
+returned (or `IDENT` if not present).
 
-- `KEYWORDS`       : reserved-word lexeme -> token kind. The lexer
-                     consults this after scanning a lowercase
-                     identifier to decide if it's a real keyword.
-- `PY_EQUIVALENT`  : token kind -> Python source emitted by the
-                     transpiler (falls back to the raw lexeme when a
-                     kind is absent).
+PY_EQUIVALENT was retired in v1.9.0 along with the token-to-string
+transpiler. The AST emitter (rot/emitter.py) now owns the
+token-kind-to-Python translation.
 """
 
 from __future__ import annotations
@@ -20,15 +19,4 @@ KEYWORDS: dict[str, str] = {
     "elseif": "ELIF",
     "if":     "IF",
     "else":   "ELSE",
-}
-
-
-PY_EQUIVALENT: dict[str, str] = {
-    "PRINT":    "print",
-    "PRINTLN":  "print*",
-    "FUNCTION": "def",
-    "L_CURLY":  ":",
-    "R_CURLY":  "",
-    "ELIF":     "elif",
-    "COMMA":    ",",
 }

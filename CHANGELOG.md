@@ -2,6 +2,23 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2026-05-26
+
+The AST takes over the active compile path. The v1 transpiler is gone. End-user behavior is unchanged — `examples/functions.rot` still prints `same` — but the entire pipeline now goes `tokens → AST → Python → exec` instead of `tokens → Python → exec`.
+
+### Added
+- `rot/emitter.py` — AST → Python source emitter. Walks `ast.Program` and produces Python with correct indentation and precedence-preserving parenthesization.
+- `tests/test_emitter.py` — 9 unit tests covering: `cout` vs `coutln` translation, zero-arg `cout`, generic calls, function def with indented body, empty body as `pass`, full `if/elif/else` chain, parenthesized binary ops, flat binary ops.
+
+### Changed
+- `Compiler.compile()` now runs `Lexer → Parser (rot/syntax) → Emitter`. The previous `Lexer → Parser (rot/parser, the transpiler)` flow is retired.
+- `ARCHITECTURE.md` rewritten: 4-stage pipeline diagram, new Stage 2 (real parser) replacing the old "Transpiler" stage, new Stage 3 (emitter), renumbered Stage 4 (compiler).
+
+### Removed
+- `rot/parser.py` — the v1 transpiler. Replaced by the AST + emitter combination. The historical note in ARCHITECTURE.md preserves what it did.
+- `tests/test_parser.py` — tested the now-dead transpiler. Behavior coverage moved to `tests/test_emitter.py` and `tests/test_end_to_end.py`.
+- `PY_EQUIVALENT` dict from `rot/keywords.py` (was only consumed by the transpiler).
+
 ## [1.8.0] - 2026-05-26
 
 Real statements. The AST can now represent every `.rot` program that runs today, including the full [examples/functions.rot](examples/functions.rot) (funct + if/elseif/else chain + top-level call).

@@ -11,8 +11,9 @@ import time
 
 from colorama import Fore, init as colorama_init
 
+from .emitter import Emitter
 from .lexer import Lexer
-from .parser import Parser
+from .syntax import Parser
 
 
 class Compiler:
@@ -31,14 +32,22 @@ class Compiler:
 
         if self.trace:
             print(f"\nExecution time: {round(time.time() - started, 7)}s")
-            print(f"Operations: {len(tokens)}")
-            print(f"\n\n{Fore.RED}Process 2 - Parser:")
+            print(f"Tokens: {len(tokens)}")
+            print(f"\n\n{Fore.RED}Process 2 - Parser (AST):")
 
         started = time.time()
-        python_code = Parser(trace=self.trace).parse(tokens)
+        program = Parser(tokens).parse()
 
         if self.trace:
-            print(f"\nExecution time: {round(time.time() - started, 7)}s")
+            print(f"AST: Program(body=[{len(program.body)} statements])")
+            print(f"Execution time: {round(time.time() - started, 7)}s")
+            print(f"\n\n{Fore.RED}Process 3 - Emitter (AST -> Python):")
+
+        started = time.time()
+        python_code = Emitter().emit(program)
+
+        if self.trace:
+            print(f"Execution time: {round(time.time() - started, 7)}s")
 
         return python_code
 
