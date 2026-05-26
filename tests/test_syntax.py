@@ -175,3 +175,92 @@ def test_binary_op_inside_call_args():
             )
         )
     ])
+
+
+def test_parses_simple_function_def():
+    program = _parse("funct hi(x | y) { coutln(x) }")
+    assert program == ast.Program(body=[
+        ast.FuncDef(
+            name="hi",
+            params=["x", "y"],
+            body=ast.Block(statements=[
+                ast.ExprStmt(
+                    ast.Call(callee=ast.Identifier("coutln"), args=[ast.Identifier("x")])
+                )
+            ])
+        )
+    ])
+
+
+def test_parses_function_with_no_params():
+    program = _parse('funct greet() { coutln("hi") }')
+    assert program == ast.Program(body=[
+        ast.FuncDef(name="greet", params=[], body=ast.Block(statements=[
+            ast.ExprStmt(ast.Call(callee=ast.Identifier("coutln"), args=[ast.StringLit("hi")]))
+        ]))
+    ])
+
+
+def test_parses_simple_if_statement():
+    program = _parse("if (x > y) { coutln(x) }")
+    assert program == ast.Program(body=[
+        ast.IfStmt(
+            cond=ast.BinaryOp(">", ast.Identifier("x"), ast.Identifier("y")),
+            then_block=ast.Block(statements=[
+                ast.ExprStmt(ast.Call(callee=ast.Identifier("coutln"), args=[ast.Identifier("x")]))
+            ]),
+            elif_branches=[],
+            else_block=None,
+        )
+    ])
+
+
+def test_parses_if_elseif_else_chain():
+    program = _parse(
+        'if (x > y) { coutln(x) }\n'
+        'elseif (x == y) { coutln("same") }\n'
+        'else { coutln(y) }'
+    )
+    assert len(program.body) == 1
+    stmt = program.body[0]
+    assert isinstance(stmt, ast.IfStmt)
+    assert stmt.cond == ast.BinaryOp(">", ast.Identifier("x"), ast.Identifier("y"))
+    assert len(stmt.elif_branches) == 1
+    assert stmt.elif_branches[0].cond == ast.BinaryOp("==", ast.Identifier("x"), ast.Identifier("y"))
+    assert stmt.else_block is not None
+    assert len(stmt.else_block.statements) == 1
+
+
+def test_unterminated_block_raises_parser_error():
+    with pytest.raises(ParserError):
+        _parse("funct hi() { coutln(x)")
+
+
+def test_full_example_functions_rot_parses_end_to_end():
+    """The same program that's been our end-to-end golden since v1.0.0
+    now parses to a full AST — funct + if/elseif/else chain + top-level
+    call all represented as nodes."""
+    import pathlib
+    source = (pathlib.Path(__file__).resolve().parent.parent / "examples/functions.rot").read_text()
+    program = _parse(source)
+
+    # Two top-level statements: the funct def + the call at the end.
+    assert len(program.body) == 2
+
+    func_def = program.body[0]
+    assert isinstance(func_def, ast.FuncDef)
+    assert func_def.name == "hi"
+    assert func_def.params == ["x", "y"]
+    assert len(func_def.body.statements) == 1
+
+    if_stmt = func_def.body.statements[0]
+    assert isinstance(if_stmt, ast.IfStmt)
+    assert if_stmt.cond == ast.BinaryOp(">", ast.Identifier("x"), ast.Identifier("y"))
+    assert len(if_stmt.elif_branches) == 1
+    assert if_stmt.else_block is not None
+
+    call_stmt = program.body[1]
+    assert isinstance(call_stmt, ast.ExprStmt)
+    assert isinstance(call_stmt.expr, ast.Call)
+    assert call_stmt.expr.callee == ast.Identifier("hi")
+    assert call_stmt.expr.args == [ast.NumberLit(10), ast.NumberLit(10)]

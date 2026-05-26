@@ -2,6 +2,22 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2026-05-26
+
+Real statements. The AST can now represent every `.rot` program that runs today, including the full [examples/functions.rot](examples/functions.rot) (funct + if/elseif/else chain + top-level call).
+
+### Added
+- AST nodes: `Block`, `FuncDef`, `ElifBranch`, `IfStmt`. `Statement` union expanded to `ExprStmt | FuncDef | IfStmt`.
+- Grammar rules in `rot/syntax.py`:
+  - `func_def := 'funct' IDENT '(' params? ')' block`
+  - `if_stmt := 'if' '(' expr ')' block (elif_branch)* else_branch?`
+  - `block := '{' stmt* '}'`
+- 6 new syntax tests covering simple funct defs, no-param funcs, simple `if`, full `if/elseif/else` chains, unterminated-block errors, and **the full end-to-end AST parse of `examples/functions.rot`**.
+
+### Changed
+- `_parse_statement` now dispatches: `FUNCTION` → `_parse_func_def`, `IF` → `_parse_if_stmt`, otherwise expression statement.
+- The AST is still **not yet on the active compile path** — the v1 transpiler in `rot/parser.py` continues to drive `Compiler.compile()`. That moves in v1.9.0.
+
 ## [1.7.0] - 2026-05-26
 
 Real expressions. The "`==` works by accident" quirk is dead.

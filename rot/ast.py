@@ -52,7 +52,33 @@ class ExprStmt:
     expr: Expression
 
 
-Statement = Union[ExprStmt]
+@dataclass
+class Block:
+    statements: list["Statement"] = field(default_factory=list)
+
+
+@dataclass
+class FuncDef:
+    name: str
+    params: list[str]
+    body: Block
+
+
+@dataclass
+class ElifBranch:
+    cond: Expression
+    body: Block
+
+
+@dataclass
+class IfStmt:
+    cond: Expression
+    then_block: Block
+    elif_branches: list[ElifBranch] = field(default_factory=list)
+    else_block: "Block | None" = None
+
+
+Statement = Union[ExprStmt, FuncDef, IfStmt]
 
 
 @dataclass

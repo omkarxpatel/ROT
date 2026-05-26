@@ -1,9 +1,15 @@
 """Recursive-descent parser: turns a Token stream into an AST.
 
-Grammar (as of v1.7.0 — adds binary expressions with precedence):
+Grammar (as of v1.8.0 — adds statements: funct, if/elseif/else, blocks):
 
     program     := stmt*
-    stmt        := expr_stmt
+    stmt        := func_def | if_stmt | expr_stmt
+    func_def    := 'funct' IDENT '(' params? ')' block
+    params      := IDENT ('|' IDENT)*
+    if_stmt     := 'if' '(' expr ')' block (elif_branch)* else_branch?
+    elif_branch := 'elseif' '(' expr ')' block
+    else_branch := 'else' block
+    block       := '{' stmt* '}'
     expr_stmt   := expr
     expr        := binary
     binary      := atom_or_call (BIN_OP atom_or_call)*       # Pratt
@@ -59,7 +65,66 @@ class Parser:
         return program
 
     def _parse_statement(self) -> ast.Statement:
+        tok = self._peek()
+        if tok is None:
+            raise ParserError("unexpected end of input")
+        if tok.kind == "FUNCTION":
+            return self._parse_func_def()
+        if tok.kind == "IF":
+            return self._parse_if_stmt()
         return ast.ExprStmt(expr=self._parse_expression())
+
+    def _parse_func_def(self) -> ast.FuncDef:
+        self._consume("FUNCTION")
+        name_tok = self._consume("IDENT")
+        self._consume("L_PAREN")
+        params: list[str] = []
+        if not self._check("R_PAREN"):
+            params.append(self._consume("IDENT").lexeme)
+            while self._check("COMMA"):
+                self._advance()
+                params.append(self._consume("IDENT").lexeme)
+        self._consume("R_PAREN")
+        body = self._parse_block()
+        return ast.FuncDef(name=name_tok.lexeme, params=params, body=body)
+
+    def _parse_if_stmt(self) -> ast.IfStmt:
+        self._consume("IF")
+        self._consume("L_PAREN")
+        cond = self._parse_expression()
+        self._consume("R_PAREN")
+        then_block = self._parse_block()
+
+        elif_branches: list[ast.ElifBranch] = []
+        while self._check("ELIF"):
+            self._advance()
+            self._consume("L_PAREN")
+            elif_cond = self._parse_expression()
+            self._consume("R_PAREN")
+            elif_body = self._parse_block()
+            elif_branches.append(ast.ElifBranch(cond=elif_cond, body=elif_body))
+
+        else_block: ast.Block | None = None
+        if self._check("ELSE"):
+            self._advance()
+            else_block = self._parse_block()
+
+        return ast.IfStmt(
+            cond=cond,
+            then_block=then_block,
+            elif_branches=elif_branches,
+            else_block=else_block,
+        )
+
+    def _parse_block(self) -> ast.Block:
+        self._consume("L_CURLY")
+        statements: list[ast.Statement] = []
+        while not self._check("R_CURLY"):
+            if self._at_end():
+                raise ParserError("unterminated block — expected '}'")
+            statements.append(self._parse_statement())
+        self._consume("R_CURLY")
+        return ast.Block(statements=statements)
 
     def _parse_expression(self) -> ast.Expression:
         return self._parse_binary(0)
