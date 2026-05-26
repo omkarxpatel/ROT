@@ -1,6 +1,3 @@
-import contextlib
-import io
-
 import pytest
 
 from rot.errors import LexerError
@@ -8,8 +5,7 @@ from rot.lexer import Lexer
 
 
 def _lex(source: str):
-    with contextlib.redirect_stdout(io.StringIO()):
-        return [(t.lexeme, t.kind) for t in Lexer().tokenize(source)]
+    return [(t.lexeme, t.kind) for t in Lexer().tokenize(source)]
 
 
 def test_cout_call_tokenization():
@@ -34,8 +30,7 @@ def test_keyword_vs_identifier_classification():
 
 
 def test_position_tracking_across_newlines():
-    with contextlib.redirect_stdout(io.StringIO()):
-        tokens = Lexer().tokenize("cout\n  hi")
+    tokens = Lexer().tokenize("cout\n  hi")
     first = tokens[0]
     assert (first.line, first.col) == (1, 1)
     hi = next(t for t in tokens if t.lexeme == "hi")
@@ -43,9 +38,8 @@ def test_position_tracking_across_newlines():
 
 
 def test_unknown_character_raises_lexer_error_with_location():
-    with contextlib.redirect_stdout(io.StringIO()):
-        with pytest.raises(LexerError) as exc_info:
-            Lexer().tokenize("cout@")
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize("cout@")
     assert exc_info.value.line == 1
     assert exc_info.value.col == 5
 
@@ -58,6 +52,5 @@ def test_comment_consumes_to_end_of_line():
 
 
 def test_closing_brace_is_a_real_token():
-    # Pre-1.2.0 the lexer's catch-all `except: pass` silently dropped `}`.
     tokens = _lex("}")
     assert tokens == [("}", "R_CURLY")]

@@ -1,4 +1,4 @@
-"""End-to-end golden tests: every examples/*.rot file is lexed, parsed,
+"""End-to-end golden tests: every examples/*.rot file is compiled and
 exec'd, and its captured stdout compared to the matching *.expected file."""
 
 import contextlib
@@ -7,8 +7,7 @@ import pathlib
 
 import pytest
 
-from rot.lexer import Lexer
-from rot.parser import Parser
+from rot.compiler import Compiler
 
 
 EXAMPLES = pathlib.Path(__file__).resolve().parent.parent / "examples"
@@ -23,9 +22,7 @@ def test_example_produces_expected_output(rot_file: pathlib.Path):
     expected = rot_file.with_suffix(".expected").read_text()
     source = rot_file.read_text()
 
-    with contextlib.redirect_stdout(io.StringIO()):
-        tokens = Lexer().tokenize(source)
-        python_code = Parser().parse(tokens)
+    python_code = Compiler(trace=False).compile(source)
 
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):

@@ -15,14 +15,16 @@ _COMPILED_PATTERNS: list[tuple[re.Pattern[str], str | None]] = [
 
 
 class Lexer:
-    def __init__(self) -> None:
+    def __init__(self, trace: bool = False) -> None:
+        self.trace = trace
         self.position = 0
         self.line = 1
         self.col = 1
         self.tokens: list[Token] = []
 
     def tokenize(self, source: str) -> list[Token]:
-        print("-" * 30)
+        if self.trace:
+            print("-" * 30)
         while self.position < len(source):
             if not self._consume_one(source):
                 raise LexerError(
@@ -30,7 +32,8 @@ class Lexer:
                     self.line,
                     self.col,
                 )
-        print("-" * 30)
+        if self.trace:
+            print("-" * 30)
         return self.tokens
 
     def _consume_one(self, source: str) -> bool:
@@ -51,8 +54,6 @@ class Lexer:
         return False
 
     def _advance(self, lexeme: str) -> None:
-        # After consuming lexeme, advance line/col. If the lexeme contains
-        # newlines, column resets to the chars after the last newline.
         newlines = lexeme.count("\n")
         if newlines:
             self.line += newlines
@@ -61,6 +62,8 @@ class Lexer:
             self.col += len(lexeme)
 
     def _log(self, token: Token) -> None:
+        if not self.trace:
+            return
         idx = len(self.tokens) - 1
         spaces = " " * (5 - len(str(idx)))
         spaces2 = " " * (10 - len(repr(token.lexeme)))

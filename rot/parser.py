@@ -8,19 +8,20 @@ from .token import Token
 
 
 class Parser:
+    def __init__(self, trace: bool = False) -> None:
+        self.trace = trace
+
     def parse(self, tokens: list[Token]) -> str:
-        print("-" * 30)
+        if self.trace:
+            print("-" * 30)
         result = ""
 
         for i, token in enumerate(tokens):
             parsed = self._python_for(token)
 
             if parsed == "print":
-                # cout(...) — insert `, end=""` before the matching ) to
-                # suppress Python's default newline.
                 self._insert_end_kwarg(tokens, i + 1, token)
             elif parsed == "print*":
-                # coutln(...) — strip the marker; default Python `print` is fine.
                 parsed = parsed.rstrip("*")
 
             if parsed == "print" and result[-5:] == "print":
@@ -30,7 +31,8 @@ class Parser:
             result += parsed
             self._log(i, token.lexeme, parsed, token.kind)
 
-        print("-" * 30)
+        if self.trace:
+            print("-" * 30)
         return result
 
     @staticmethod
@@ -57,8 +59,9 @@ class Parser:
             origin.col,
         )
 
-    @staticmethod
-    def _log(idx: int, raw: str, parsed: str, kind: str) -> None:
+    def _log(self, idx: int, raw: str, parsed: str, kind: str) -> None:
+        if not self.trace:
+            return
         if parsed == "\n" or kind == "SPACE":
             raw, parsed = repr(raw), repr(parsed)
         spaces = " " * (5 - len(str(idx + 1)))

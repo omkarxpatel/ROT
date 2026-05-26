@@ -1,14 +1,10 @@
-import contextlib
-import io
-
 from rot.parser import Parser
 from rot.token import Token
 
 
 def _parse(*specs):
     tokens = [Token(lex, kind, 0, 0) for lex, kind in specs]
-    with contextlib.redirect_stdout(io.StringIO()):
-        return Parser().parse(tokens)
+    return Parser().parse(tokens)
 
 
 def test_cout_inserts_end_kwarg_for_no_newline():

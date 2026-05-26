@@ -2,6 +2,25 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-05-26
+
+### Added
+- argparse-based CLI in `rot/cli.py` with proper `--help` output and flags:
+  - `--version` — print package version and exit.
+  - `--trace` — opt-in dump of the tokenizer/parser tables and execution timing (what used to print on every run).
+  - `--no-run` — transpile only; write `output.py` and exit.
+  - `-o / --output PATH` — choose the output path (default: `output.py`).
+- `Compiler.compile() / .save() / .execute()` — pipeline split into three reusable methods.
+- `Lexer(trace=...)` and `Parser(trace=...)` accept a flag so debug prints are gated cleanly at the right layer.
+
+### Changed
+- **Default `python -m rot <file>` is now silent** except for the program's own output. Verbose pipeline traces are opt-in via `--trace`.
+- End-to-end test uses `Compiler.compile()` directly. Unit tests dropped their `contextlib.redirect_stdout` wrappers since lexer/parser are silent by default now.
+
+### Removed
+- `os.system("clear")` at the start of every run. Hostile to scrollback and shell-specific.
+- `Compiler.run()` convenience method (no callers; `compile + save + execute` is explicit at the CLI).
+
 ## [1.3.0] - 2026-05-26
 
 ### Added
