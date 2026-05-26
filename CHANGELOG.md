@@ -2,6 +2,17 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-05-26
+
+### Added
+- `tests/test_lexer.py`, `tests/test_parser.py`, `tests/test_end_to_end.py` — first real pytest suite. Lexer/parser unit tests cover keyword vs identifier classification, line/col tracking, `LexerError` location, comment lexing, and `R_CURLY` emission. End-to-end tests are parametrized over every `examples/*.rot` file with a sibling `.expected`.
+- `examples/hello.rot` + `.expected` and `examples/functions.expected` — golden outputs for the test suite.
+- `requirements-dev.txt` (currently just `pytest`).
+
+### Changed
+- Moved the historical scratch from `tests/init/` and `tests/other/` into `scratch/` so `tests/` is purely test code now.
+- `.gitignore` now also ignores `.pytest_cache/`.
+
 ## [1.2.2] - 2026-05-26
 
 ### Changed
