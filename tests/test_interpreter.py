@@ -91,6 +91,52 @@ def test_wrong_arity_raises_interpreter_error():
     assert "1" in str(exc_info.value)
 
 
+def test_variable_assignment_and_use():
+    assert _run("x = 5\ncoutln(x)") == "5\n"
+
+
+def test_assignment_reuses_existing_binding():
+    src = "x = 1\nx = x + 41\ncoutln(x)"
+    assert _run(src) == "42\n"
+
+
+def test_function_returns_value():
+    src = 'funct add(x | y) { return x + y }\ncoutln(add(2 | 3))'
+    assert _run(src) == "5\n"
+
+
+def test_bare_return_yields_none():
+    src = 'funct nothing() { return }\ncoutln(nothing())'
+    assert _run(src) == "None\n"
+
+
+def test_falling_off_function_end_returns_none():
+    src = 'funct silent() { x = 1 }\ncoutln(silent())'
+    assert _run(src) == "None\n"
+
+
+def test_early_return_short_circuits_remaining_statements():
+    src = (
+        'funct first_positive(x) {\n'
+        '    if (x > 0) { return "yes" }\n'
+        '    return "no"\n'
+        '}\n'
+        'coutln(first_positive(5))\n'
+        'coutln(first_positive(0-1))'
+    )
+    # 0-1 == -1 via the arithmetic; tests both branches.
+    assert _run(src) == "yes\nno\n"
+
+
+def test_return_value_threads_through_call_chain():
+    src = (
+        'funct double(x) { return x + x }\n'
+        'funct quadruple(x) { return double(double(x)) }\n'
+        'coutln(quadruple(3))'
+    )
+    assert _run(src) == "12\n"
+
+
 def test_closure_captures_lexical_scope():
     # Inside `outer`, calling `inner` should resolve `coutln` from the
     # enclosing scope chain (global), not require it to be a parameter.

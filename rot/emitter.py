@@ -32,6 +32,13 @@ class Emitter:
             self._emit_block(stmt.body)
         elif isinstance(stmt, ast.IfStmt):
             self._emit_if(stmt)
+        elif isinstance(stmt, ast.Assign):
+            self._write(f"{stmt.name} = {self._expr(stmt.value)}")
+        elif isinstance(stmt, ast.Return):
+            if stmt.value is None:
+                self._write("return")
+            else:
+                self._write(f"return {self._expr(stmt.value)}")
         else:
             raise NotImplementedError(f"emit: statement {type(stmt).__name__}")
 

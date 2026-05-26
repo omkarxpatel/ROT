@@ -16,6 +16,17 @@ from . import ast
 from .errors import InterpreterError
 
 
+class _ReturnSignal(BaseException):
+    """Internal control-flow signal carrying a return value.
+
+    Subclasses `BaseException` (not `Exception`) so generic
+    `except Exception` blocks don't swallow function returns.
+    """
+
+    def __init__(self, value: "Any") -> None:
+        self.value = value
+
+
 _BINARY_OPS: dict[str, Callable[[Any, Any], Any]] = {
     "+":  lambda a, b: a + b,
     "-":  lambda a, b: a - b,
@@ -55,7 +66,7 @@ class RotFunction:
         self.decl = decl
         self.closure = closure
 
-    def call(self, args: list[Any], interpreter: "Interpreter") -> None:
+    def call(self, args: list[Any], interpreter: "Interpreter") -> Any:
         if len(args) != len(self.decl.params):
             raise InterpreterError(
                 f"function {self.decl.name!r} takes {len(self.decl.params)} "
@@ -69,8 +80,11 @@ class RotFunction:
         interpreter.env = local
         try:
             interpreter._execute_block(self.decl.body)
+        except _ReturnSignal as signal:
+            return signal.value
         finally:
             interpreter.env = prior
+        return None  # fell off the end without `return`
 
 
 class Interpreter:
@@ -93,6 +107,12 @@ class Interpreter:
         if isinstance(stmt, ast.IfStmt):
             self._execute_if(stmt)
             return
+        if isinstance(stmt, ast.Assign):
+            self.env.set(stmt.name, self._evaluate(stmt.value))
+            return
+        if isinstance(stmt, ast.Return):
+            value = self._evaluate(stmt.value) if stmt.value is not None else None
+            raise _ReturnSignal(value)
         raise InterpreterError(f"cannot execute statement {type(stmt).__name__}")
 
     def _execute_if(self, stmt: ast.IfStmt) -> None:
@@ -132,8 +152,7 @@ class Interpreter:
         callee = self._evaluate(expr.callee)
         args = [self._evaluate(a) for a in expr.args]
         if isinstance(callee, RotFunction):
-            callee.call(args, self)
-            return None
+            return callee.call(args, self)
         if callable(callee):
             return callee(*args)
         raise InterpreterError(f"not callable: {callee!r}")

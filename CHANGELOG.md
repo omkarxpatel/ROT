@@ -2,6 +2,28 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.1.0] - 2026-05-26
+
+Variable assignment and function return values land — the language stops being a tech demo and becomes something you can write actual programs in. Recursion now works (see `examples/factorial.rot`).
+
+### Added
+- `Assign(name, value)` and `Return(value)` AST nodes; `Statement` union expanded.
+- `return` reserved word in `KEYWORDS`.
+- Grammar rules in `rot/syntax.py`:
+  - `return_stmt := 'return' expr?` — bare `return` returns `None`.
+  - `assign := IDENT '=' expr` — one-token lookahead distinguishes from a bare-identifier expression statement.
+- Interpreter handling:
+  - `Assign` calls `env.set(name, value)`.
+  - `Return` raises a private `_ReturnSignal(value)` (subclass of `BaseException` so generic `except Exception` blocks don't swallow returns).
+  - `RotFunction.call()` catches `_ReturnSignal` and returns its value; falls off the end → `None`.
+  - `_evaluate_call()` now propagates the function's return value back to the caller.
+- Emitter handles the new statement kinds: `Assign` → `name = value`, `Return` → `return value` (or bare `return`).
+- `examples/factorial.rot` (+ `.expected`) — classic recursive factorial showcasing both return values and recursion in one ~5-line program.
+- 17 new tests across lexer / syntax / interpreter / emitter for the new features.
+
+### Changed
+- **Identifiers may now contain underscores.** `hello_world`, `_private`, and `_` all lex as `IDENT`. Identifier start: lowercase letter or `_`. Continuation: same (digits intentionally still excluded for now). Driven by the fact that without this, function names like `first_positive` from idiomatic real-world code wouldn't lex.
+
 ## [2.0.0] - 2026-05-26
 
 **The headline release.** `exec()` is gone. ROT no longer compiles to Python — it runs its own AST through a tree-walking interpreter. This is the defining v1→v2 boundary.

@@ -102,3 +102,18 @@ def test_flat_binary_op_does_not_add_unnecessary_parens():
         ast.BinaryOp(op="+", left=ast.NumberLit(1), right=ast.NumberLit(2))
     ))
     assert src == "1 + 2"
+
+
+def test_emits_assignment():
+    src = _emit(ast.Assign(name="x", value=ast.NumberLit(5)))
+    assert src == "x = 5"
+
+
+def test_emits_return_with_value():
+    src = _emit(ast.Return(value=ast.Identifier("x")))
+    assert src == "return x"
+
+
+def test_emits_bare_return():
+    src = _emit(ast.Return(value=None))
+    assert src == "return"

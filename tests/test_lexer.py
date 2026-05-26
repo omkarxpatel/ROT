@@ -113,3 +113,15 @@ def test_bare_exclamation_is_unsupported():
     # `!` is only valid as part of `!=`.
     with pytest.raises(LexerError):
         Lexer().tokenize("!x")
+
+
+def test_return_is_a_keyword():
+    assert _lex("return")[0] == ("return", "RETURN")
+    # Identifier that contains "return" as a prefix is still IDENT, not RETURN.
+    assert _lex("returns")[0] == ("returns", "IDENT")
+
+
+def test_identifiers_can_contain_underscores():
+    assert _lex("hello_world") == [("hello_world", "IDENT")]
+    assert _lex("_private") == [("_private", "IDENT")]
+    assert _lex("_") == [("_", "IDENT")]

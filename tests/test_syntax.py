@@ -236,6 +236,51 @@ def test_unterminated_block_raises_parser_error():
         _parse("funct hi() { coutln(x)")
 
 
+def test_assignment_produces_assign_node():
+    program = _parse("x = 5")
+    assert program == ast.Program(body=[
+        ast.Assign(name="x", value=ast.NumberLit(5))
+    ])
+
+
+def test_assignment_distinguished_from_equality_expr():
+    # x == y is an expression statement; x = y is an assignment.
+    eq = _parse("x == y")
+    assert isinstance(eq.body[0], ast.ExprStmt)
+    assert isinstance(eq.body[0].expr, ast.BinaryOp)
+
+    asg = _parse("x = y")
+    assert isinstance(asg.body[0], ast.Assign)
+
+
+def test_assignment_value_can_be_a_complex_expression():
+    program = _parse("total = a + b * 2")
+    assert program.body[0] == ast.Assign(
+        name="total",
+        value=ast.BinaryOp(
+            op="+",
+            left=ast.Identifier("a"),
+            right=ast.BinaryOp(op="*", left=ast.Identifier("b"), right=ast.NumberLit(2)),
+        ),
+    )
+
+
+def test_return_with_expression():
+    program = _parse("funct add(x | y) { return x + y }")
+    func = program.body[0]
+    assert isinstance(func, ast.FuncDef)
+    ret = func.body.statements[0]
+    assert isinstance(ret, ast.Return)
+    assert ret.value == ast.BinaryOp(op="+", left=ast.Identifier("x"), right=ast.Identifier("y"))
+
+
+def test_bare_return_has_no_value():
+    program = _parse("funct foo() { return }")
+    ret = program.body[0].body.statements[0]
+    assert isinstance(ret, ast.Return)
+    assert ret.value is None
+
+
 def test_full_example_functions_rot_parses_end_to_end():
     """The same program that's been our end-to-end golden since v1.0.0
     now parses to a full AST — funct + if/elseif/else chain + top-level

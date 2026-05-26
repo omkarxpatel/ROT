@@ -78,7 +78,18 @@ class IfStmt:
     else_block: "Block | None" = None
 
 
-Statement = Union[ExprStmt, FuncDef, IfStmt]
+@dataclass
+class Assign:
+    name: str
+    value: Expression
+
+
+@dataclass
+class Return:
+    value: "Expression | None" = None
+
+
+Statement = Union[ExprStmt, FuncDef, IfStmt, Assign, Return]
 
 
 @dataclass

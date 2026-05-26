@@ -1,14 +1,16 @@
 """Recursive-descent parser: turns a Token stream into an AST.
 
-Grammar (as of v1.8.0 — adds statements: funct, if/elseif/else, blocks):
+Grammar (as of v2.1.0 — adds variable assignment and return):
 
     program     := stmt*
-    stmt        := func_def | if_stmt | expr_stmt
+    stmt        := func_def | if_stmt | return_stmt | assign | expr_stmt
     func_def    := 'funct' IDENT '(' params? ')' block
     params      := IDENT ('|' IDENT)*
     if_stmt     := 'if' '(' expr ')' block (elif_branch)* else_branch?
     elif_branch := 'elseif' '(' expr ')' block
     else_branch := 'else' block
+    return_stmt := 'return' expr?
+    assign      := IDENT '=' expr                       # lookahead disambiguates from expr_stmt
     block       := '{' stmt* '}'
     expr_stmt   := expr
     expr        := binary
@@ -53,6 +55,10 @@ _INFIX_PRECEDENCE: dict[str, int] = {
 }
 
 
+# Token kinds that can start an expression (used to detect bare `return`).
+_EXPR_STARTS = {"IDENT", "PRINT", "PRINTLN", "NUMBER", "STRING_LIT", "L_PAREN"}
+
+
 class Parser:
     def __init__(self, tokens: list[Token]) -> None:
         self.tokens = [t for t in tokens if t.kind not in _SKIP_KINDS]
@@ -72,7 +78,28 @@ class Parser:
             return self._parse_func_def()
         if tok.kind == "IF":
             return self._parse_if_stmt()
+        if tok.kind == "RETURN":
+            return self._parse_return()
+        # Assignment: IDENT '=' expr — one-token lookahead distinguishes
+        # from a bare-identifier expression statement.
+        if tok.kind == "IDENT":
+            after = self._peek(1)
+            if after is not None and after.kind == "SETVALUE":
+                return self._parse_assign()
         return ast.ExprStmt(expr=self._parse_expression())
+
+    def _parse_assign(self) -> ast.Assign:
+        name_tok = self._consume("IDENT")
+        self._consume("SETVALUE")
+        value = self._parse_expression()
+        return ast.Assign(name=name_tok.lexeme, value=value)
+
+    def _parse_return(self) -> ast.Return:
+        self._consume("RETURN")
+        tok = self._peek()
+        if tok is not None and tok.kind in _EXPR_STARTS:
+            return ast.Return(value=self._parse_expression())
+        return ast.Return(value=None)
 
     def _parse_func_def(self) -> ast.FuncDef:
         self._consume("FUNCTION")
@@ -187,8 +214,9 @@ class Parser:
             tok.col,
         )
 
-    def _peek(self) -> Token | None:
-        return self.tokens[self.pos] if self.pos < len(self.tokens) else None
+    def _peek(self, offset: int = 0) -> Token | None:
+        i = self.pos + offset
+        return self.tokens[i] if i < len(self.tokens) else None
 
     def _at_end(self) -> bool:
         return self.pos >= len(self.tokens)

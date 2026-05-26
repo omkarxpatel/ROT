@@ -19,4 +19,5 @@ KEYWORDS: dict[str, str] = {
     "elseif": "ELIF",
     "if":     "IF",
     "else":   "ELSE",
+    "return": "RETURN",
 }

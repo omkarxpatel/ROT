@@ -46,6 +46,17 @@ _SOLO_FALLBACK: dict[str, str] = {
 }
 
 
+def _is_identifier_start(ch: str) -> bool:
+    # Identifiers start with a lowercase letter or underscore.
+    return ch == "_" or (ch.isalpha() and ch.islower())
+
+
+def _is_identifier_continuation(ch: str) -> bool:
+    # ...and continue with letters / underscores. Digits are intentionally
+    # excluded for now to keep `x1` lexing as two tokens (identifier + number).
+    return _is_identifier_start(ch)
+
+
 class Lexer:
     def __init__(self, trace: bool = False) -> None:
         self.trace = trace
@@ -78,7 +89,7 @@ class Lexer:
             self._scan_horizontal_space(start_line, start_col)
         elif ch.isdigit():
             self._scan_number(start_line, start_col)
-        elif ch.isalpha() and ch.islower():
+        elif _is_identifier_start(ch):
             self._scan_identifier_or_keyword(start_line, start_col)
         elif ch == '"':
             self._scan_string_literal(start_line, start_col)
@@ -116,7 +127,7 @@ class Lexer:
 
     def _scan_identifier_or_keyword(self, line: int, col: int) -> None:
         start = self.pos
-        while self._peek().isalpha() and self._peek().islower():
+        while _is_identifier_continuation(self._peek()):
             self._advance()
         lexeme = self.source[start : self.pos]
         kind = KEYWORDS.get(lexeme, "IDENT")
