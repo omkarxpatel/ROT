@@ -75,3 +75,41 @@ def test_uppercase_identifiers_are_unsupported():
     # rot keywords and identifiers are lowercase by design.
     with pytest.raises(LexerError):
         Lexer().tokenize("HELLO")
+
+
+def test_multi_char_operators_are_single_tokens():
+    assert _lex("x == y") == [
+        ("x", "IDENT"), (" ", "SPACE"),
+        ("==", "EQ_EQ"),
+        (" ", "SPACE"), ("y", "IDENT"),
+    ]
+    assert _lex("x != y") == [
+        ("x", "IDENT"), (" ", "SPACE"),
+        ("!=", "NEQ"),
+        (" ", "SPACE"), ("y", "IDENT"),
+    ]
+    assert _lex("x <= y") == [
+        ("x", "IDENT"), (" ", "SPACE"),
+        ("<=", "LE"),
+        (" ", "SPACE"), ("y", "IDENT"),
+    ]
+    assert _lex("x >= y") == [
+        ("x", "IDENT"), (" ", "SPACE"),
+        (">=", "GE"),
+        (" ", "SPACE"), ("y", "IDENT"),
+    ]
+
+
+def test_solo_equals_still_setvalue():
+    # A lone `=` (not followed by another `=`) still produces SETVALUE.
+    assert _lex("x = y") == [
+        ("x", "IDENT"), (" ", "SPACE"),
+        ("=", "SETVALUE"),
+        (" ", "SPACE"), ("y", "IDENT"),
+    ]
+
+
+def test_bare_exclamation_is_unsupported():
+    # `!` is only valid as part of `!=`.
+    with pytest.raises(LexerError):
+        Lexer().tokenize("!x")

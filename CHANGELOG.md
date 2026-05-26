@@ -2,6 +2,21 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-05-26
+
+Real expressions. The "`==` works by accident" quirk is dead.
+
+### Added
+- Multi-character operator tokens: `==` (`EQ_EQ`), `!=` (`NEQ`), `<=` (`LE`), `>=` (`GE`). The lexer's two-char lookahead matches them as single tokens; lone `=`, `<`, `>` still produce `SETVALUE`/`LESSTHAN`/`GREATERTHAN`.
+- `ast.BinaryOp(op, left, right)` AST node; added to the `Expression` union.
+- **Pratt parsing** in `rot/syntax.py`. Precedence levels: `*` `/` (5), `+` `-` (4), `<` `<=` `>` `>=` (3), `==` `!=` (2). All operators left-associative.
+- Parenthesized expressions: `(1 + 2) * 3` parses with explicit grouping.
+- 10 new tests across `tests/test_lexer.py` and `tests/test_syntax.py` covering multi-char ops, precedence, associativity, grouping, and binary ops nested inside call args.
+
+### Changed
+- `_SINGLE_CHAR_TOKENS` in `rot/lexer.py` no longer contains `=`, `<`, `>` — those moved to `_SOLO_FALLBACK` so the two-char check runs first.
+- Transpiler is unchanged. New token kinds (`EQ_EQ`/`NEQ`/`LE`/`GE`) fall through to their lexeme via `PY_EQUIVALENT.get(kind, lexeme)`, so `==` emits as `==` to Python.
+
 ## [1.6.4] - 2026-05-26
 
 ### Changed

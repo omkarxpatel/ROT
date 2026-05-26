@@ -89,3 +89,89 @@ def test_nested_call_in_args():
             )
         ]
     )
+
+
+def _expr(source: str) -> ast.Expression:
+    """Parse a source snippet and return the single contained expression."""
+    program = _parse(source)
+    assert len(program.body) == 1
+    return program.body[0].expr
+
+
+def test_comparison_produces_binary_op():
+    assert _expr("x > y") == ast.BinaryOp(
+        op=">",
+        left=ast.Identifier("x"),
+        right=ast.Identifier("y"),
+    )
+
+
+def test_equality_uses_eq_eq_token():
+    assert _expr("x == y") == ast.BinaryOp(
+        op="==",
+        left=ast.Identifier("x"),
+        right=ast.Identifier("y"),
+    )
+
+
+def test_multiplication_binds_tighter_than_addition():
+    # 1 + 2 * 3 should parse as 1 + (2 * 3), not (1 + 2) * 3.
+    assert _expr("1 + 2 * 3") == ast.BinaryOp(
+        op="+",
+        left=ast.NumberLit(1),
+        right=ast.BinaryOp(
+            op="*",
+            left=ast.NumberLit(2),
+            right=ast.NumberLit(3),
+        ),
+    )
+
+
+def test_parens_override_precedence():
+    assert _expr("(1 + 2) * 3") == ast.BinaryOp(
+        op="*",
+        left=ast.BinaryOp(
+            op="+",
+            left=ast.NumberLit(1),
+            right=ast.NumberLit(2),
+        ),
+        right=ast.NumberLit(3),
+    )
+
+
+def test_addition_is_left_associative():
+    # 1 + 2 + 3 should be (1 + 2) + 3.
+    assert _expr("1 + 2 + 3") == ast.BinaryOp(
+        op="+",
+        left=ast.BinaryOp(
+            op="+",
+            left=ast.NumberLit(1),
+            right=ast.NumberLit(2),
+        ),
+        right=ast.NumberLit(3),
+    )
+
+
+def test_equality_binds_looser_than_comparison():
+    # x > y == z should be (x > y) == z, since `>` has higher precedence.
+    assert _expr("x > y == z") == ast.BinaryOp(
+        op="==",
+        left=ast.BinaryOp(
+            op=">",
+            left=ast.Identifier("x"),
+            right=ast.Identifier("y"),
+        ),
+        right=ast.Identifier("z"),
+    )
+
+
+def test_binary_op_inside_call_args():
+    program = _parse("coutln(1 + 2)")
+    assert program == ast.Program(body=[
+        ast.ExprStmt(
+            ast.Call(
+                callee=ast.Identifier("coutln"),
+                args=[ast.BinaryOp(op="+", left=ast.NumberLit(1), right=ast.NumberLit(2))],
+            )
+        )
+    ])

@@ -1,18 +1,27 @@
 """Recursive-descent parser: turns a Token stream into an AST.
 
-Phase 1 grammar (intentionally narrow):
+Grammar (as of v1.7.0 — adds binary expressions with precedence):
 
     program     := stmt*
     stmt        := expr_stmt
     expr_stmt   := expr
-    expr        := call | atom
-    call        := callable '(' args ')'
+    expr        := binary
+    binary      := atom_or_call (BIN_OP atom_or_call)*       # Pratt
+    atom_or_call:= atom call_tail?
+    call_tail   := '(' args ')'
     args        := ( expr ('|' expr)* )?
+    atom        := callable | NUMBER | STRING_LIT | '(' expr ')'
     callable    := IDENT | 'cout' | 'coutln'
-    atom        := callable | NUMBER | STRING_LIT
 
-Whitespace, NEWLINE, and COMMENT tokens are stripped up front — Phase
-1 doesn't care about source layout.
+Whitespace, NEWLINE, and COMMENT tokens are stripped up front — the
+parser doesn't care about source layout.
+
+Operator precedence (higher binds tighter):
+
+    5  *  /                                  factor
+    4  +  -                                  term
+    3  <  <=  >  >=                          comparison
+    2  ==  !=                                equality
 """
 
 from __future__ import annotations
@@ -28,6 +37,14 @@ _SKIP_KINDS = {"SPACE", "NEWLINE", "COMMENT"}
 # PRINT and PRINTLN (cout / coutln) are keyword-classified by the lexer
 # but should still be callable like ordinary identifiers.
 _NAME_LIKE = {"IDENT", "PRINT", "PRINTLN"}
+
+# Infix operator precedences for Pratt parsing. Higher = binds tighter.
+_INFIX_PRECEDENCE: dict[str, int] = {
+    "EQ_EQ": 2, "NEQ": 2,
+    "LESSTHAN": 3, "LE": 3, "GREATERTHAN": 3, "GE": 3,
+    "ADDITION": 4, "SUBTRACTION": 4,
+    "MULTIPLICATION": 5, "DIVISION": 5,
+}
 
 
 class Parser:
@@ -45,6 +62,25 @@ class Parser:
         return ast.ExprStmt(expr=self._parse_expression())
 
     def _parse_expression(self) -> ast.Expression:
+        return self._parse_binary(0)
+
+    def _parse_binary(self, min_prec: int) -> ast.Expression:
+        left = self._parse_atom_or_call()
+        while True:
+            tok = self._peek()
+            if tok is None:
+                break
+            prec = _INFIX_PRECEDENCE.get(tok.kind)
+            if prec is None or prec < min_prec:
+                break
+            op_tok = self._advance()
+            # `prec + 1` makes operators left-associative; use `prec`
+            # for right-associative operators (none yet in rot).
+            right = self._parse_binary(prec + 1)
+            left = ast.BinaryOp(op=op_tok.lexeme, left=left, right=right)
+        return left
+
+    def _parse_atom_or_call(self) -> ast.Expression:
         atom = self._parse_atom()
         if self._check("L_PAREN"):
             return self._parse_call_tail(atom)
@@ -66,6 +102,11 @@ class Parser:
         if tok is None:
             raise ParserError("unexpected end of input")
 
+        if tok.kind == "L_PAREN":
+            self._advance()
+            expr = self._parse_expression()
+            self._consume("R_PAREN")
+            return expr
         if tok.kind in _NAME_LIKE:
             self._advance()
             return ast.Identifier(name=tok.lexeme)

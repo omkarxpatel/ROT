@@ -37,7 +37,14 @@ class Call:
     args: list["Expression"] = field(default_factory=list)
 
 
-Expression = Union[Identifier, NumberLit, StringLit, Call]
+@dataclass
+class BinaryOp:
+    op: str
+    left: "Expression"
+    right: "Expression"
+
+
+Expression = Union[Identifier, NumberLit, StringLit, Call, BinaryOp]
 
 
 @dataclass

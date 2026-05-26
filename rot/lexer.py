@@ -18,15 +18,31 @@ _SINGLE_CHAR_TOKENS: dict[str, str] = {
     "-": "SUBTRACTION",
     "*": "MULTIPLICATION",
     "/": "DIVISION",
-    "=": "SETVALUE",
-    "<": "LESSTHAN",
-    ">": "GREATERTHAN",
     "(": "L_PAREN",
     ")": "R_PAREN",
     "{": "L_CURLY",
     "}": "R_CURLY",
     "|": "COMMA",
     "'": "SINGLE_QUOTE",
+}
+
+
+# (current char, next char) -> (lexeme, kind). When the lookahead pair
+# matches, both chars are consumed; otherwise we fall through to the
+# single-char handler below.
+_TWO_CHAR_TOKENS: dict[tuple[str, str], tuple[str, str]] = {
+    ("=", "="): ("==", "EQ_EQ"),
+    ("!", "="): ("!=", "NEQ"),
+    ("<", "="): ("<=", "LE"),
+    (">", "="): (">=", "GE"),
+}
+
+
+# When the two-char check fails, these chars still produce a single-char token.
+_SOLO_FALLBACK: dict[str, str] = {
+    "=": "SETVALUE",
+    "<": "LESSTHAN",
+    ">": "GREATERTHAN",
 }
 
 
@@ -66,6 +82,14 @@ class Lexer:
             self._scan_identifier_or_keyword(start_line, start_col)
         elif ch == '"':
             self._scan_string_literal(start_line, start_col)
+        elif (ch, self._peek(1)) in _TWO_CHAR_TOKENS:
+            lexeme, kind = _TWO_CHAR_TOKENS[(ch, self._peek(1))]
+            self._advance()
+            self._advance()
+            self._add(lexeme, kind, start_line, start_col)
+        elif ch in _SOLO_FALLBACK:
+            self._advance()
+            self._add(ch, _SOLO_FALLBACK[ch], start_line, start_col)
         elif ch in _SINGLE_CHAR_TOKENS:
             self._advance()
             self._add(ch, _SINGLE_CHAR_TOKENS[ch], start_line, start_col)
