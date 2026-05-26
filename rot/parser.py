@@ -1,59 +1,66 @@
 """Parser: turns a token stream into a Python source string."""
 
-from .keywords import ANTI_KEYWORD, KEYWORD_TYPES, DOUBLE_CHECKING
+from __future__ import annotations
+
+from .errors import ParserError
+from .keywords import PY_EQUIVALENT
+from .token import Token
 
 
 class Parser:
-    def parse(self, tokens: list[list[str]]) -> str:
-        operations = 0
-        idx = 0
+    def parse(self, tokens: list[Token]) -> str:
+        print("-" * 30)
         result = ""
 
-        print("-" * 30)
-        for value, token_type in tokens:
-            parsed_value = ANTI_KEYWORD.get(token_type) or value
+        for i, token in enumerate(tokens):
+            parsed = self._python_for(token)
 
-            if len(parsed_value) != 1:
-                if parsed_value == "print":  # checks for newline at end
-                    open_parens = 0
-                    for i in range(idx, len(tokens)):
-                        token = tokens[i][-1]
-                        if token == "L_PAREN":
-                            open_parens += 1
-                        elif token == "R_PAREN":
-                            open_parens -= 1
-                            if open_parens == 0:
-                                tokens.insert(i, [', end=""', "ENDL"])
-                                idx = i + 2
-                                break
-                elif parsed_value == "print*":
-                    parsed_value = parsed_value.strip("*")
+            if parsed == "print":
+                # cout(...) — insert `, end=""` before the matching ) to
+                # suppress Python's default newline.
+                self._insert_end_kwarg(tokens, i + 1, token)
+            elif parsed == "print*":
+                # coutln(...) — strip the marker; default Python `print` is fine.
+                parsed = parsed.rstrip("*")
 
-            if parsed_value == "print":
-                try:
-                    if result[-5:] != "print":
-                        result += parsed_value
-                except Exception:
-                    pass
-            else:
-                checker = DOUBLE_CHECKING.get(parsed_value) or None
-                if checker:
-                    next_token = tokens[operations + 1][0]
-                    if next_token + parsed_value == checker:
-                        result += ANTI_KEYWORD.get(KEYWORD_TYPES.get(checker))
-                    else:
-                        result += checker
-                else:
-                    result += parsed_value
+            if parsed == "print" and result[-5:] == "print":
+                self._log(i, token.lexeme, parsed, token.kind)
+                continue
 
-            operations += 1
-
-            if parsed_value == "\n" or token_type == "SPACE":
-                value, parsed_value = repr(value), repr(parsed_value)
-
-            spaces = " " * (5 - len(str(operations)))
-            spaces2 = " " * (10 - len(value))
-            print(f"{operations}{spaces}|  {value}{spaces2}->    {parsed_value}")
+            result += parsed
+            self._log(i, token.lexeme, parsed, token.kind)
 
         print("-" * 30)
         return result
+
+    @staticmethod
+    def _python_for(token: Token) -> str:
+        if token.kind == "COMMENT":
+            return "# " + token.lexeme[2:]
+        return PY_EQUIVALENT.get(token.kind, token.lexeme)
+
+    @staticmethod
+    def _insert_end_kwarg(tokens: list[Token], start: int, origin: Token) -> None:
+        open_parens = 0
+        for i in range(start, len(tokens)):
+            if tokens[i].kind == "L_PAREN":
+                open_parens += 1
+            elif tokens[i].kind == "R_PAREN":
+                open_parens -= 1
+                if open_parens == 0:
+                    end = Token(', end=""', "ENDL", tokens[i].line, tokens[i].col)
+                    tokens.insert(i, end)
+                    return
+        raise ParserError(
+            "unterminated cout(...) — no matching ')' found",
+            origin.line,
+            origin.col,
+        )
+
+    @staticmethod
+    def _log(idx: int, raw: str, parsed: str, kind: str) -> None:
+        if parsed == "\n" or kind == "SPACE":
+            raw, parsed = repr(raw), repr(parsed)
+        spaces = " " * (5 - len(str(idx + 1)))
+        spaces2 = " " * (10 - len(str(raw)))
+        print(f"{idx + 1}{spaces}|  {raw}{spaces2}->    {parsed}")

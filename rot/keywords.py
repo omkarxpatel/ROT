@@ -1,102 +1,60 @@
-"""Keyword and token tables shared by the lexer and parser."""
+"""Single source of truth for token kinds, reserved words, and their Python equivalents.
 
-DOUBLE_CHECKING = {
-    "/": "//",
-}
+Three tables, each with one job:
 
-LOOKUP_KEYWORD = {
-    # reserved words
-    "cout": "PRINT",
+- `KEYWORDS`        : reserved-word lexeme  -> token kind
+- `TOKEN_PATTERNS`  : ordered list of (regex, kind) tried in order; kind=None
+                     means "identifier or keyword — look up in KEYWORDS, fall
+                     back to STRING".
+- `PY_EQUIVALENT`   : token kind -> Python source to emit (parser falls back
+                     to the raw lexeme when a kind is absent).
+"""
+
+from __future__ import annotations
+
+
+KEYWORDS: dict[str, str] = {
+    "cout":   "PRINT",
     "coutln": "PRINTLN",
-    "funct": "FUNCTION",
-    "elseif": "ELSEIF",
-    "if": r"\if",
-    "else": r"\else",
-
-    # quotes
-    '"': r'\"',
-    "'": r"\'",
-
-    # arithmetic operators
-    "+": r"\+",
-    "-": r"\-",
-    "*": r"\*",
-    "/": r"\/",
-    "<": r"\<",
-    ">": r"\>",
-
-    # special symbols
-    "(": r"\(",
-    ")": r"\)",
-    " ": r"\s+",
-    "\n": r"\n",
-    "=": r"\=",
-    "//": r"//",
-    "|": r"\|",
-    "{": r"\{",
+    "funct":  "FUNCTION",
+    "elseif": "ELIF",
+    "if":     "IF",
+    "else":   "ELSE",
 }
 
-KEYWORD_TYPES = {
-    # reserved words
-    r"\d+": "NUMBER",
-    r"[a-z]+": "STRING",
-    r"[A-Z]+": "STRING",
-    "print": "PRINT",
-    "funct ": "FUNCTION",
-    r"\if": "IF",
-    r"\else": "ELSE",
-    r"\elseif": "ELIF",
 
-    # quotes
-    r'\"': "QUOTE",
-    r'\'': "SINGLE_QUOTE",
+# Order matters: longer / more specific patterns must come before the patterns
+# they would otherwise overlap with (e.g. `//` before `/`).
+TOKEN_PATTERNS: list[tuple[str, str | None]] = [
+    (r"//[^\n]*",   "COMMENT"),
+    (r"\d+",        "NUMBER"),
+    (r"[a-z]+",     None),
+    (r"[A-Z]+",     None),
+    (r'"',          "QUOTE"),
+    (r"'",          "SINGLE_QUOTE"),
+    (r"\+",         "ADDITION"),
+    (r"-",          "SUBTRACTION"),
+    (r"\*",         "MULTIPLICATION"),
+    (r"/",          "DIVISION"),
+    (r"=",          "SETVALUE"),
+    (r"<",          "LESSTHAN"),
+    (r">",          "GREATERTHAN"),
+    (r"\(",         "L_PAREN"),
+    (r"\)",         "R_PAREN"),
+    (r"\{",         "L_CURLY"),
+    (r"\}",         "R_CURLY"),
+    (r"\|",         "COMMA"),
+    (r"\n",         "NEWLINE"),
+    (r"[ \t]+",     "SPACE"),
+]
 
-    # arithmetic operators
-    r"\+": "ADDITION",
-    r"\-": "SUBTRACTION",
-    r"\*": "MULTIPLICATION",
-    r"\/": "DIVISION",
-    r"\=": "SETVALUE",
-    r"\<": "LESSTHAN",
-    r"\>": "GREATERTHAN",
 
-    # special symbols
-    r"\(": "L_PAREN",
-    r"\)": "R_PAREN",
-    r"\s+": "SPACE",
-    r"\n": "NEWLINE",
-    r"//": "COMMENT",
-    r"\|": "COMMA",
-    r"\{": "L_CURLY",
-}
-
-ANTI_KEYWORD = {
-    "PRINT": "print",
-    "PRINTLN": "print*",
-    "COMMENT": "# ",
-    "COMMA": ",",
+PY_EQUIVALENT: dict[str, str] = {
+    "PRINT":    "print",
+    "PRINTLN":  "print*",
     "FUNCTION": "def",
-    "L_CURLY": ":",
-    "ELSEIF": "elif",
+    "L_CURLY":  ":",
+    "R_CURLY":  "",
+    "ELIF":     "elif",
+    "COMMA":    ",",
 }
-
-SYNTAX_TREE = {
-    "PRINT": 'cout("_")',
-    "FUNCTION": "funct",
-}
-
-
-def _expand_lookups() -> None:
-    keyword_config = {
-        "0123456789": r"\d+",
-        "abcdefghijklmnopqrstuvwxyz": r"[a-z]+",
-    }
-    for characters, regex in keyword_config.items():
-        for character in characters:
-            LOOKUP_KEYWORD[character] = regex
-
-    for character in "+-*/":
-        LOOKUP_KEYWORD[character] = rf"\{character}"
-
-
-_expand_lookups()

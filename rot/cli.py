@@ -1,9 +1,12 @@
 """Command-line entry point: `python -m rot <file.rot>`."""
 
+from __future__ import annotations
+
 import sys
 
 from . import __version__
 from .compiler import Compiler
+from .errors import RotError
 
 
 def main() -> None:
@@ -24,4 +27,8 @@ def main() -> None:
         print(f"File '{filename}' not found.")
         sys.exit(1)
 
-    Compiler().run(source)
+    try:
+        Compiler().run(source)
+    except RotError as err:
+        print(f"\nrot error: {err}", file=sys.stderr)
+        sys.exit(1)
