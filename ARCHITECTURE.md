@@ -1,12 +1,12 @@
 # Architecture
 
-A walkthrough of how `rot` is currently built (as of `v1.9.0`) and where the project is heading. This document is for anyone curious about the internals — separate from `README.md`, which is the elevator pitch.
+A walkthrough of how `rot` is currently built (as of `v2.0.0`) and where the project is heading. This document is for anyone curious about the internals — separate from `README.md`, which is the elevator pitch.
 
 For release-by-release history see [`CHANGELOG.md`](CHANGELOG.md). For the current version see [`rot/__init__.py`](rot/__init__.py).
 
 ---
 
-# Part 1 — How it works today (v1.9.0)
+# Part 1 — How it works today (v2.0.0)
 
 ## The pipeline at a glance
 
@@ -39,21 +39,18 @@ For release-by-release history see [`CHANGELOG.md`](CHANGELOG.md). For the curre
                                            │   BinaryOp / ...
                                            ▼
                           ┌──────────────────────────────────┐
-                          │ Emitter (rot/emitter.py)         │
-                          │   AST → Python source            │
-                          └────────────────┬─────────────────┘
-                                           │ python source (str)
-                                           ▼
-                          ┌──────────────────────────────────┐
-                          │ Compiler.save → output.py        │
-                          │ Compiler.execute → exec()        │
+                          │ Interpreter (rot/interpreter.py) │
+                          │   tree-walking; scoped env;      │
+                          │   cout/coutln as built-ins       │
                           └────────────────┬─────────────────┘
                                            │
                                            ▼
                                        program output
 ```
 
-Four stages, plus the orchestrator. The `Compiler` ties them together; the CLI ties the compiler to the user.
+Three stages on the active path, plus the orchestrator. Python's `exec()` is no longer involved — the interpreter walks the AST directly.
+
+(The v1.9.0 AST → Python emitter still lives in `rot/emitter.py` as a parallel/optional path, but the default compile flow goes straight through the interpreter now.)
 
 ## The modules
 
@@ -61,17 +58,18 @@ Four stages, plus the orchestrator. The `Compiler` ties them together; the CLI t
 |---|---|---|
 | [`rot/__init__.py`](rot/__init__.py) | `__version__` tag | 1 |
 | [`rot/__main__.py`](rot/__main__.py) | `python -m rot` entry | 5 |
-| [`rot/cli.py`](rot/cli.py) | argparse CLI surface | ~60 |
-| [`rot/compiler.py`](rot/compiler.py) | orchestrates lex → parse → emit → exec | ~60 |
+| [`rot/cli.py`](rot/cli.py) | argparse CLI surface | ~55 |
+| [`rot/compiler.py`](rot/compiler.py) | orchestrates lex → parse → interpret | ~55 |
 | [`rot/lexer.py`](rot/lexer.py) | hand-rolled char-by-char tokenizer | ~150 |
 | [`rot/ast.py`](rot/ast.py) | AST node dataclasses | ~65 |
 | [`rot/syntax.py`](rot/syntax.py) | recursive-descent parser: tokens → AST (Pratt for expressions) | ~170 |
-| [`rot/emitter.py`](rot/emitter.py) | AST → Python source string | ~80 |
-| [`rot/keywords.py`](rot/keywords.py) | `KEYWORDS` lookup (`PY_EQUIVALENT` retired with the transpiler) | ~25 |
+| [`rot/interpreter.py`](rot/interpreter.py) | **tree-walking interpreter** over the AST | ~150 |
+| [`rot/emitter.py`](rot/emitter.py) | AST → Python source (off the active path; kept tested) | ~80 |
+| [`rot/keywords.py`](rot/keywords.py) | `KEYWORDS` lookup | ~25 |
 | [`rot/token.py`](rot/token.py) | `Token` dataclass | 10 |
-| [`rot/errors.py`](rot/errors.py) | `LexerError` / `ParserError` carrying `(line, col)` | ~20 |
+| [`rot/errors.py`](rot/errors.py) | `LexerError` / `ParserError` / `InterpreterError` carrying `(line, col)` | ~25 |
 
-Total: ~650 lines of language code, ~450 lines of tests.
+Total: ~800 lines of language code, ~600 lines of tests.
 
 ## Stage 1 — the Lexer
 
@@ -169,73 +167,80 @@ The AST node types live in `rot/ast.py`:
 @dataclass class StringLit:   value
 ```
 
-## Stage 3 — the Emitter (`rot/emitter.py`)
+## Stage 3 — the Interpreter (`rot/interpreter.py`)
 
-Walks the AST and produces a Python source string. Each node maps to its Python form:
+Walks the AST and executes its semantics directly. No `exec()`, no intermediate Python source. The interpreter holds an `Environment` — a `dict` of name → value with a `parent` link for outer scopes — and dispatches on each AST node:
 
 ```
-ExprStmt(expr)              → write expr as a statement line
-FuncDef(name, params, body) → `def name(params):` + indented body
-IfStmt(...)                 → `if cond:` / `elif cond:` / `else:` with blocks
-Call(Identifier("cout"),
-     args)                  → `print(args, end="")`
-Call(Identifier("coutln"),
-     args)                  → `print(args)`
-Call(callee, args)          → `callee(args)`   (general case)
-BinaryOp(op, l, r)          → `l op r` (children parenthesized if they
-                                         are themselves binary ops, so
-                                         precedence survives)
-Identifier(name)            → `name`
-NumberLit / StringLit       → `repr(value)`
+ExprStmt(expr)              → evaluate expr, discard result
+FuncDef(name, params, body) → env.set(name, RotFunction(decl, current env))
+IfStmt(cond, then, elifs,
+       else)                → evaluate cond; pick branch; execute its block
+Block(statements)           → execute each statement in sequence
+Call(callee, args)          → evaluate callee + args; if RotFunction,
+                              push a child scope and run the body;
+                              if a Python callable (built-in), invoke it
+BinaryOp(op, l, r)          → evaluate l and r; look op up in _BINARY_OPS
+Identifier(name)            → env.get(name) — walks the parent chain
+NumberLit / StringLit       → the literal value
 ```
 
-Indentation tracked via a `depth` counter. `Block` increments before recursing, decrements after. Empty blocks emit `pass`.
+`cout` and `coutln` are bound in the global environment as Python functions — the language's only built-ins so far. `cout(...)` prints with `end=""` and `sep=""`; `coutln(...)` uses the default newline.
 
-This is what replaced the v1 transpiler in v1.9.0 — same Python output for any program v1 handled, now derived from a real tree instead of token concatenation.
+User-defined functions are `RotFunction` instances. They close over the environment they were declared in (lexical scope). When called, they create a child environment, bind parameters, execute the body, then restore the prior environment.
+
+Errors that aren't syntax errors come out as `InterpreterError(line, col)`: undefined names, arity mismatches, uncallable values, unknown operators.
+
+### Why "tree-walking"?
+
+This is the simplest interpreter architecture: literally walk the AST nodes and do what each one means. Slow per operation (every function call traverses Python objects), but the reference for what the language *means*. Future phases (bytecode VM, native codegen) optimize how it runs, not what it does.
+
+### Emitter side-path
+
+`rot/emitter.py` still exists. It walks the AST and produces equivalent Python source. It's not on the default execution path in v2.0.0 but its tests still pass, and a future `--transpile` flag could rewire it for diagnostics or polyglot output.
 
 ## Stage 4 — Compiler orchestration
 
 ```python
 class Compiler:
-    def compile(source: str) -> str:           # lex → parse → emit, return Python string
-    def save(python_code: str, path: str) -> None
-    def execute(python_code: str) -> None      # exec() the generated Python
+    def parse(source: str) -> ast.Program:     # lex + parse → AST
+    def run(source: str) -> None               # parse + interpret
 ```
 
-Internally `compile()` runs: `Lexer.tokenize()` → `Parser(tokens).parse()` → `Emitter().emit(program)`. The split lets the CLI offer `--no-run` (transpile only) and tests skip `save()` and use `exec()` with a captured stdout.
+`parse()` is exposed so `--no-run` can validate without executing; tests use it to grab the AST directly. `run()` is the full pipeline.
 
-The CLI assembles them based on flags:
+The CLI is thin:
 
 ```python
 compiler = Compiler(trace=args.trace)
-python_code = compiler.compile(source)
-compiler.save(python_code, args.output)
-if not args.no_run:
-    compiler.execute(python_code)
+if args.no_run:
+    compiler.parse(source)        # raises on syntax errors; exits clean if not
+    return
+compiler.run(source)              # parses + executes; raises InterpreterError on runtime issues
 ```
 
-`trace=True` enables the verbose pipeline tables (the colored boxes the old version printed unconditionally). Default is silent.
+`trace=True` enables the verbose tokenizer/parser/runtime tables. Default is silent.
 
 ## The CLI surface
 
 ```
-$ python -m rot examples/functions.rot              # silent compile + run
+$ python -m rot examples/functions.rot              # silent parse + interpret
 $ python -m rot --trace examples/functions.rot      # verbose pipeline
-$ python -m rot --no-run examples/hello.rot         # transpile only
-$ python -m rot -o build.py examples/hello.rot      # custom output path
+$ python -m rot --no-run examples/hello.rot         # parse only — validates
 $ python -m rot --version                           # print version
 ```
 
 ## The test suite
 
-`tests/` has four files:
+`tests/` has five files:
 
 - **`test_lexer.py`** — keyword vs identifier classification, line/col tracking, multi-char operator tokens, `LexerError` location, comment lexing, `R_CURLY`, uppercase rejection.
 - **`test_syntax.py`** — AST construction: call shapes, atoms, Pratt precedence/associativity, parenthesized grouping, `FuncDef` / `IfStmt` / `Block`, plus a full-program parse of `examples/functions.rot`.
-- **`test_emitter.py`** — AST → Python: `cout` vs `coutln` translation, function-def indentation, if/elif/else chains, precedence-preserving parens on binary ops.
-- **`test_end_to_end.py`** — every `examples/*.rot` paired with a `.expected` file. Runs through `Compiler.compile()`, `exec`s the result, asserts stdout matches.
+- **`test_interpreter.py`** — runtime semantics: `cout`/`coutln`, function definition + call, arity check, `if/elif/else` selection, arithmetic precedence, undefined-name and lexical-scope errors.
+- **`test_emitter.py`** — AST → Python (off the active path but still verified): translation rules, indentation, precedence parens.
+- **`test_end_to_end.py`** — every `examples/*.rot` paired with a `.expected` file. Runs through `Compiler.run()` with captured stdout.
 
-45 tests, ~30 ms total runtime.
+57 tests, ~90 ms total runtime.
 
 ## Behavioral quirks worth knowing
 
@@ -275,22 +280,9 @@ All errors carry source positions (the foundation laid in `v1.2.0` pays off here
 
 This is where 80% of the "real compiler feel" comes from. The language gains genuine type-checking and structural validation, even before runtime changes.
 
-## Phase 3 — tree-walking interpreter, **drop `exec()`** (`v2.0.0`)
+## Phase 3 — tree-walking interpreter, **drop `exec()`** ✓ (shipped in `v2.0.0`)
 
-The headline change. Instead of generating Python source and calling `exec()`, walk the AST directly and execute its semantics:
-
-```python
-class Interpreter:
-    def visit_NumberLit(self, node):  return node.value
-    def visit_BinaryOp(self, node):
-        l, r = self.visit(node.left), self.visit(node.right)
-        return {"+": l + r, "-": l - r, ">": l > r, ...}[node.op]
-    def visit_Call(self, node):  ...
-```
-
-Slow but correct. This is the reference implementation forever; future phases optimize what it does, not what it means.
-
-This is the cut to **`2.0.0`** — `exec()` going away is the defining v1-vs-v2 boundary. Once it's gone, ROT no longer "compiles to Python." It compiles itself.
+The headline cut. `rot/interpreter.py` walks the AST directly; `exec()` is gone. ROT no longer "compiles to Python" — it runs itself. See [Stage 3 in Part 1](#stage-3--the-interpreter-rotinterpreterpy) above.
 
 ## Phase 4 — bytecode + custom VM (planned: `v2.x`)
 

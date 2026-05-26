@@ -1,5 +1,5 @@
-"""End-to-end golden tests: every examples/*.rot file is compiled and
-exec'd, and its captured stdout compared to the matching *.expected file."""
+"""End-to-end golden tests: every examples/*.rot file is interpreted
+and its captured stdout compared to the matching *.expected file."""
 
 import contextlib
 import io
@@ -22,10 +22,8 @@ def test_example_produces_expected_output(rot_file: pathlib.Path):
     expected = rot_file.with_suffix(".expected").read_text()
     source = rot_file.read_text()
 
-    python_code = Compiler(trace=False).compile(source)
-
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):
-        exec(python_code, {})
+        Compiler(trace=False).run(source)
 
     assert captured.getvalue() == expected

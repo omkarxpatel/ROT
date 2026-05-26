@@ -21,3 +21,7 @@ class LexerError(RotError):
 
 class ParserError(RotError):
     pass
+
+
+class InterpreterError(RotError):
+    pass

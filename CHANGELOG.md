@@ -2,6 +2,37 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2026-05-26
+
+**The headline release.** `exec()` is gone. ROT no longer compiles to Python — it runs its own AST through a tree-walking interpreter. This is the defining v1→v2 boundary.
+
+### Added
+- `rot/interpreter.py` — a tree-walking interpreter over `ast.Program`:
+  - `Environment` for lexically-scoped name bindings (with `parent` chain for closures).
+  - `RotFunction` wraps a `FuncDef` with its closure environment. Arity-checks args on call. Sets up a child scope, executes the body, restores the prior env.
+  - `Interpreter.execute(program)` walks statements; `_evaluate` dispatches on expression node type; `_BINARY_OPS` table covers `+ - * / < <= > >= == !=`.
+  - `cout` and `coutln` are bound as Python callables in the global environment (the only built-ins).
+- `InterpreterError` (in `rot/errors.py`) — raised for undefined names, arity mismatches, uncallable values, unknown operators.
+- `tests/test_interpreter.py` — 12 tests covering: `cout` vs `coutln` semantics, multi-print concatenation, function definition + call, multi-param funcs (separated by `|`), `if/elif/else` branch selection, Pratt-parsed arithmetic precedence (`1+2*3 == 7`), parenthesized arithmetic, undefined-name error, wrong-arity error, lexical scope (inner function can see outer's `coutln`).
+
+### Changed
+- **`Compiler.compile()` removed.** Replaced by:
+  - `Compiler.parse(source) -> ast.Program` — lex + parse, returns the AST.
+  - `Compiler.run(source) -> None` — parse + interpret. The default path.
+- **CLI: `--output` and the `output.py` artifact are gone.** `--no-run` now means "parse and validate, don't execute" (it used to mean "transpile to file but don't run"). Default invocation just interprets.
+- `test_end_to_end.py` rewired to use `Compiler.run()` with `redirect_stdout` instead of `Compiler.compile()` + `exec`.
+- ARCHITECTURE.md updated for the new pipeline.
+- README updated: ROT is now an interpreter, not a transpiler.
+
+### Removed
+- `exec()` from the runtime. ROT now interprets the AST directly.
+- The `output.py` build artifact (was already gitignored; no longer produced).
+- `--output` and `-o` CLI flags.
+- `Compiler.save()` and `Compiler.execute()` methods (replaced by the interpreter pipeline).
+
+### Kept around
+- `rot/emitter.py` and `tests/test_emitter.py` remain. The emitter is no longer on the active path but still works correctly and is tested; a future `--transpile` flag could rewire it.
+
 ## [1.9.0] - 2026-05-26
 
 The AST takes over the active compile path. The v1 transpiler is gone. End-user behavior is unchanged — `examples/functions.rot` still prints `same` — but the entire pipeline now goes `tokens → AST → Python → exec` instead of `tokens → Python → exec`.

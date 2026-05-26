@@ -1,8 +1,12 @@
-"""Orchestrates the lex -> parse -> execute pipeline.
+"""Orchestrates the lex -> parse -> interpret pipeline.
 
-Three public methods so callers can mix and match: `compile()` returns the
-generated Python source, `save()` writes it to disk, `execute()` runs it.
-The pipeline is silent unless `trace=True` is passed to the constructor.
+v2.0.0 replaced the Python-source emitter + exec() flow with a direct
+tree-walking interpreter (rot/interpreter.py). ROT no longer compiles
+to Python — it runs its own AST.
+
+The emitter (rot/emitter.py) still exists for anyone who wants to
+inspect an equivalent Python rendering, but it's no longer on the
+default execution path.
 """
 
 from __future__ import annotations
@@ -11,7 +15,8 @@ import time
 
 from colorama import Fore, init as colorama_init
 
-from .emitter import Emitter
+from . import ast
+from .interpreter import Interpreter
 from .lexer import Lexer
 from .syntax import Parser
 
@@ -22,7 +27,7 @@ class Compiler:
         if trace:
             colorama_init(autoreset=True)
 
-    def compile(self, source: str) -> str:
+    def parse(self, source: str) -> ast.Program:
         if self.trace:
             print(f"{Fore.RED}Input File:\n\n{Fore.RESET}{source}\n\n")
             print(f"{Fore.RED}Process 1 - Tokenizer:")
@@ -41,25 +46,14 @@ class Compiler:
         if self.trace:
             print(f"AST: Program(body=[{len(program.body)} statements])")
             print(f"Execution time: {round(time.time() - started, 7)}s")
-            print(f"\n\n{Fore.RED}Process 3 - Emitter (AST -> Python):")
 
+        return program
+
+    def run(self, source: str) -> None:
+        program = self.parse(source)
+        if self.trace:
+            print(f"\n\n{Fore.RED}Process 3 - Interpreter (output):\n")
         started = time.time()
-        python_code = Emitter().emit(program)
-
+        Interpreter().execute(program)
         if self.trace:
-            print(f"Execution time: {round(time.time() - started, 7)}s")
-
-        return python_code
-
-    @staticmethod
-    def save(python_code: str, output_file: str = "output.py") -> None:
-        with open(output_file, "w") as py_file:
-            py_file.write(python_code)
-
-    def execute(self, python_code: str) -> None:
-        if self.trace:
-            print(f"\n\n{Fore.RED}Process 3 - Execution (output):\n")
-        started = time.time()
-        exec(python_code)
-        if self.trace:
-            print(f"\nExecution Time: {round(time.time() - started, 7)}s")
+            print(f"\nExecution time: {round(time.time() - started, 7)}s")

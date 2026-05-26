@@ -5,7 +5,7 @@
 [![python](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
 [![changelog](https://img.shields.io/badge/changelog-md-lightgrey)](CHANGELOG.md)
 
-**R**ecursive-descent **O**ptimizing **T**ranspiler — a small custom programming language built as a learning project for understanding how languages are designed and implemented. The current version is a Python-based transpiler — `.rot` source is tokenized, parsed against a keyword table, transformed into equivalent Python, and executed via `exec()`. Future versions replace `exec()` with a real interpreter, then a bytecode VM, then native codegen (see "Roadmap" below).
+**R**ecursive-descent **O**ptimizing **T**ranspiler — a small custom programming language built as a learning project for understanding how languages are designed and implemented. **As of v2.0.0, `.rot` source is tokenized, parsed into a real AST, and executed directly by a tree-walking interpreter — no `exec()`, no compile-to-Python step.** The v1 transpiler-to-Python pipeline is archived in the git history (`v1.0.0` → `v1.9.0`); see [`CHANGELOG.md`](CHANGELOG.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full story.
 
 See [`rot/__init__.py`](rot/__init__.py) for the current version and [`CHANGELOG.md`](CHANGELOG.md) for release history.
 
@@ -21,26 +21,17 @@ pip install -r requirements.txt
 python -m rot examples/functions.rot
 ```
 
-The compiler prints the tokenizer table, the parser transformation, writes the generated Python to `output.py`, and runs it.
+Default invocation parses and interprets the program silently — only the program's own output reaches stdout. Add `--trace` to see the tokenizer/parser pipeline tables. Use `--no-run` to validate without running.
 
-## How it works (v1)
+## How it works (v2)
 
-Three stages, all driven by the keyword tables in [rot/keywords.py](rot/keywords.py):
+Three stages on the active pipeline:
 
-1. **Tokenizer** ([rot/lexer.py](rot/lexer.py)) — walks the source character-by-character, matches each chunk against a regex from the lookup table, and emits `[lexeme, token_type]` pairs. For example, `cout("hello")` becomes:
+1. **Lexer** ([rot/lexer.py](rot/lexer.py)) — hand-rolled, character-by-character. Produces `Token(lexeme, kind, line, col)`. Multi-character operators (`==`, `!=`, `<=`, `>=`) and string literals are single tokens.
+2. **Parser** ([rot/syntax.py](rot/syntax.py)) — recursive-descent with Pratt parsing for expression precedence. Produces an `ast.Program` whose nodes (`FuncDef`, `IfStmt`, `Call`, `BinaryOp`, etc.) live in [rot/ast.py](rot/ast.py).
+3. **Interpreter** ([rot/interpreter.py](rot/interpreter.py)) — walks the AST, maintains a lexically-scoped `Environment`, dispatches on each node. `cout` and `coutln` are built-in callables in the global env.
 
-    ```
-    0    |  'cout'    |  PRINT
-    1    |  '('       |  L_PAREN
-    2    |  '"'       |  QUOTE
-    3    |  'hello'   |  STRING
-    4    |  '"'       |  QUOTE
-    5    |  ')'       |  R_PAREN
-    ```
-
-2. **Parser** ([rot/parser.py](rot/parser.py)) — maps each token type to its Python equivalent via the `ANTI_KEYWORD` table (`PRINT → print`, `FUNCTION → def`, `L_CURLY → :`, etc.) and concatenates the result.
-
-3. **Execution** ([rot/compiler.py](rot/compiler.py)) — writes the Python output to `output.py` and runs it through the built-in `exec()`.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the deep dive.
 
 Example `.rot`:
 
@@ -64,8 +55,9 @@ hi(10 | 10)
 
 ## Roadmap
 
-v1 leans on Python for nearly everything past the parser. The point of subsequent versions is to own the full pipeline:
+The v2 cut (AST + tree-walking interpreter, no `exec()`) shipped in [v2.0.0](CHANGELOG.md#200---2026-05-26). What's next:
 
-- **v2** — hand-rolled lexer + recursive-descent parser → proper AST, semantic analysis with real error diagnostics, tree-walking interpreter (no more `exec()`).
-- **v3** — bytecode + custom stack VM.
-- **v4** — native codegen via LLVM IR.
+- **v2.x** — bytecode + custom stack VM (~30 opcodes). Faster than tree-walking; teaches you how Python, Lua, and the JVM actually run.
+- **v3.0** (?) — native codegen via LLVM IR (`llvmlite`). `rot build hello.rot` produces a real binary.
+
+The original v1 (`.rot` → Python via `exec()`) is preserved in git history at [`v1.9.0`](https://github.com/omkarxpatel/ROT/releases/tag/v1.9.0) and earlier tags.

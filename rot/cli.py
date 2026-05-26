@@ -14,9 +14,9 @@ from .errors import RotError
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="rot",
-        description="ROT language compiler — transpiles .rot files to Python and runs them.",
+        description="ROT language — runs .rot files directly via the tree-walking interpreter.",
     )
-    parser.add_argument("file", help=".rot source file to compile")
+    parser.add_argument("file", help=".rot source file to run")
     parser.add_argument(
         "--version",
         action="version",
@@ -25,18 +25,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--trace",
         action="store_true",
-        help="dump tokenizer/parser pipeline tables to stdout",
+        help="dump tokenizer/parser tables to stdout",
     )
     parser.add_argument(
         "--no-run",
         action="store_true",
-        help="transpile only — don't execute the generated Python",
-    )
-    parser.add_argument(
-        "-o",
-        "--output",
-        default="output.py",
-        help="path to write the generated Python (default: output.py)",
+        help="parse only — validate the program without interpreting it",
     )
     return parser
 
@@ -56,13 +50,12 @@ def main() -> None:
 
     try:
         compiler = Compiler(trace=args.trace)
-        python_code = compiler.compile(source)
-        compiler.save(python_code, args.output)
         if args.no_run:
+            compiler.parse(source)
             if not args.trace:
-                print(f"wrote {args.output}")
+                print(f"OK — {args.file} parsed cleanly.")
             return
-        compiler.execute(python_code)
+        compiler.run(source)
     except RotError as err:
         print(f"rot error: {err}", file=sys.stderr)
         sys.exit(1)
