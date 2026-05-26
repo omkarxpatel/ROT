@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.2.1] - 2026-05-26
+
+### Added
+- Backfilled the historical `[1.0.0]` entry to this changelog.
+
 ## [1.2.0] - 2026-05-26
 
 ### Added
@@ -42,3 +47,22 @@ All notable changes to ROT are documented here. The project follows [Semantic Ve
 - Duplicate `VERSION1.md` (root `README.md` is canonical).
 - Duplicate `tests/example.rot` (identical to `examples/functions.rot`).
 - Generated `output.py` checked into git (now built on demand and gitignored).
+
+## [1.0.0] - 2024-01-24
+
+The original. Living in a `Version 1/` folder, no package, no version tag — `python3 main.py main.rot` and the language ran.
+
+### Added
+- The `.rot` language surface: `cout` / `coutln`, `funct`, `if` / `elseif` / `else`, `{ }` blocks, `|` as the parameter separator, arithmetic and comparison operators.
+- Three-stage pipeline in a single `main.py`:
+  1. **Tokenizer** — regex-based, driven by a `lookupKeyword` hashmap that mapped each source character/word to a regex pattern.
+  2. **Parser** — walked tokens, looked each kind up in an `antiKeyword` table, concatenated the Python equivalents into a string.
+  3. **Execution** — wrote the resulting Python to `output.py` and ran it via Python's built-in `exec()`.
+- Verbose colorized trace of every stage via `colorama`.
+- `tests/example.rot` and `main.rot` (identical) demonstrating functions, conditionals, and the `cout` / `coutln` distinction.
+
+### Known issues (carried into v1.1.0, addressed in v1.2.0)
+- Bare `except Exception: pass` around every stage silently swallowed unrecognized characters.
+- `lookupKeyword` and `keywordTypes` encoded the same information twice in opposite directions; the lexer needed a "re-lookup the STRING I just matched" hack to tell identifiers from reserved words.
+- `//` comment handling was order-reversed and effectively broken.
+- `}` had no token at all — silently dropped by the catch-all `except`.
