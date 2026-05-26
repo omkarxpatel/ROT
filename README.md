@@ -2,23 +2,7 @@
 
 `rot` is a small custom programming language built as a learning project for understanding how languages are designed and implemented. The current version is a Python-based transpiler — `.rot` source is tokenized, parsed against a keyword table, transformed into equivalent Python, and executed via `exec()`. Future versions replace `exec()` with a real interpreter, then a bytecode VM, then native codegen (see "Roadmap" below).
 
-**Current version:** `1.0.0` (see `rot/__init__.py`).
-
-## Layout
-
-```
-rot/                 # the language package
-├── __init__.py      # __version__
-├── __main__.py      # python -m rot entry
-├── cli.py           # argument parsing
-├── compiler.py      # orchestrates lex → parse → exec
-├── lexer.py         # tokenizer
-├── parser.py        # token stream → Python source
-└── keywords.py      # token/keyword lookup tables
-examples/            # sample .rot programs
-tests/               # scratch notes and early drafts
-requirements.txt     # runtime deps (colorama)
-```
+See [`rot/__init__.py`](rot/__init__.py) for the current version and [`CHANGELOG.md`](CHANGELOG.md) for release history.
 
 ## Install
 
