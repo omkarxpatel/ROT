@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.4.3] - 2026-05-26
+
+### Added
+- `ARCHITECTURE.md` — detailed internals doc separate from the README. Part 1 walks the v1.4.2 pipeline (modules, lexer regex tables, the parser's `cout`/`coutln` and comment hacks, the compiler split, behavioral quirks). Part 2 lays out the v2+ roadmap phase by phase, with the cut to `2.0.0` defined as the moment `exec()` is removed.
+
 ## [1.4.2] - 2026-05-26
 
 ### Removed
