@@ -32,6 +32,7 @@ _BINARY_OPS: dict[str, Callable[[Any, Any], Any]] = {
     "-":  lambda a, b: a - b,
     "*":  lambda a, b: a * b,
     "/":  lambda a, b: a / b,
+    "%":  lambda a, b: a % b,
     "<":  lambda a, b: a < b,
     "<=": lambda a, b: a <= b,
     ">":  lambda a, b: a > b,
@@ -39,6 +40,19 @@ _BINARY_OPS: dict[str, Callable[[Any, Any], Any]] = {
     "==": lambda a, b: a == b,
     "!=": lambda a, b: a != b,
 }
+
+
+def _num(x: Any) -> Any:
+    """Built-in `num()`: convert to int if integer-shaped, else float."""
+    if isinstance(x, bool):
+        return int(x)
+    if isinstance(x, (int, float)):
+        return x
+    s = str(x)
+    try:
+        return int(s)
+    except ValueError:
+        return float(s)
 
 
 class Environment:
@@ -92,6 +106,10 @@ class Interpreter:
         self.env = Environment()
         self.env.set("cout", _builtin_cout)
         self.env.set("coutln", _builtin_coutln)
+        # Conversion + introspection built-ins.
+        self.env.set("str", str)
+        self.env.set("num", _num)
+        self.env.set("len", len)
 
     def execute(self, program: ast.Program) -> None:
         for stmt in program.body:
@@ -113,6 +131,10 @@ class Interpreter:
         if isinstance(stmt, ast.Return):
             value = self._evaluate(stmt.value) if stmt.value is not None else None
             raise _ReturnSignal(value)
+        if isinstance(stmt, ast.WhileStmt):
+            while self._evaluate(stmt.cond):
+                self._execute_block(stmt.body)
+            return
         raise InterpreterError(f"cannot execute statement {type(stmt).__name__}")
 
     def _execute_if(self, stmt: ast.IfStmt) -> None:
@@ -135,11 +157,25 @@ class Interpreter:
             return expr.value
         if isinstance(expr, ast.StringLit):
             return expr.value
+        if isinstance(expr, ast.BoolLit):
+            return expr.value
+        if isinstance(expr, ast.NullLit):
+            return None
         if isinstance(expr, ast.Identifier):
             return self.env.get(expr.name)
         if isinstance(expr, ast.Call):
             return self._evaluate_call(expr)
+        if isinstance(expr, ast.UnaryOp):
+            return self._evaluate_unary(expr)
         if isinstance(expr, ast.BinaryOp):
+            # `and` / `or` short-circuit, so they can't go through the
+            # straight-eval table — operands shouldn't always be evaluated.
+            if expr.op == "and":
+                left = self._evaluate(expr.left)
+                return self._evaluate(expr.right) if left else left
+            if expr.op == "or":
+                left = self._evaluate(expr.left)
+                return left if left else self._evaluate(expr.right)
             left = self._evaluate(expr.left)
             right = self._evaluate(expr.right)
             op = _BINARY_OPS.get(expr.op)
@@ -147,6 +183,14 @@ class Interpreter:
                 raise InterpreterError(f"unknown operator {expr.op!r}")
             return op(left, right)
         raise InterpreterError(f"cannot evaluate {type(expr).__name__}")
+
+    def _evaluate_unary(self, expr: ast.UnaryOp) -> Any:
+        operand = self._evaluate(expr.operand)
+        if expr.op == "-":
+            return -operand
+        if expr.op == "not":
+            return not operand
+        raise InterpreterError(f"unknown unary operator {expr.op!r}")
 
     def _evaluate_call(self, expr: ast.Call) -> Any:
         callee = self._evaluate(expr.callee)

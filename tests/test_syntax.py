@@ -281,6 +281,70 @@ def test_bare_return_has_no_value():
     assert ret.value is None
 
 
+def test_parses_while_statement():
+    program = _parse("while (i < 10) { i = i + 1 }")
+    assert program == ast.Program(body=[
+        ast.WhileStmt(
+            cond=ast.BinaryOp("<", ast.Identifier("i"), ast.NumberLit(10)),
+            body=ast.Block(statements=[
+                ast.Assign(name="i", value=ast.BinaryOp("+", ast.Identifier("i"), ast.NumberLit(1))),
+            ]),
+        )
+    ])
+
+
+def test_unary_minus_parses():
+    assert _expr("-5") == ast.UnaryOp(op="-", operand=ast.NumberLit(5))
+    assert _expr("-x") == ast.UnaryOp(op="-", operand=ast.Identifier("x"))
+    # `-x + y` should be `(-x) + y`, not `-(x + y)`.
+    assert _expr("-x + y") == ast.BinaryOp(
+        op="+",
+        left=ast.UnaryOp(op="-", operand=ast.Identifier("x")),
+        right=ast.Identifier("y"),
+    )
+
+
+def test_not_keyword_lower_precedence_than_comparison():
+    # `not a == b` should parse as `not (a == b)`, matching Python.
+    assert _expr("not a == b") == ast.UnaryOp(
+        op="not",
+        operand=ast.BinaryOp(op="==", left=ast.Identifier("a"), right=ast.Identifier("b")),
+    )
+
+
+def test_and_or_precedence_below_not():
+    # `not a or b` should be `(not a) or b`.
+    assert _expr("not a or b") == ast.BinaryOp(
+        op="or",
+        left=ast.UnaryOp(op="not", operand=ast.Identifier("a")),
+        right=ast.Identifier("b"),
+    )
+
+
+def test_and_binds_tighter_than_or():
+    # `a or b and c` → `a or (b and c)`.
+    assert _expr("a or b and c") == ast.BinaryOp(
+        op="or",
+        left=ast.Identifier("a"),
+        right=ast.BinaryOp(op="and", left=ast.Identifier("b"), right=ast.Identifier("c")),
+    )
+
+
+def test_boolean_and_null_literals():
+    assert _expr("true") == ast.BoolLit(value=True)
+    assert _expr("false") == ast.BoolLit(value=False)
+    assert _expr("null") == ast.NullLit()
+
+
+def test_modulo_has_same_precedence_as_multiplication():
+    # `a + b % c` → `a + (b % c)`.
+    assert _expr("a + b % c") == ast.BinaryOp(
+        op="+",
+        left=ast.Identifier("a"),
+        right=ast.BinaryOp(op="%", left=ast.Identifier("b"), right=ast.Identifier("c")),
+    )
+
+
 def test_full_example_functions_rot_parses_end_to_end():
     """The same program that's been our end-to-end golden since v1.0.0
     now parses to a full AST — funct + if/elseif/else chain + top-level

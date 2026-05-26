@@ -20,4 +20,11 @@ KEYWORDS: dict[str, str] = {
     "if":     "IF",
     "else":   "ELSE",
     "return": "RETURN",
+    "while":  "WHILE",
+    "true":   "TRUE",
+    "false":  "FALSE",
+    "null":   "NULL",
+    "and":    "AND",
+    "or":     "OR",
+    "not":    "NOT",
 }

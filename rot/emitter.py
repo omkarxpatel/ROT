@@ -32,6 +32,9 @@ class Emitter:
             self._emit_block(stmt.body)
         elif isinstance(stmt, ast.IfStmt):
             self._emit_if(stmt)
+        elif isinstance(stmt, ast.WhileStmt):
+            self._write(f"while {self._expr(stmt.cond)}:")
+            self._emit_block(stmt.body)
         elif isinstance(stmt, ast.Assign):
             self._write(f"{stmt.name} = {self._expr(stmt.value)}")
         elif isinstance(stmt, ast.Return):
@@ -68,8 +71,16 @@ class Emitter:
             return str(expr.value)
         if isinstance(expr, ast.StringLit):
             return repr(expr.value)
+        if isinstance(expr, ast.BoolLit):
+            return "True" if expr.value else "False"
+        if isinstance(expr, ast.NullLit):
+            return "None"
         if isinstance(expr, ast.Call):
             return self._emit_call(expr)
+        if isinstance(expr, ast.UnaryOp):
+            inner = self._expr_in_op(expr.operand)
+            sep = "" if expr.op == "-" else " "  # `-x` vs `not x`
+            return f"{expr.op}{sep}{inner}"
         if isinstance(expr, ast.BinaryOp):
             left = self._expr_in_op(expr.left)
             right = self._expr_in_op(expr.right)
@@ -91,8 +102,8 @@ class Emitter:
         return f"{callee}({', '.join(args)})"
 
     def _expr_in_op(self, expr: ast.Expression) -> str:
-        """Wrap a binary-op child in parens to preserve precedence."""
-        if isinstance(expr, ast.BinaryOp):
+        """Wrap composite children in parens to preserve precedence."""
+        if isinstance(expr, (ast.BinaryOp, ast.UnaryOp)):
             return f"({self._expr(expr)})"
         return self._expr(expr)
 

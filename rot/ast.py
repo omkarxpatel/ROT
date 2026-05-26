@@ -32,6 +32,16 @@ class StringLit:
 
 
 @dataclass
+class BoolLit:
+    value: bool
+
+
+@dataclass
+class NullLit:
+    pass
+
+
+@dataclass
 class Call:
     callee: "Expression"
     args: list["Expression"] = field(default_factory=list)
@@ -44,7 +54,15 @@ class BinaryOp:
     right: "Expression"
 
 
-Expression = Union[Identifier, NumberLit, StringLit, Call, BinaryOp]
+@dataclass
+class UnaryOp:
+    op: str
+    operand: "Expression"
+
+
+Expression = Union[
+    Identifier, NumberLit, StringLit, BoolLit, NullLit, Call, BinaryOp, UnaryOp,
+]
 
 
 @dataclass
@@ -89,7 +107,13 @@ class Return:
     value: "Expression | None" = None
 
 
-Statement = Union[ExprStmt, FuncDef, IfStmt, Assign, Return]
+@dataclass
+class WhileStmt:
+    cond: Expression
+    body: Block
+
+
+Statement = Union[ExprStmt, FuncDef, IfStmt, Assign, Return, WhileStmt]
 
 
 @dataclass

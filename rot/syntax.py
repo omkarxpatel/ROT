@@ -1,24 +1,26 @@
 """Recursive-descent parser: turns a Token stream into an AST.
 
-Grammar (as of v2.1.0 — adds variable assignment and return):
+Grammar (as of v2.2.0 — adds while, unary ops, booleans, logical ops):
 
     program     := stmt*
-    stmt        := func_def | if_stmt | return_stmt | assign | expr_stmt
+    stmt        := func_def | if_stmt | while_stmt | return_stmt | assign | expr_stmt
     func_def    := 'funct' IDENT '(' params? ')' block
     params      := IDENT ('|' IDENT)*
     if_stmt     := 'if' '(' expr ')' block (elif_branch)* else_branch?
     elif_branch := 'elseif' '(' expr ')' block
     else_branch := 'else' block
+    while_stmt  := 'while' '(' expr ')' block
     return_stmt := 'return' expr?
     assign      := IDENT '=' expr                       # lookahead disambiguates from expr_stmt
     block       := '{' stmt* '}'
     expr_stmt   := expr
     expr        := binary
-    binary      := atom_or_call (BIN_OP atom_or_call)*       # Pratt
+    binary      := prefix (BIN_OP prefix)*              # Pratt
+    prefix      := ('not' prefix) | ('-' prefix) | atom_or_call
     atom_or_call:= atom call_tail?
     call_tail   := '(' args ')'
     args        := ( expr ('|' expr)* )?
-    atom        := callable | NUMBER | STRING_LIT | '(' expr ')'
+    atom        := callable | NUMBER | STRING_LIT | 'true' | 'false' | 'null' | '(' expr ')'
     callable    := IDENT | 'cout' | 'coutln'
 
 Whitespace, NEWLINE, and COMMENT tokens are stripped up front — the
@@ -48,15 +50,21 @@ _NAME_LIKE = {"IDENT", "PRINT", "PRINTLN"}
 
 # Infix operator precedences for Pratt parsing. Higher = binds tighter.
 _INFIX_PRECEDENCE: dict[str, int] = {
-    "EQ_EQ": 2, "NEQ": 2,
-    "LESSTHAN": 3, "LE": 3, "GREATERTHAN": 3, "GE": 3,
-    "ADDITION": 4, "SUBTRACTION": 4,
-    "MULTIPLICATION": 5, "DIVISION": 5,
+    "OR": 1,
+    "AND": 2,
+    # Reserved: prefix `not` sits between AND and equality (precedence 3).
+    "EQ_EQ": 4, "NEQ": 4,
+    "LESSTHAN": 5, "LE": 5, "GREATERTHAN": 5, "GE": 5,
+    "ADDITION": 6, "SUBTRACTION": 6,
+    "MULTIPLICATION": 7, "DIVISION": 7, "MODULO": 7,
 }
 
 
 # Token kinds that can start an expression (used to detect bare `return`).
-_EXPR_STARTS = {"IDENT", "PRINT", "PRINTLN", "NUMBER", "STRING_LIT", "L_PAREN"}
+_EXPR_STARTS = {
+    "IDENT", "PRINT", "PRINTLN", "NUMBER", "STRING_LIT",
+    "TRUE", "FALSE", "NULL", "L_PAREN", "SUBTRACTION", "NOT",
+}
 
 
 class Parser:
@@ -78,6 +86,8 @@ class Parser:
             return self._parse_func_def()
         if tok.kind == "IF":
             return self._parse_if_stmt()
+        if tok.kind == "WHILE":
+            return self._parse_while_stmt()
         if tok.kind == "RETURN":
             return self._parse_return()
         # Assignment: IDENT '=' expr — one-token lookahead distinguishes
@@ -87,6 +97,14 @@ class Parser:
             if after is not None and after.kind == "SETVALUE":
                 return self._parse_assign()
         return ast.ExprStmt(expr=self._parse_expression())
+
+    def _parse_while_stmt(self) -> ast.WhileStmt:
+        self._consume("WHILE")
+        self._consume("L_PAREN")
+        cond = self._parse_expression()
+        self._consume("R_PAREN")
+        body = self._parse_block()
+        return ast.WhileStmt(cond=cond, body=body)
 
     def _parse_assign(self) -> ast.Assign:
         name_tok = self._consume("IDENT")
@@ -157,7 +175,7 @@ class Parser:
         return self._parse_binary(0)
 
     def _parse_binary(self, min_prec: int) -> ast.Expression:
-        left = self._parse_atom_or_call()
+        left = self._parse_prefix()
         while True:
             tok = self._peek()
             if tok is None:
@@ -171,6 +189,26 @@ class Parser:
             right = self._parse_binary(prec + 1)
             left = ast.BinaryOp(op=op_tok.lexeme, left=left, right=right)
         return left
+
+    def _parse_prefix(self) -> ast.Expression:
+        tok = self._peek()
+        if tok is None:
+            raise ParserError("unexpected end of input")
+        if tok.kind == "NOT":
+            self._advance()
+            # `not` binds looser than comparisons but tighter than `and`/`or`.
+            # Consuming with min_prec=4 means inner expression can include
+            # comparisons but not and/or — so `not a == b` parses as
+            # `not (a == b)` (matches Python).
+            operand = self._parse_binary(4)
+            return ast.UnaryOp(op="not", operand=operand)
+        if tok.kind == "SUBTRACTION":
+            self._advance()
+            # Unary minus is the tightest-binding prefix. Recursive so
+            # `--x` parses as `-(-x)`.
+            operand = self._parse_prefix()
+            return ast.UnaryOp(op="-", operand=operand)
+        return self._parse_atom_or_call()
 
     def _parse_atom_or_call(self) -> ast.Expression:
         atom = self._parse_atom()
@@ -208,6 +246,15 @@ class Parser:
         if tok.kind == "STRING_LIT":
             self._advance()
             return ast.StringLit(value=tok.lexeme[1:-1])
+        if tok.kind == "TRUE":
+            self._advance()
+            return ast.BoolLit(value=True)
+        if tok.kind == "FALSE":
+            self._advance()
+            return ast.BoolLit(value=False)
+        if tok.kind == "NULL":
+            self._advance()
+            return ast.NullLit()
         raise ParserError(
             f"expected expression, got {tok.kind} ({tok.lexeme!r})",
             tok.line,

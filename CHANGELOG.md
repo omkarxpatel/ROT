@@ -2,6 +2,37 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.2.0] - 2026-05-26
+
+The "you can actually write programs in this" release. **Fizzbuzz runs end-to-end.**
+
+### Added
+- **`while` loops**: `while (cond) { body }`. New `WhileStmt(cond, body)` AST node + grammar rule + interpreter handling.
+- **Boolean literals**: `true` and `false` (lowercase, ROT-style). New `BoolLit(value)` AST node. Returns Python's `True`/`False`.
+- **`null` literal**: New `NullLit()` AST node. Returns Python `None`.
+- **Unary operators**:
+  - `-x` (numeric negation) — `-5`, `-x`, `-(a + b)` all parse. Binds tightest of any prefix.
+  - `not x` (logical not) — Python-style precedence: lower than comparisons (`not a == b` parses as `not (a == b)`), higher than `and`/`or` (`not a or b` parses as `(not a) or b`).
+  - New `UnaryOp(op, operand)` AST node.
+- **Logical operators**: `and`, `or` as keywords. Short-circuiting (the interpreter handles them specially in `_evaluate`). Return the actual operand value, not just a bool — `true or oops()` returns `True` without calling `oops()`.
+- **Modulo operator**: `%`. Same precedence as `*` and `/`.
+- **Built-in functions**: `str(x)`, `num(x)`, `len(x)`. Bound in the interpreter's global environment.
+- `examples/fizzbuzz.rot` (+ `.expected`) — the canonical "is this language real?" test. **Yes.**
+- 19 new tests across lexer / syntax / interpreter.
+
+### Changed
+- `_INFIX_PRECEDENCE` table reworked. New layout:
+  - 1: `or`
+  - 2: `and`
+  - 3: reserved for prefix `not`
+  - 4: `==`, `!=`
+  - 5: `<`, `<=`, `>`, `>=`
+  - 6: `+`, `-`
+  - 7: `*`, `/`, `%`
+  - prefix `-`: tightest (highest)
+- `_EXPR_STARTS` expanded to include `TRUE`, `FALSE`, `NULL`, `SUBTRACTION`, `NOT` so bare `return` detection knows what can start an expression.
+- Emitter handles all new node types (parens around `UnaryOp` children to preserve precedence).
+
 ## [2.1.0] - 2026-05-26
 
 Variable assignment and function return values land — the language stops being a tech demo and becomes something you can write actual programs in. Recursion now works (see `examples/factorial.rot`).

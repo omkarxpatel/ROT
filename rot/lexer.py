@@ -18,6 +18,7 @@ _SINGLE_CHAR_TOKENS: dict[str, str] = {
     "-": "SUBTRACTION",
     "*": "MULTIPLICATION",
     "/": "DIVISION",
+    "%": "MODULO",
     "(": "L_PAREN",
     ")": "R_PAREN",
     "{": "L_CURLY",

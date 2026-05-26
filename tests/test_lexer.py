@@ -125,3 +125,21 @@ def test_identifiers_can_contain_underscores():
     assert _lex("hello_world") == [("hello_world", "IDENT")]
     assert _lex("_private") == [("_private", "IDENT")]
     assert _lex("_") == [("_", "IDENT")]
+
+
+def test_new_keywords_are_classified():
+    assert _lex("while")[0] == ("while", "WHILE")
+    assert _lex("true")[0] == ("true", "TRUE")
+    assert _lex("false")[0] == ("false", "FALSE")
+    assert _lex("null")[0] == ("null", "NULL")
+    assert _lex("and")[0] == ("and", "AND")
+    assert _lex("or")[0] == ("or", "OR")
+    assert _lex("not")[0] == ("not", "NOT")
+
+
+def test_modulo_is_a_single_char_token():
+    assert _lex("a % b") == [
+        ("a", "IDENT"), (" ", "SPACE"),
+        ("%", "MODULO"),
+        (" ", "SPACE"), ("b", "IDENT"),
+    ]

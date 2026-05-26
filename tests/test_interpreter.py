@@ -137,6 +137,76 @@ def test_return_value_threads_through_call_chain():
     assert _run(src) == "12\n"
 
 
+def test_while_loop_counts_to_three():
+    src = (
+        'i = 1\n'
+        'while (i <= 3) {\n'
+        '    coutln(i)\n'
+        '    i = i + 1\n'
+        '}'
+    )
+    assert _run(src) == "1\n2\n3\n"
+
+
+def test_unary_minus_negates():
+    assert _run("coutln(-5)") == "-5\n"
+    assert _run("x = 7\ncoutln(-x)") == "-7\n"
+
+
+def test_modulo_arithmetic():
+    assert _run("coutln(10 % 3)") == "1\n"
+    assert _run("coutln(15 % 5)") == "0\n"
+
+
+def test_boolean_literals_print_capitalized():
+    # Python's bool repr is True/False (capitalized); rot inherits.
+    assert _run("coutln(true)") == "True\n"
+    assert _run("coutln(false)") == "False\n"
+
+
+def test_null_literal():
+    assert _run("coutln(null)") == "None\n"
+
+
+def test_and_or_short_circuit():
+    # If `or` short-circuits, the right-hand `oops()` is never called.
+    src = (
+        'funct oops() { return 1 / 0 }\n'
+        'coutln(true or oops())'
+    )
+    assert _run(src) == "True\n"
+
+
+def test_not_inverts_truthiness():
+    assert _run("coutln(not true)") == "False\n"
+    assert _run("coutln(not false)") == "True\n"
+    assert _run("coutln(not (1 == 1))") == "False\n"
+
+
+def test_str_num_len_builtins():
+    assert _run('coutln(str(42))') == "42\n"
+    assert _run('coutln(num("100"))') == "100\n"
+    assert _run('coutln(len("hello"))') == "5\n"
+
+
+def test_fizzbuzz_first_15():
+    src = (
+        'funct fizzbuzz(n) {\n'
+        '    i = 1\n'
+        '    while (i <= n) {\n'
+        '        if (i % 15 == 0) { coutln("fizzbuzz") }\n'
+        '        elseif (i % 3 == 0) { coutln("fizz") }\n'
+        '        elseif (i % 5 == 0) { coutln("buzz") }\n'
+        '        else { coutln(i) }\n'
+        '        i = i + 1\n'
+        '    }\n'
+        '}\n'
+        'fizzbuzz(15)'
+    )
+    expected = "1\n2\nfizz\n4\nbuzz\nfizz\n7\n8\nfizz\nbuzz\n11\nfizz\n13\n14\nfizzbuzz\n"
+    assert _run(src) == expected
+
+
 def test_closure_captures_lexical_scope():
     # Inside `outer`, calling `inner` should resolve `coutln` from the
     # enclosing scope chain (global), not require it to be a parameter.
