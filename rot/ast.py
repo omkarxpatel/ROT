@@ -60,8 +60,20 @@ class UnaryOp:
     operand: "Expression"
 
 
+@dataclass
+class ListLit:
+    elements: list["Expression"] = field(default_factory=list)
+
+
+@dataclass
+class Index:
+    target: "Expression"
+    index: "Expression"
+
+
 Expression = Union[
     Identifier, NumberLit, StringLit, BoolLit, NullLit, Call, BinaryOp, UnaryOp,
+    ListLit, Index,
 ]
 
 
@@ -115,7 +127,35 @@ class WhileStmt:
     body: Block
 
 
-Statement = Union[ExprStmt, FuncDef, IfStmt, Assign, Return, WhileStmt]
+@dataclass
+class ForStmt:
+    var: str
+    iter: Expression
+    body: Block
+
+
+@dataclass
+class IndexAssign:
+    target: Expression
+    index: Expression
+    value: Expression
+    op: str = "="
+
+
+@dataclass
+class BreakStmt:
+    pass
+
+
+@dataclass
+class ContinueStmt:
+    pass
+
+
+Statement = Union[
+    ExprStmt, FuncDef, IfStmt, Assign, Return, WhileStmt,
+    ForStmt, IndexAssign, BreakStmt, ContinueStmt,
+]
 
 
 @dataclass

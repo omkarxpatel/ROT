@@ -27,6 +27,16 @@ class _ReturnSignal(BaseException):
         self.value = value
 
 
+class _BreakSignal(BaseException):
+    """Internal control-flow signal that exits the innermost loop."""
+    pass
+
+
+class _ContinueSignal(BaseException):
+    """Internal control-flow signal that skips to the next loop iteration."""
+    pass
+
+
 def _plus(a: Any, b: Any) -> Any:
     """`+` with string coercion: if either side is a string, both become
     strings and concatenate. Otherwise, regular numeric addition."""
@@ -128,6 +138,10 @@ class Interpreter:
         self.env.set("str", str)
         self.env.set("num", _num)
         self.env.set("len", len)
+        # Collection built-ins.
+        self.env.set("range", _builtin_range)
+        self.env.set("append", _builtin_append)
+        self.env.set("pop", _builtin_pop)
 
     def execute(self, program: ast.Program) -> None:
         for stmt in program.body:
@@ -159,7 +173,39 @@ class Interpreter:
             raise _ReturnSignal(value)
         if isinstance(stmt, ast.WhileStmt):
             while self._evaluate(stmt.cond):
-                self._execute_block(stmt.body)
+                try:
+                    self._execute_block(stmt.body)
+                except _ContinueSignal:
+                    continue
+                except _BreakSignal:
+                    break
+            return
+        if isinstance(stmt, ast.ForStmt):
+            iterable = self._evaluate(stmt.iter)
+            for item in iterable:
+                self.env.set(stmt.var, item)
+                try:
+                    self._execute_block(stmt.body)
+                except _ContinueSignal:
+                    continue
+                except _BreakSignal:
+                    break
+            return
+        if isinstance(stmt, ast.BreakStmt):
+            raise _BreakSignal()
+        if isinstance(stmt, ast.ContinueStmt):
+            raise _ContinueSignal()
+        if isinstance(stmt, ast.IndexAssign):
+            target = self._evaluate(stmt.target)
+            index = self._evaluate(stmt.index)
+            new_value = self._evaluate(stmt.value)
+            if stmt.op == "=":
+                target[index] = new_value
+            else:
+                op_fn = _BINARY_OPS.get(stmt.op)
+                if op_fn is None:
+                    raise InterpreterError(f"unknown compound op {stmt.op!r}")
+                target[index] = op_fn(target[index], new_value)
             return
         raise InterpreterError(f"cannot execute statement {type(stmt).__name__}")
 
@@ -193,6 +239,15 @@ class Interpreter:
             return self._evaluate_call(expr)
         if isinstance(expr, ast.UnaryOp):
             return self._evaluate_unary(expr)
+        if isinstance(expr, ast.ListLit):
+            return [self._evaluate(e) for e in expr.elements]
+        if isinstance(expr, ast.Index):
+            target = self._evaluate(expr.target)
+            index = self._evaluate(expr.index)
+            try:
+                return target[index]
+            except (IndexError, KeyError, TypeError) as e:
+                raise InterpreterError(f"index error: {e}")
         if isinstance(expr, ast.BinaryOp):
             # `and` / `or` short-circuit, so they can't go through the
             # straight-eval table — operands shouldn't always be evaluated.
@@ -234,3 +289,30 @@ def _builtin_cout(*args: Any) -> None:
 
 def _builtin_coutln(*args: Any) -> None:
     print(*(_stringify(a) for a in args), sep="")
+
+
+def _builtin_range(*args: Any) -> list:
+    """Built-in `range`: `range(n)` → 0..n-1; `range(a, b)` → a..b-1;
+    `range(a, b, step)` → with step. Returns a real list so `for` can
+    iterate without iterator-protocol complexity."""
+    if len(args) == 1:
+        return list(range(int(args[0])))
+    if len(args) == 2:
+        return list(range(int(args[0]), int(args[1])))
+    if len(args) == 3:
+        return list(range(int(args[0]), int(args[1]), int(args[2])))
+    raise InterpreterError(f"range() takes 1-3 args, got {len(args)}")
+
+
+def _builtin_append(lst: list, item: Any) -> None:
+    if not isinstance(lst, list):
+        raise InterpreterError(f"append: expected list, got {type(lst).__name__}")
+    lst.append(item)
+
+
+def _builtin_pop(lst: list, *rest: Any) -> Any:
+    if not isinstance(lst, list):
+        raise InterpreterError(f"pop: expected list, got {type(lst).__name__}")
+    if rest:
+        return lst.pop(int(rest[0]))
+    return lst.pop()

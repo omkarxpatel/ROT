@@ -1,0 +1,9 @@
+funct sum(xs) {
+    total = 0
+    for x in xs {
+        total += x
+    }
+    return total
+}
+
+coutln(sum([1 | 2 | 3 | 4 | 5]))

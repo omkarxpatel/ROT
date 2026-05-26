@@ -23,6 +23,8 @@ _SINGLE_CHAR_TOKENS: dict[str, str] = {
     ")": "R_PAREN",
     "{": "L_CURLY",
     "}": "R_CURLY",
+    "[": "L_BRACKET",
+    "]": "R_BRACKET",
     "|": "COMMA",
     "'": "SINGLE_QUOTE",
 }

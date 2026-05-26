@@ -225,6 +225,123 @@ def test_compound_assign_string_concat():
     assert _run('s = "hello"\ns += " world"\ncoutln(s)') == "hello world\n"
 
 
+def test_list_literal_and_indexing():
+    src = 'xs = [1 | 2 | 3]\ncoutln(xs[0])\ncoutln(xs[2])'
+    assert _run(src) == "1\n3\n"
+
+
+def test_list_index_assign():
+    src = 'xs = [1 | 2 | 3]\nxs[1] = 99\ncoutln(xs[1])'
+    assert _run(src) == "99\n"
+
+
+def test_list_compound_index_assign():
+    src = 'xs = [10 | 20 | 30]\nxs[1] += 5\ncoutln(xs[1])'
+    assert _run(src) == "25\n"
+
+
+def test_for_loop_iterates_a_list():
+    src = (
+        'for x in [10 | 20 | 30] {\n'
+        '    coutln(x)\n'
+        '}'
+    )
+    assert _run(src) == "10\n20\n30\n"
+
+
+def test_for_loop_with_range():
+    src = (
+        'for i in range(3) {\n'
+        '    coutln(i)\n'
+        '}'
+    )
+    assert _run(src) == "0\n1\n2\n"
+
+
+def test_range_with_two_args():
+    src = (
+        'for i in range(2 | 5) {\n'
+        '    coutln(i)\n'
+        '}'
+    )
+    assert _run(src) == "2\n3\n4\n"
+
+
+def test_break_exits_loop():
+    src = (
+        'for i in range(10) {\n'
+        '    if (i == 3) { break }\n'
+        '    coutln(i)\n'
+        '}'
+    )
+    assert _run(src) == "0\n1\n2\n"
+
+
+def test_continue_skips_iteration():
+    src = (
+        'for i in range(5) {\n'
+        '    if (i % 2 == 0) { continue }\n'
+        '    coutln(i)\n'
+        '}'
+    )
+    assert _run(src) == "1\n3\n"
+
+
+def test_break_in_while_loop():
+    src = (
+        'i = 0\n'
+        'while (true) {\n'
+        '    if (i >= 3) { break }\n'
+        '    coutln(i)\n'
+        '    i += 1\n'
+        '}'
+    )
+    assert _run(src) == "0\n1\n2\n"
+
+
+def test_append_and_len():
+    src = (
+        'xs = [1 | 2]\n'
+        'append(xs | 3)\n'
+        'append(xs | 4)\n'
+        'coutln(len(xs))\n'
+        'coutln(xs[3])'
+    )
+    assert _run(src) == "4\n4\n"
+
+
+def test_pop_removes_and_returns_last():
+    src = (
+        'xs = [1 | 2 | 3]\n'
+        'last = pop(xs)\n'
+        'coutln(last)\n'
+        'coutln(len(xs))'
+    )
+    assert _run(src) == "3\n2\n"
+
+
+def test_nested_indexing():
+    src = (
+        'grid = [[1 | 2] | [3 | 4]]\n'
+        'coutln(grid[0][1])\n'
+        'coutln(grid[1][0])'
+    )
+    assert _run(src) == "2\n3\n"
+
+
+def test_string_indexing_returns_char():
+    assert _run('s = "hello"\ncoutln(s[1])') == "e\n"
+
+
+def test_string_iteration():
+    src = (
+        'for ch in "abc" {\n'
+        '    coutln(ch)\n'
+        '}'
+    )
+    assert _run(src) == "a\nb\nc\n"
+
+
 def test_fizzbuzz_first_15():
     src = (
         'funct fizzbuzz(n) {\n'

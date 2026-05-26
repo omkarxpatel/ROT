@@ -2,6 +2,21 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-05-26
+
+### Added
+- **Lists**: `[1 | 2 | 3]` literal (uses `|` separator to stay consistent with `funct hi(x | y)`). `ListLit(elements)` AST node.
+- **Indexing**: `list[i]` for reading, `list[i] = v` for writing, `list[i] += 1` for compound. New `Index(target, index)` and `IndexAssign(target, index, value, op)` AST nodes. Indexing also works on strings (`"hello"[1]` → `"e"`).
+- **`for x in iter { ... }`** loop. Iterates over any Python iterable (lists, strings, ranges).
+- **`break`** and **`continue`** keywords. Implemented via `_BreakSignal` / `_ContinueSignal` (`BaseException` subclasses) caught by enclosing `for` / `while`.
+- **Built-ins**: `range(n)`, `range(start, end)`, `range(start, end, step)`, `append(list, item)`, `pop(list)` / `pop(list, index)`.
+- `examples/sum_list.rot` exercising for-loop, compound assign, list literal.
+
+### Changed
+- `_parse_statement` refactored. Used to look ahead for `IDENT '='` to detect assignment; now always parses the expression first, then checks for `=` or compound. Cleaner and lets `list[i] = v` work via `_make_assign` converting an `Index` target into `IndexAssign`.
+- `_parse_atom_or_call` is now a loop, so `arr[0][1]` and `foo()[0]` chain correctly.
+- `_EXPR_STARTS` includes `L_BRACKET` so `return [1, 2, 3]` works.
+
 ## [2.3.0] - 2026-05-26
 
 ### Added

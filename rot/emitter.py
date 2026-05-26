@@ -36,8 +36,25 @@ class Emitter:
             self._write(f"while {self._expr(stmt.cond)}:")
             self._emit_block(stmt.body)
         elif isinstance(stmt, ast.Assign):
-            op = stmt.op if stmt.op != "=" else "="
-            self._write(f"{stmt.name} {op}= {self._expr(stmt.value)}" if stmt.op != "=" else f"{stmt.name} = {self._expr(stmt.value)}")
+            if stmt.op == "=":
+                self._write(f"{stmt.name} = {self._expr(stmt.value)}")
+            else:
+                self._write(f"{stmt.name} {stmt.op}= {self._expr(stmt.value)}")
+        elif isinstance(stmt, ast.IndexAssign):
+            target = self._expr(stmt.target)
+            index = self._expr(stmt.index)
+            value = self._expr(stmt.value)
+            if stmt.op == "=":
+                self._write(f"{target}[{index}] = {value}")
+            else:
+                self._write(f"{target}[{index}] {stmt.op}= {value}")
+        elif isinstance(stmt, ast.ForStmt):
+            self._write(f"for {stmt.var} in {self._expr(stmt.iter)}:")
+            self._emit_block(stmt.body)
+        elif isinstance(stmt, ast.BreakStmt):
+            self._write("break")
+        elif isinstance(stmt, ast.ContinueStmt):
+            self._write("continue")
         elif isinstance(stmt, ast.Return):
             if stmt.value is None:
                 self._write("return")
@@ -86,6 +103,11 @@ class Emitter:
             left = self._expr_in_op(expr.left)
             right = self._expr_in_op(expr.right)
             return f"{left} {expr.op} {right}"
+        if isinstance(expr, ast.ListLit):
+            inner = ", ".join(self._expr(e) for e in expr.elements)
+            return f"[{inner}]"
+        if isinstance(expr, ast.Index):
+            return f"{self._expr_in_op(expr.target)}[{self._expr(expr.index)}]"
         raise NotImplementedError(f"emit: expression {type(expr).__name__}")
 
     def _emit_call(self, call: ast.Call) -> str:

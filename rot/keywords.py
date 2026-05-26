@@ -27,4 +27,8 @@ KEYWORDS: dict[str, str] = {
     "and":    "AND",
     "or":     "OR",
     "not":    "NOT",
+    "for":      "FOR",
+    "in":       "IN",
+    "break":    "BREAK",
+    "continue": "CONTINUE",
 }

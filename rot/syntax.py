@@ -63,7 +63,8 @@ _INFIX_PRECEDENCE: dict[str, int] = {
 # Token kinds that can start an expression (used to detect bare `return`).
 _EXPR_STARTS = {
     "IDENT", "PRINT", "PRINTLN", "NUMBER", "STRING_LIT",
-    "TRUE", "FALSE", "NULL", "L_PAREN", "SUBTRACTION", "NOT",
+    "TRUE", "FALSE", "NULL", "L_PAREN", "L_BRACKET",
+    "SUBTRACTION", "NOT",
 }
 
 
@@ -125,26 +126,40 @@ class Parser:
             return self._parse_if_stmt()
         if tok.kind == "WHILE":
             return self._parse_while_stmt()
+        if tok.kind == "FOR":
+            return self._parse_for_stmt()
         if tok.kind == "RETURN":
             return self._parse_return()
-        # Assignment: IDENT '=' expr (or compound `+=`, `-=`, etc.) —
-        # one-token lookahead distinguishes from a bare-identifier
-        # expression statement.
-        if tok.kind == "IDENT":
-            after = self._peek(1)
-            if after is not None:
-                if after.kind == "SETVALUE":
-                    return self._parse_assign()
-                if after.kind in _COMPOUND_ASSIGN_TOKENS:
-                    return self._parse_compound_assign()
-        return ast.ExprStmt(expr=self._parse_expression())
+        if tok.kind == "BREAK":
+            self._advance()
+            return ast.BreakStmt()
+        if tok.kind == "CONTINUE":
+            self._advance()
+            return ast.ContinueStmt()
+        # Otherwise: parse as expression, then check what follows.
+        # `=` or compound (+=, -=, ...) → convert to assign/index-assign.
+        expr = self._parse_expression()
+        next_tok = self._peek()
+        if next_tok is not None:
+            if next_tok.kind == "SETVALUE":
+                self._advance()
+                return self._make_assign(expr, "=", self._parse_expression())
+            if next_tok.kind in _COMPOUND_ASSIGN_TOKENS:
+                op = _COMPOUND_ASSIGN_TOKENS[next_tok.kind]
+                self._advance()
+                return self._make_assign(expr, op, self._parse_expression())
+        return ast.ExprStmt(expr=expr)
 
-    def _parse_compound_assign(self) -> ast.Assign:
-        name_tok = self._consume("IDENT")
-        op_tok = self._advance()
-        op = _COMPOUND_ASSIGN_TOKENS[op_tok.kind]
-        value = self._parse_expression()
-        return ast.Assign(name=name_tok.lexeme, value=value, op=op)
+    def _make_assign(self, target: ast.Expression, op: str, value: ast.Expression) -> ast.Statement:
+        if isinstance(target, ast.Identifier):
+            return ast.Assign(name=target.name, value=value, op=op)
+        if isinstance(target, ast.Index):
+            return ast.IndexAssign(
+                target=target.target, index=target.index, value=value, op=op
+            )
+        raise ParserError(
+            f"invalid assignment target: {type(target).__name__}"
+        )
 
     def _parse_while_stmt(self) -> ast.WhileStmt:
         self._consume("WHILE")
@@ -154,11 +169,13 @@ class Parser:
         body = self._parse_block()
         return ast.WhileStmt(cond=cond, body=body)
 
-    def _parse_assign(self) -> ast.Assign:
-        name_tok = self._consume("IDENT")
-        self._consume("SETVALUE")
-        value = self._parse_expression()
-        return ast.Assign(name=name_tok.lexeme, value=value)
+    def _parse_for_stmt(self) -> ast.ForStmt:
+        self._consume("FOR")
+        var_tok = self._consume("IDENT")
+        self._consume("IN")
+        iter_expr = self._parse_expression()
+        body = self._parse_block()
+        return ast.ForStmt(var=var_tok.lexeme, iter=iter_expr, body=body)
 
     def _parse_return(self) -> ast.Return:
         self._consume("RETURN")
@@ -260,8 +277,13 @@ class Parser:
 
     def _parse_atom_or_call(self) -> ast.Expression:
         atom = self._parse_atom()
-        if self._check("L_PAREN"):
-            return self._parse_call_tail(atom)
+        while True:
+            if self._check("L_PAREN"):
+                atom = self._parse_call_tail(atom)
+            elif self._check("L_BRACKET"):
+                atom = self._parse_index_tail(atom)
+            else:
+                break
         return atom
 
     def _parse_call_tail(self, callee: ast.Expression) -> ast.Call:
@@ -275,6 +297,23 @@ class Parser:
         self._consume("R_PAREN")
         return ast.Call(callee=callee, args=args)
 
+    def _parse_index_tail(self, target: ast.Expression) -> ast.Index:
+        self._consume("L_BRACKET")
+        index = self._parse_expression()
+        self._consume("R_BRACKET")
+        return ast.Index(target=target, index=index)
+
+    def _parse_list_literal(self) -> ast.ListLit:
+        self._consume("L_BRACKET")
+        elements: list[ast.Expression] = []
+        if not self._check("R_BRACKET"):
+            elements.append(self._parse_expression())
+            while self._check("COMMA"):
+                self._advance()
+                elements.append(self._parse_expression())
+        self._consume("R_BRACKET")
+        return ast.ListLit(elements=elements)
+
     def _parse_atom(self) -> ast.Expression:
         tok = self._peek()
         if tok is None:
@@ -285,6 +324,8 @@ class Parser:
             expr = self._parse_expression()
             self._consume("R_PAREN")
             return expr
+        if tok.kind == "L_BRACKET":
+            return self._parse_list_literal()
         if tok.kind in _NAME_LIKE:
             self._advance()
             return ast.Identifier(name=tok.lexeme)
