@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## [1.6.3] - 2026-05-26
+
+### Added
+- README tagline: `rot` now officially stands for **Reflexive Operational Transducer**. Maximum word-density per character.
+
 ## [1.6.2] - 2026-05-26
 
 ### Added
