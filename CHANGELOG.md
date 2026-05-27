@@ -2,6 +2,47 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.12 — Tokens & AST stages simplified for non-compiler-expert audience
+
+### Premise
+- v2.26.11's stages worked but dumped raw lexer/parser internals — chip
+  faces showed `lexeme | KIND_NAME | line:col`, AST rows showed
+  `BinaryOp op="+" line=3 col=5`, etc. For the "watch your code
+  compile" demo aimed at developers without a compiler background,
+  that was technical noise drowning the idea.
+
+### Changed
+- `TokensView`: chip face is now just the lexeme, color-coded by
+  category. The kind name, line, and col are dropped from the face
+  and gathered into the hover tooltip ("number (number_lit) — line
+  1:5"). Smaller padding, lighter look.
+- `AstView` ([`web/src/components/ast-view.tsx`](web/src/components/ast-view.tsx))
+  humanizes labels and surfaces each node's "primary" field inline:
+  - `NumberLit value=3` → "Number 3"
+  - `StringLit value="hi"` → 'String "hi"'
+  - `Identifier name=x` → "Name x"
+  - `BinaryOp op=+` → "Binary +"
+  - `Assign name=x` → "Assign x"
+  - `FuncDef name=greet` → "Function greet"
+  - …and similar for `LetStmt`, `ClassDef`, `MemberAccess`,
+    `ImportStmt`, `UnaryOp`.
+  - Other kinds (`IfStmt`, `WhileStmt`, `Call`, `Block`, ...) render
+    with just their humanized label and the children below.
+- AST `line` and `col` fields are stripped from inline display
+  (always present in the data, just visually noisy).
+- Empty arrays (e.g. a `FuncDef` with no params, an empty `Block`) are
+  hidden — no `params: []` row.
+- AST field names that nest deeper get a small friendly label map
+  (`then_block` → "then", `else_block` → "else", etc.) but mostly
+  pass through as-is.
+- Hover on any AST row still reveals the technical `__type__` so
+  power users can drill in.
+
+### Notes
+- No code path changed — the Python bridge still serializes the same
+  shape; this is pure rendering polish.
+- Build clean. Type-check clean. 662 tests still passing.
+
 ## v2.26.11 — Per-step staged pipeline animation: source → tokens → AST → execution
 
 ### Premise

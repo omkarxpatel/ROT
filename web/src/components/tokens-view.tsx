@@ -38,9 +38,9 @@ export function TokensView({
     );
   }
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="flex flex-wrap gap-1">
       {tokens.map((t, i) => (
-        <motion.div
+        <motion.span
           key={`${runKey}-${i}-${t.line}-${t.col}`}
           initial={{ opacity: 0, y: 10, scale: 0.85 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -49,18 +49,17 @@ export function TokensView({
             duration: 0.32,
             ease: [0.16, 1, 0.3, 1],
           }}
+          // Plain-language tooltip — devs without compiler background
+          // see a category word and the source position; the raw
+          // lexer kind is included parenthetically for the curious.
+          title={`${categoryLabel(t.kind)} (${t.kind.toLowerCase()}) — line ${t.line}:${t.col}`}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px]",
+            "inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[12px] leading-tight",
             tokenClass(t.kind),
           )}
-          title={`${t.kind} at line ${t.line}:${t.col}`}
         >
-          <span className="font-semibold">{escapeLexeme(t.lexeme)}</span>
-          <span className="text-[10px] opacity-70">{t.kind}</span>
-          <span className="text-[10px] opacity-50">
-            {t.line}:{t.col}
-          </span>
-        </motion.div>
+          {escapeLexeme(t.lexeme)}
+        </motion.span>
       ))}
     </div>
   );
@@ -109,6 +108,29 @@ function tokenClass(kind: string): string {
     return "chip-operator";
   }
   return "chip-keyword";
+}
+
+// Plain-English category for the tooltip. The category itself is
+// already encoded visually via the chip color; this is for hovering
+// when the user wants confirmation.
+function categoryLabel(kind: string): string {
+  const cls = tokenClass(kind);
+  switch (cls) {
+    case "chip-string":
+      return "string";
+    case "chip-number":
+      return "number";
+    case "chip-literal":
+      return "literal";
+    case "chip-identifier":
+      return "name";
+    case "chip-punct":
+      return "punctuation";
+    case "chip-operator":
+      return "operator";
+    default:
+      return "keyword";
+  }
 }
 
 function escapeLexeme(s: string): string {

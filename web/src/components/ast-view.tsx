@@ -55,20 +55,33 @@ function AstNodeView({
   depthStaggerSec,
 }: AstNodeProps) {
   const [open, setOpen] = useState(true);
+  const type = node.__type__;
+  const label = humanLabel(type);
+  const primary = primaryField(type, node);
 
+  // Partition the node's fields:
+  // - hidden: line, col, the primary field (already rendered in label)
+  // - inline: remaining primitives (rare — most useful ones are primary)
+  // - nested: AST nodes and arrays
   const entries = useMemo(() => {
     const all = Object.entries(node).filter(([k]) => k !== "__type__");
     const inline: [string, string | number | boolean | null | undefined][] = [];
     const nested: [string, AstValue][] = [];
+    const primaryKey = primary?.key ?? null;
     for (const [k, v] of all) {
+      if (k === "line" || k === "col") continue;
+      if (k === primaryKey) continue;
       if (isPrimitive(v)) {
         inline.push([k, v]);
       } else {
+        // Skip empty arrays — they're noise for things like a FuncDef
+        // with no parameters or a Block with no statements.
+        if (Array.isArray(v) && v.length === 0) continue;
         nested.push([k, v]);
       }
     }
     return { inline, nested };
-  }, [node]);
+  }, [node, primary?.key]);
 
   const indent = `${depth * 12}px`;
   const delay = baseDelaySec + depth * depthStaggerSec;
@@ -83,6 +96,7 @@ function AstNodeView({
       <button
         onClick={() => setOpen((o) => !o)}
         className="group flex w-full items-center gap-1.5 text-left hover:text-foreground"
+        title={type}
       >
         <ChevronRight
           className={cn(
@@ -90,7 +104,12 @@ function AstNodeView({
             open && "rotate-90",
           )}
         />
-        <span className="font-semibold text-purple-300">{node.__type__}</span>
+        <span className="font-semibold text-purple-300">{label}</span>
+        {primary && (
+          <span className={cn("font-mono", primary.colorClass)}>
+            {primary.display}
+          </span>
+        )}
         {entries.inline.length > 0 && (
           <span className="text-muted-foreground">
             {entries.inline.map(([k, v], i) => (
@@ -112,7 +131,7 @@ function AstNodeView({
                 className="text-[11px] text-muted-foreground"
                 style={{ paddingLeft: `${(depth + 1) * 12}px` }}
               >
-                {k}:
+                {humanField(k)}:
               </div>
               <AstValueView
                 value={v}
@@ -151,14 +170,8 @@ function AstValueView({
   }
   if (Array.isArray(value)) {
     if (value.length === 0) {
-      return (
-        <div
-          className="text-[11.5px] text-zinc-500"
-          style={{ paddingLeft: `${depth * 12}px` }}
-        >
-          []
-        </div>
-      );
+      // Empty arrays are filtered upstream, but defend anyway.
+      return null;
     }
     return (
       <div>
@@ -192,6 +205,148 @@ function AstValueView({
       depthStaggerSec={depthStaggerSec}
     />
   );
+}
+
+// ─── Humanization ───────────────────────────────────────────────────
+
+// Plain-English label for each AST node kind. The technical name still
+// lives in the hover tooltip so a curious reader can see it.
+const NODE_LABEL: Record<string, string> = {
+  Program: "Program",
+  Block: "Block",
+  ExprStmt: "Expression",
+  Assign: "Assign",
+  LetStmt: "Let",
+  FuncDef: "Function",
+  ClassDef: "Class",
+  Return: "Return",
+  IfStmt: "If",
+  ElifBranch: "Elif",
+  WhileStmt: "While",
+  ForStmt: "For",
+  TryCatch: "Try / catch",
+  ThrowStmt: "Throw",
+  BreakStmt: "Break",
+  ContinueStmt: "Continue",
+  ImportStmt: "Import",
+  IndexAssign: "Index assign",
+  MemberAssign: "Field assign",
+  Call: "Call",
+  BinaryOp: "Binary",
+  UnaryOp: "Unary",
+  Index: "Index",
+  Slice: "Slice",
+  MemberAccess: "Field",
+  ListLit: "List",
+  DictLit: "Dict",
+  NumberLit: "Number",
+  StringLit: "String",
+  BoolLit: "Boolean",
+  NullLit: "null",
+  Identifier: "Name",
+};
+
+function humanLabel(type: string): string {
+  return NODE_LABEL[type] ?? type;
+}
+
+// The "primary" field is the one that's most useful displayed inline
+// alongside the node label. For a `NumberLit` it's `value`; for a
+// `BinaryOp` it's `op` (so we read "Binary +" instead of "BinaryOp
+// op='+'"). Most nodes have no primary field — they're rendered as
+// just the label with children below.
+function primaryField(
+  type: string,
+  node: AstNode,
+):
+  | {
+      key: string;
+      display: string;
+      colorClass: string;
+    }
+  | null {
+  const key = PRIMARY_KEY[type];
+  if (!key) return null;
+  const raw = node[key];
+  if (!isPrimitive(raw)) return null;
+  const display = renderPrimary(type, raw);
+  const colorClass = PRIMARY_COLOR[type] ?? "text-emerald-300";
+  return { key, display, colorClass };
+}
+
+const PRIMARY_KEY: Record<string, string> = {
+  NumberLit: "value",
+  StringLit: "value",
+  BoolLit: "value",
+  Identifier: "name",
+  BinaryOp: "op",
+  UnaryOp: "op",
+  Assign: "name",
+  LetStmt: "name",
+  FuncDef: "name",
+  ClassDef: "name",
+  MemberAccess: "member",
+  MemberAssign: "member",
+  ImportStmt: "path",
+};
+
+const PRIMARY_COLOR: Record<string, string> = {
+  NumberLit: "text-cyan-300",
+  StringLit: "text-amber-300",
+  BoolLit: "text-emerald-300",
+  Identifier: "text-sky-300",
+  BinaryOp: "text-rose-300",
+  UnaryOp: "text-rose-300",
+  Assign: "text-sky-300",
+  LetStmt: "text-sky-300",
+  FuncDef: "text-sky-300",
+  ClassDef: "text-sky-300",
+  MemberAccess: "text-sky-300",
+  MemberAssign: "text-sky-300",
+  ImportStmt: "text-amber-300",
+};
+
+function renderPrimary(
+  type: string,
+  raw: string | number | boolean | null | undefined,
+): string {
+  if (raw === null || raw === undefined) return "null";
+  if (type === "StringLit" || type === "ImportStmt") {
+    return JSON.stringify(String(raw));
+  }
+  return String(raw);
+}
+
+const FIELD_LABEL: Record<string, string> = {
+  body: "body",
+  callee: "callee",
+  args: "args",
+  left: "left",
+  right: "right",
+  operand: "operand",
+  target: "target",
+  index: "index",
+  start: "start",
+  stop: "stop",
+  step: "step",
+  cond: "if",
+  then_block: "then",
+  else_block: "else",
+  elifs: "elifs",
+  catch_block: "catch",
+  finally_block: "finally",
+  try_block: "try",
+  params: "params",
+  value: "value",
+  values: "values",
+  pairs: "pairs",
+  bases: "bases",
+  members: "members",
+  expr: "expr",
+};
+
+function humanField(key: string): string {
+  return FIELD_LABEL[key] ?? key;
 }
 
 function isPrimitive(
