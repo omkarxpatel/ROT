@@ -1271,6 +1271,33 @@ def test_index_compound_assign_type_mismatch_raises_interpreter_error():
     assert "cannot apply" in str(exc_info.value)
 
 
+def test_member_compound_assign_divide_by_zero_on_instance_raises_interpreter_error():
+    # I4 (member, RotInstance): `c.x /= 0` used to leak a raw Python
+    # ZeroDivisionError because the MemberAssign branch for RotInstance
+    # didn't wrap the op_fn call.
+    source = (
+        "class C { init() { this.x = 10 } }\n"
+        "c = C()\n"
+        "c.x /= 0\n"
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(source)
+    assert "division by zero" in str(exc_info.value).lower()
+
+
+def test_member_compound_assign_type_mismatch_on_instance_raises_interpreter_error():
+    # I4 (member, RotInstance): `c.x -= "a"` used to leak a raw Python
+    # TypeError. Now wrapped.
+    source = (
+        "class C { init() { this.x = 10 } }\n"
+        "c = C()\n"
+        'c.x -= "a"\n'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(source)
+    assert "cannot apply" in str(exc_info.value)
+
+
 def test_for_over_non_iterable_raises_interpreter_error():
     with pytest.raises(InterpreterError) as exc_info:
         _run("for x in 123 { coutln(x) }")

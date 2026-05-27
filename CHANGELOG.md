@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.17.3 — member compound assign wraps Python op errors
+
+### Fixed
+- **I4 (member)**: `c.x /= 0`, `c.x -= "a"` used to leak a raw Python `ZeroDivisionError` / `TypeError`. The `MemberAssign` branch for `RotInstance` (the `class` instance case) had no wrapping at all on the `op_fn(current, new_value)` call. The Python-attribute branch (the fallback for non-`RotInstance` targets) wrapped only the `setattr` write, missing the op itself. Both branches now wrap the op call with the same `division by zero` / `cannot apply '<op>' to <T1> and <T2>: <msg>` pattern used in v2.17.1 and v2.17.2. Tests: `test_member_compound_assign_divide_by_zero_on_instance_raises_interpreter_error`, `test_member_compound_assign_type_mismatch_on_instance_raises_interpreter_error`.
+
 ## v2.17.2 — index compound assign wraps Python op errors
 
 ### Fixed

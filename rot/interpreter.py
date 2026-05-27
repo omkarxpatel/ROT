@@ -488,7 +488,19 @@ class Interpreter:
                     if op_fn is None:
                         raise InterpreterError(f"unknown compound op {stmt.op!r}")
                     current = target.get_member(stmt.member)
-                    target.set_member(stmt.member, op_fn(current, new_value))
+                    # I4 (member, RotInstance): `c.x /= 0` / `c.x -= "a"`
+                    # used to leak raw Python ZeroDivisionError / TypeError.
+                    # Wrap to match the variable / index compound paths.
+                    try:
+                        result = op_fn(current, new_value)
+                    except ZeroDivisionError:
+                        raise InterpreterError("division by zero")
+                    except TypeError as e:
+                        raise InterpreterError(
+                            f"cannot apply {stmt.op!r} to {type(current).__name__} "
+                            f"and {type(new_value).__name__}: {e}"
+                        )
+                    target.set_member(stmt.member, result)
                 return
             if stmt.op == "=":
                 try:
@@ -500,8 +512,20 @@ class Interpreter:
                 if op_fn is None:
                     raise InterpreterError(f"unknown compound op {stmt.op!r}")
                 current = getattr(target, stmt.member)
+                # I4 (member, Python-attribute): the existing setattr wrapper
+                # caught AttributeError/TypeError on the write but missed
+                # ZeroDivisionError and TypeError from the op itself.
                 try:
-                    setattr(target, stmt.member, op_fn(current, new_value))
+                    result = op_fn(current, new_value)
+                except ZeroDivisionError:
+                    raise InterpreterError("division by zero")
+                except TypeError as e:
+                    raise InterpreterError(
+                        f"cannot apply {stmt.op!r} to {type(current).__name__} "
+                        f"and {type(new_value).__name__}: {e}"
+                    )
+                try:
+                    setattr(target, stmt.member, result)
                 except (AttributeError, TypeError) as e:
                     raise InterpreterError(f"cannot set member {stmt.member!r}: {e}")
             return
