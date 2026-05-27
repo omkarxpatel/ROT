@@ -1,0 +1,42 @@
+"""Bytecode opcode set for the ROT VM (Milestone 2).
+
+Each opcode is a small integer (`IntEnum`) so chunks compare cleanly
+and can later be packed into bytes if desired. Instructions are
+stored as tuples `(Op, *args)` in `Chunk.code` — an explicit form
+that keeps the code easy to read in tests and trace output.
+
+The set will grow as Milestone 2 progresses; right now it covers
+literals, variables, and basic arithmetic. See `HANDOFF.md` for the
+~30-opcode target.
+"""
+
+from __future__ import annotations
+
+from enum import IntEnum
+
+
+class Op(IntEnum):
+    # ─── Stack manipulation ────────────────────────────────────────
+    LOAD_CONST = 1   # arg: const-pool index. Pushes constants[idx].
+    LOAD_NULL = 2    # Pushes None.
+    LOAD_TRUE = 3    # Pushes True.
+    LOAD_FALSE = 4   # Pushes False.
+    POP = 5          # Pops and discards the top value.
+
+    # ─── Variables ─────────────────────────────────────────────────
+    LOAD_NAME = 10   # arg: name-pool index. Pushes env[name].
+    STORE_NAME = 11  # arg: name-pool index. Pops value, sets env[name].
+
+    # ─── Arithmetic ────────────────────────────────────────────────
+    ADD = 20         # Pops b, a; pushes a + b (with ROT's string-coercion
+                     # semantics — handled in the VM, not here).
+    SUB = 21
+    MUL = 22
+    DIV = 23
+    MOD = 24
+    NEG = 25         # Unary minus: pops a; pushes -a.
+
+    # ─── Control ───────────────────────────────────────────────────
+    RETURN = 90      # Halt execution. Top of stack (if any) is the
+                     # program's "result" — for a whole program that's
+                     # always None.

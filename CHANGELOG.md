@@ -2,6 +2,66 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.0 — Milestone 2 kickoff: bytecode opcode set + Chunk + Compiler + VM (foundation)
+
+### Strategic context
+- M1 (the "watch your code compile" pipeline through tokens, AST,
+  and tree-walked execution) is in shippable shape after the
+  v2.26.0–.29 sweep. v2.27.0 opens **Milestone 2** — the headline
+  from `HANDOFF.md`: a real bytecode stage between AST and
+  execution, with opcode-level visualization in the playground.
+- The Y bump marks the architectural shift. Subsequent fixes inside
+  Milestone 2 are patches (v2.27.1, .2, ...).
+- The tree-walking interpreter stays the reference. The VM is an
+  alternative engine that will run alongside; tests cross-check
+  both as the opcode set grows.
+
+### Added
+- `rot/opcodes.py` — `Op(IntEnum)` defining the foundation set:
+  `LOAD_CONST`, `LOAD_NULL`, `LOAD_TRUE`, `LOAD_FALSE`, `POP`,
+  `LOAD_NAME`, `STORE_NAME`, `ADD`, `SUB`, `MUL`, `DIV`, `MOD`,
+  `NEG`, `RETURN`. Future Z's grow this toward the ~30-opcode
+  target sketched in HANDOFF.
+- `rot/codegen.py` — `Chunk` dataclass (`code` list of
+  `(Op, *args)` tuples, `constants` pool, `names` pool, helpers
+  `emit` / `add_const` / `add_name` with dedup) and a `Compiler`
+  class that walks `ast.Program` and emits a chunk. Handles
+  literals (Number/String/Bool/Null), identifiers, `Assign`,
+  `LetStmt`, binary `+ - * / %`, and unary `-`. Unsupported nodes
+  raise `NotImplementedError` so the surface is incrementally
+  fillable.
+- `rot/vm.py` — stack-based VM with a `stack`, an `env` dict, and
+  an `ip` cursor. Dispatch loop handles every opcode in
+  `opcodes.py`. Mirrors the tree-walker's `+` string-coercion
+  semantics, raises `InterpreterError` on undefined names /
+  division-or-modulo by zero / type errors so the surface error
+  vocabulary matches.
+
+### Tests
+- `tests/test_codegen.py` (21 tests) — chunk helpers,
+  per-literal codegen, assign + let, binary ops, unary minus,
+  identifier load, NotImplementedError surface for
+  not-yet-supported nodes.
+- `tests/test_vm.py` (13 tests) — empty program, every literal
+  type, every arithmetic op, string coerce on `+`, chained
+  assigns through name lookups, undefined-name error,
+  division-by-zero, modulo-by-zero, stack-empty-after-clean-run
+  invariant.
+- Tests: 669 → **703 passing**.
+
+### Notes
+- The Compiler / VM aren't wired into `compiler.py` yet — they're
+  exercised by the new tests directly. CLI integration (`python -m
+  rot --vm file.rot`) lands once the opcode set covers ROT's
+  surface enough to be useful.
+- The playground bridge / UI also doesn't expose the VM stage yet
+  — that's a later Z, after enough opcodes are in place to
+  visualize a meaningful program.
+- The web copy-rot script picked up the three new modules
+  automatically (13 → 16 .py files).
+- No M1 behavior changed. The tree-walking interpreter remains the
+  default everywhere.
+
 ## v2.26.29 — Keyboard shortcuts for step navigation
 
 ### Added
