@@ -443,6 +443,12 @@ class Interpreter:
             target = self._evaluate(stmt.target)
             index = self._evaluate(stmt.index)
             new_value = self._evaluate(stmt.value)
+            # I34: indexing a string for assignment used to produce
+            # "index error: 'str' object does not support item assignment"
+            # — Python phrasing leaks. Detect the string target up front
+            # and emit a clean rot-styled message.
+            if isinstance(target, str):
+                raise InterpreterError("strings are immutable in rot")
             if stmt.op == "=":
                 try:
                     target[index] = new_value

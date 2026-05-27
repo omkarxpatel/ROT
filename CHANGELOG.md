@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.17.4 — clean message for index-assign on a string
+
+### Fixed
+- **I34**: `s[0] = "x"` used to produce `index error: 'str' object does not support item assignment` — the Python phrasing leaked through the wrapped `TypeError`. The `IndexAssign` branch now detects `isinstance(target, str)` up front and raises `InterpreterError("strings are immutable in rot")` before the `target[index] = ...` attempt. Compound forms (`s[0] += "x"`) go through the same guard. Tests: `test_index_assign_on_string_says_strings_are_immutable`, `test_compound_index_assign_on_string_says_strings_are_immutable`.
+
 ## v2.17.3 — member compound assign wraps Python op errors
 
 ### Fixed

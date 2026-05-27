@@ -1298,6 +1298,23 @@ def test_member_compound_assign_type_mismatch_on_instance_raises_interpreter_err
     assert "cannot apply" in str(exc_info.value)
 
 
+def test_index_assign_on_string_says_strings_are_immutable():
+    # I34: `s[0] = "x"` used to produce a wrapped TypeError with the
+    # Python phrasing "'str' object does not support item assignment".
+    # Now produces a clean rot message.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('s = "abc"\ns[0] = "x"')
+    assert "strings are immutable in rot" in str(exc_info.value)
+
+
+def test_compound_index_assign_on_string_says_strings_are_immutable():
+    # Same path: compound assign on a string index should also emit the
+    # clean message rather than leaking Python phrasing.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('s = "abc"\ns[0] += "x"')
+    assert "strings are immutable in rot" in str(exc_info.value)
+
+
 def test_for_over_non_iterable_raises_interpreter_error():
     with pytest.raises(InterpreterError) as exc_info:
         _run("for x in 123 { coutln(x) }")
