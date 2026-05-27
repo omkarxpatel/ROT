@@ -93,6 +93,11 @@ def start_repl() -> None:
             line = input(prompt)
         except EOFError:
             print()  # newline after ^D
+            if buffer:
+                # User hit ctrl-D in the middle of a multi-line input. Warn
+                # them before exiting so they know their buffered input was
+                # not executed.
+                print("discarded incomplete input", file=sys.stderr)
             return
         except KeyboardInterrupt:
             print("\n(interrupted)")

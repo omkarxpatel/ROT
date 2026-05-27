@@ -322,3 +322,26 @@ def test_repl_startup_with_history_does_not_crash(monkeypatch, tmp_path, capsys)
     _drive_repl(monkeypatch, ['coutln("ok")', "exit"])
     out, _ = capsys.readouterr()
     assert "ok" in out
+
+
+# --- C46: EOF during continuation warns ---
+
+def test_repl_eof_with_empty_buffer_exits_silently(monkeypatch, capsys):
+    # ctrl-D at the main prompt (empty buffer) — exit cleanly, no warning.
+    _drive_repl(monkeypatch, [])  # immediately EOFError
+    out, err = capsys.readouterr()
+    assert "discarded incomplete input" not in err
+
+
+def test_repl_eof_during_continuation_warns(monkeypatch, capsys):
+    # Feed an open brace then EOF. REPL should print the discard warning.
+    _drive_repl(monkeypatch, ["funct f() {"])  # buffer non-empty, then EOF
+    out, err = capsys.readouterr()
+    assert "discarded incomplete input" in err
+
+
+def test_repl_eof_during_unterminated_string_warns(monkeypatch, capsys):
+    # Open-string buffer then EOF.
+    _drive_repl(monkeypatch, ['"hello'])
+    out, err = capsys.readouterr()
+    assert "discarded incomplete input" in err

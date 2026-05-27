@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.19.6 — REPL warns on EOF with buffered input
+
+### Fixed
+- **C46**: hitting ctrl-D (EOF) during a multi-line continuation used to silently discard whatever was already in the buffer — the user got no indication their half-typed function or open string was lost. The REPL now prints `discarded incomplete input` to stderr (in addition to the usual newline) when EOF arrives with `buffer` non-empty. EOF at the main prompt with an empty buffer still exits cleanly with no warning. Tests: `test_repl_eof_with_empty_buffer_exits_silently`, `test_repl_eof_during_continuation_warns`, `test_repl_eof_during_unterminated_string_warns`.
+
 ## v2.19.5 — Persistent REPL history across sessions
 
 ### Added
