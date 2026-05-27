@@ -2,6 +2,14 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.4 — Lexer: f-string with unclosed `{` errors at lex time
+
+### Fixed
+- **L5**: `f"hi {x"` (interpolation `{` never closed) used to lex as a valid FSTRING token; the missing `}` then surfaced as a downstream parser error with a less helpful message. `_scan_fstring` now tracks brace depth: the closing `"` is only legal at depth 0, and an EOF or premature `"` with depth > 0 raises `LexerError("unclosed '{' in f-string")`. Tests: `test_fstring_unclosed_interpolation_brace_errors_at_lex_time`, `test_fstring_unclosed_brace_followed_by_eof_errors`, `test_fstring_well_formed_interpolation_still_works` (balanced-braces regression).
+
+### Changed
+- `tests/test_interpreter.py::test_fstring_unclosed_brace_errors` previously asserted `ParserError`; updated to assert `LexerError` to reflect the new layering. End-user behavior at the CLI is unchanged (both are `RotError`).
+
 ## v2.20.3 — Lexer: trailing `\r` no longer captured in COMMENT lexeme on CRLF
 
 ### Fixed

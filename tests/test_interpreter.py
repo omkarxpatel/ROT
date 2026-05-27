@@ -699,8 +699,12 @@ def test_fstring_uses_rot_style_stringify():
 
 
 def test_fstring_unclosed_brace_errors():
-    from rot.errors import ParserError
-    with pytest.raises(ParserError):
+    # Updated in v2.20.4: an unclosed `{` inside an f-string now errors at
+    # lex time (LexerError) instead of parse time (ParserError). LexerError
+    # is a subclass of RotError, same as ParserError, so end-user behavior
+    # at the CLI layer is unchanged.
+    from rot.errors import LexerError
+    with pytest.raises(LexerError):
         _run('coutln(f"oops {x")')
 
 

@@ -179,14 +179,33 @@ class Lexer:
         self._advance()  # consume `f` prefix
         start = self.pos  # position of opening "
         self._advance()  # consume opening "
-        while not self._at_end() and self._peek() != '"':
-            if self._peek() == "\\":
+        # Track brace depth so an unclosed `{` errors at lex time instead of
+        # silently producing an FSTRING with an unbalanced interpolation
+        # block (L5). The closing quote is only legal at depth 0.
+        brace_depth = 0
+        while not self._at_end():
+            ch = self._peek()
+            if ch == '"' and brace_depth == 0:
+                break
+            if ch == "\\":
                 self._advance()
                 if self._at_end():
                     break
+                self._advance()
+                continue
+            if ch == "{":
+                brace_depth += 1
+            elif ch == "}" and brace_depth > 0:
+                brace_depth -= 1
             self._advance()
         if self._at_end():
+            if brace_depth > 0:
+                raise LexerError("unclosed '{' in f-string", line, col)
             raise LexerError("unterminated f-string", line, col)
+        # At this point, depth must be 0 (loop exits on `"` only at depth 0).
+        # Defensive: if somehow we ended on `"` with open braces, error.
+        if brace_depth > 0:
+            raise LexerError("unclosed '{' in f-string", line, col)
         self._advance()  # consume closing "
         # Lexeme is the string content with quotes — parser strips and splits.
         self._add(self.source[start : self.pos], "FSTRING", line, col)

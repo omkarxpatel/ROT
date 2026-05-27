@@ -246,3 +246,25 @@ def test_crlf_comment_does_not_capture_trailing_cr():
     # Comment lexeme stops before the \r (and certainly before the \n).
     assert comment.lexeme == "// foo"
     assert "\r" not in comment.lexeme
+
+
+# v2.20.4 — L5: an unclosed `{` in an f-string must error at lex time.
+def test_fstring_unclosed_interpolation_brace_errors_at_lex_time():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize('f"hi {x"')
+    assert "unclosed '{' in f-string" in str(exc_info.value)
+
+
+def test_fstring_unclosed_brace_followed_by_eof_errors():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize('f"abc {')
+    # Either "unclosed '{' in f-string" or "unterminated f-string" is fine,
+    # but the brace-imbalance message is the more informative one.
+    assert "unclosed '{' in f-string" in str(exc_info.value)
+
+
+def test_fstring_well_formed_interpolation_still_works():
+    # Regression: balanced braces must not trip the new check.
+    tokens = Lexer().tokenize('f"hi {name}, you are {age}"')
+    assert len(tokens) == 1
+    assert tokens[0].kind == "FSTRING"
