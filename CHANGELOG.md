@@ -2,6 +2,19 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.12 — refresh HANDOFF.md for the v2.13 → v2.25 sweep
+
+### Changed
+- [`HANDOFF.md`](HANDOFF.md) regenerated from the v2.13.0 snapshot to a
+  v2.25.11 one. Captures the 81-commit sweep, the new feature surface
+  (`let`, `finally`, slicing, f-string format specs, info-leak hardening,
+  rustc-style errors, ROT-style output), the new conventions (immutable
+  builtins, lexically-scoped break/continue, line/col on every AST node),
+  and the bytecode-VM direction for the next session.
+
+### Notes
+- Documentation-only patch; no code changed.
+
 ## v2.25.11 — dict-slice error works on Python 3.12+
 
 ### Fixed
