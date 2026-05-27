@@ -1453,3 +1453,50 @@ def test_compiler_run_unbounded_recursion_does_not_leak_python_error():
     with pytest.raises(InterpreterError) as exc_info:
         Compiler().run(src)
     assert "call stack too deep" in str(exc_info.value)
+
+
+# ==== v2.14.11: _import_file wraps OSError ==================================
+
+def test_import_permission_denied_does_not_leak_traceback(tmp_path):
+    # C7: previously leaked PermissionError as a Python traceback.
+    from rot.compiler import Compiler
+    lib = tmp_path / "lib.rot"
+    lib.write_text('coutln("from lib")')
+    lib.chmod(0o000)
+    main = tmp_path / "main.rot"
+    main.write_text('import "lib"')
+    try:
+        with pytest.raises(InterpreterError) as exc_info:
+            Compiler().run(main.read_text(), source_path=str(main))
+        msg = str(exc_info.value)
+        assert "permission" in msg.lower() or "lib" in msg
+        assert "Traceback" not in msg
+    finally:
+        lib.chmod(0o644)
+
+
+def test_import_non_utf8_does_not_leak_traceback(tmp_path):
+    # Imported file that isn't UTF-8 — should produce a clean rot error.
+    from rot.compiler import Compiler
+    lib = tmp_path / "bad.rot"
+    lib.write_bytes(b"\xff\xfe // not utf-8")
+    main = tmp_path / "main.rot"
+    main.write_text('import "bad"')
+    with pytest.raises(InterpreterError) as exc_info:
+        Compiler().run(main.read_text(), source_path=str(main))
+    msg = str(exc_info.value)
+    assert "utf-8" in msg.lower()
+
+
+def test_import_directory_does_not_leak_traceback(tmp_path):
+    # Importing a directory that happens to share a .rot suffix.
+    from rot.compiler import Compiler
+    d = tmp_path / "thing.rot"
+    d.mkdir()
+    main = tmp_path / "main.rot"
+    main.write_text('import "thing"')
+    with pytest.raises(InterpreterError) as exc_info:
+        Compiler().run(main.read_text(), source_path=str(main))
+    msg = str(exc_info.value)
+    # Either "directory" or some IO-style message — just not a Python crash.
+    assert "Traceback" not in msg

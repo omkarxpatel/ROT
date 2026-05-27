@@ -538,8 +538,19 @@ def _import_file(self: "Interpreter", path: str) -> None:
     if not os.path.exists(abs_path):
         raise InterpreterError(f"cannot find module {path!r}")
 
-    with open(abs_path) as f:
-        source = f.read()
+    try:
+        with open(abs_path, encoding="utf-8") as f:
+            source = f.read()
+    except PermissionError:
+        raise InterpreterError(f"import {path!r}: permission denied")
+    except IsADirectoryError:
+        raise InterpreterError(f"import {path!r}: is a directory")
+    except UnicodeDecodeError as e:
+        raise InterpreterError(
+            f"import {path!r}: not valid UTF-8: {e.reason}"
+        )
+    except OSError as e:
+        raise InterpreterError(f"import {path!r}: {e}")
 
     # Lazy imports break the lexer/syntax → interpreter → builtins cycle.
     from .lexer import Lexer

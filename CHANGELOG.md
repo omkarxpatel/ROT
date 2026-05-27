@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.11 — _import_file wraps OSError on the imported file
+
+### Fixed
+- **C7**: `import "path"` of a file that exists but is unreadable (PermissionError), a directory (IsADirectoryError), or not UTF-8 (UnicodeDecodeError) used to leak a raw Python traceback. The `_import_file` open is now wrapped: each error becomes a rot-prefixed `InterpreterError` (`import 'path': permission denied`, etc.). The import path also gets `encoding="utf-8"` explicitly.
+
 ## v2.14.10 — Compiler wraps RecursionError
 
 ### Fixed
