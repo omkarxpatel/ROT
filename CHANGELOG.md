@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.24.7 — test backfill: indexing & dict reads (T61-T66)
+
+### Added
+- 6 tests appended to `tests/test_interpreter.py`. Negative list indexing reads from the end (`xs[-1]` is the last element); a negative-index OOR raises a clean `InterpreterError` ("index error: list index out of range") — complements the pre-existing positive-OOR test. Missing-dict-key reads raise an `InterpreterError` whose message mentions both `dict` and `key 'X'` (v2.17.5 phrasing). Dicts with numeric or boolean keys work (pinned separately because Python's `bool <: int` makes `{1: "a", true: "b"}` a footgun — the tests stick to one type at a time). Nested `d["a"]["b"]` dict access works.
+
 ## v2.24.6 — test backfill: collection equality (T68-T70)
 
 ### Added

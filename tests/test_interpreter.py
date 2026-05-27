@@ -3150,3 +3150,80 @@ def test_instance_inequality_is_consistent_with_equality():
         'coutln(a != a)\n'   # false
     )
     assert _run(src) == "true\nfalse\n"
+
+
+# --- v2.24.7: T61-T66 — negative/OOR indexing + dict reads ---
+
+
+def test_negative_list_index_reads_from_end():
+    # Inherited from Python's list indexing: `xs[-1]` is the last element,
+    # `xs[-len(xs)]` is the first.
+    src = (
+        'xs = [10 | 20 | 30]\n'
+        'coutln(xs[-1])\n'   # 30
+        'coutln(xs[-2])\n'   # 20
+        'coutln(xs[-3])\n'   # 10
+    )
+    assert _run(src) == "30\n20\n10\n"
+
+
+def test_negative_list_index_out_of_range_raises_interpreter_error():
+    # Negative-index OOR (e.g. `xs[-5]` for a 2-element list) takes the same
+    # wrapped-IndexError path as positive-index OOR. The pre-existing
+    # `test_list_out_of_range_index_still_says_index_error` covers the
+    # positive case; this is the missing negative case.
+    src = (
+        'xs = [1 | 2]\n'
+        'coutln(xs[-5])\n'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "index error" in str(exc_info.value)
+
+
+def test_dict_missing_key_read_raises_interpreter_error_naming_dict():
+    # v2.17.5: missing dict keys produce a clean "key 'X' not found in dict"
+    # message — not the older "index error: 'X'" form which left it unclear
+    # whether the target was a list or a dict.
+    src = (
+        'd = {"a": 1}\n'
+        'coutln(d["b"])\n'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    msg = str(exc_info.value)
+    assert "key" in msg
+    assert "dict" in msg
+    # The actual missing key name appears, surrounded by quotes per !r.
+    assert "'b'" in msg
+
+
+def test_dict_with_numeric_keys():
+    # Number-keyed dicts work the same as string-keyed ones.
+    src = (
+        'd = {1: "one" | 2: "two"}\n'
+        'coutln(d[1])\n'
+        'coutln(d[2])\n'
+    )
+    assert _run(src) == "one\ntwo\n"
+
+
+def test_dict_with_boolean_keys():
+    # Boolean-keyed dicts work in isolation. (NOTE: `true` and `1` would
+    # collide because Python's `bool` is a subclass of `int`; tested
+    # separately above with numeric keys to avoid the footgun.)
+    src = (
+        'd = {true: "yes" | false: "no"}\n'
+        'coutln(d[true])\n'
+        'coutln(d[false])\n'
+    )
+    assert _run(src) == "yes\nno\n"
+
+
+def test_nested_dict_access():
+    # Chained `d["a"]["b"]` indexes through two levels of dict.
+    src = (
+        'd = {"a": {"b": 42}}\n'
+        'coutln(d["a"]["b"])\n'
+    )
+    assert _run(src) == "42\n"
