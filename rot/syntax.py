@@ -123,7 +123,8 @@ class Parser:
     def _parse_statement(self) -> ast.Statement:
         tok = self._peek()
         if tok is None:
-            raise ParserError("unexpected end of input")
+            eline, ecol = self._eof_pos()
+            raise ParserError("unexpected end of input", eline, ecol)
         # Capture the line/col of the statement's first token; subdispatch
         # methods (`_parse_func_def` etc.) re-peek it themselves.
         sline, scol = tok.line, tok.col
@@ -270,7 +271,8 @@ class Parser:
         methods: list[ast.FuncDef] = []
         while not self._check("R_CURLY"):
             if self._at_end():
-                raise ParserError("unterminated class body")
+                eline, ecol = self._eof_pos()
+                raise ParserError("unterminated class body", eline, ecol)
             method_tok = self._peek()
             method_name = self._consume("IDENT").lexeme
             self._consume("L_PAREN")
@@ -351,7 +353,12 @@ class Parser:
         statements: list[ast.Statement] = []
         while not self._check("R_CURLY"):
             if self._at_end():
-                raise ParserError("unterminated block — expected '}'")
+                # Report at the unclosed brace's position — that's where
+                # the missing `}` belongs.
+                raise ParserError(
+                    "unterminated block — expected '}'",
+                    brace_tok.line, brace_tok.col,
+                )
             statements.append(self._parse_statement())
         self._consume("R_CURLY")
         return ast.Block(statements=statements,
@@ -380,7 +387,8 @@ class Parser:
     def _parse_prefix(self) -> ast.Expression:
         tok = self._peek()
         if tok is None:
-            raise ParserError("unexpected end of input")
+            eline, ecol = self._eof_pos()
+            raise ParserError("unexpected end of input", eline, ecol)
         if tok.kind == "NOT":
             not_tok = self._advance()
             # `not` binds looser than comparisons but tighter than `and`/`or`.
@@ -489,7 +497,8 @@ class Parser:
     def _parse_atom(self) -> ast.Expression:
         tok = self._peek()
         if tok is None:
-            raise ParserError("unexpected end of input")
+            eline, ecol = self._eof_pos()
+            raise ParserError("unexpected end of input", eline, ecol)
 
         if tok.kind == "THIS":
             self._advance()
@@ -550,6 +559,21 @@ class Parser:
         tok = self.tokens[self.pos]
         self.pos += 1
         return tok
+
+    def _eof_pos(self) -> tuple[int, int]:
+        """Return a (line, col) approximation for the end-of-input position:
+        one column past the end of the last consumed token, on the same line.
+        Falls back to (0, 0) when the token list is empty entirely."""
+        # Prefer the most recent token in the stream (the last one parsed
+        # or any token in the buffer) so the position is anchored to real
+        # source. self.pos may have been advanced past the buffer; clamp.
+        if not self.tokens:
+            return (0, 0)
+        idx = self.pos - 1 if self.pos > 0 else 0
+        if idx >= len(self.tokens):
+            idx = len(self.tokens) - 1
+        tok = self.tokens[idx]
+        return (tok.line, tok.col + max(1, len(tok.lexeme)))
 
     def _parse_fstring_content(self, content: str, line: int, col: int) -> ast.Expression:
         """Split f-string content into static text and `{expr}` interpolations,
@@ -620,7 +644,8 @@ class Parser:
             return self._advance()
         tok = self._peek()
         if tok is None:
-            raise ParserError(f"expected {kind}, got end of input")
+            eline, ecol = self._eof_pos()
+            raise ParserError(f"expected {kind}, got end of input", eline, ecol)
         raise ParserError(
             f"expected {kind}, got {tok.kind}",
             tok.line,

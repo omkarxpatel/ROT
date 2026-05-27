@@ -45,7 +45,12 @@ class Compiler:
         try:
             program = Parser(tokens).parse()
         except RecursionError:
-            raise ParserError("expression too deeply nested")
+            # No precise position for this — Python's stack unwind
+            # consumed the parser's frames before we get here. Use the
+            # first token's position as a coarse anchor when available.
+            line = tokens[0].line if tokens else 0
+            col = tokens[0].col if tokens else 0
+            raise ParserError("expression too deeply nested", line, col)
 
         if self.trace:
             print(f"AST: Program(body=[{len(program.body)} statements])")

@@ -2,6 +2,13 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.22.4 — `ParserError` raises consistently carry line/col
+
+### Added
+- New `Parser._eof_pos()` helper in `rot/syntax.py` returns the (line, col) one column past the last consumed token — the natural anchor for "unexpected end of input" / "expected X, got end of input" errors. Falls back to (0, 0) only when the entire token stream is empty.
+- Every `raise ParserError(...)` in `rot/syntax.py` that lacked positions now passes them: `_parse_statement` EOF, `_parse_prefix` EOF, `_parse_atom` EOF, `_parse_block` unterminated (points at the unclosed `{`), `_parse_class_def` unterminated class body, and `_consume` EOF. `RecursionError` in `Compiler.parse` now anchors at the first token rather than 0:0.
+- New tests: `test_unexpected_eof_in_atom_carries_line_col`, `test_unterminated_block_error_carries_line_col`, `test_expected_token_at_eof_carries_line_col`.
+
 ## v2.22.3 — Interpreter threads `line` / `col` into runtime errors
 
 ### Added

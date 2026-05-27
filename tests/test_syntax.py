@@ -535,3 +535,39 @@ def test_parser_populates_line_col_on_binary_op_at_operator():
     assert binop.line == 1
     # `a + b` — col 3 is the `+`.
     assert binop.col == 3
+
+
+# ---------- v2.22.4: parser errors carry line/col -----------------------
+
+
+def test_unexpected_eof_in_atom_carries_line_col():
+    """v2.22.4: EOF in atom position used to raise ParserError with line=0
+    col=0 (suppressed by RotError prefix). Now points one column past the
+    last consumed token."""
+    with pytest.raises(ParserError) as exc_info:
+        _parse("x = ")
+    # The `=` is at column 3; EOF position is col 4 (one past the `=`).
+    assert exc_info.value.line == 1
+    assert exc_info.value.col > 0
+
+
+def test_unterminated_block_error_carries_line_col():
+    """Unterminated block points at the unclosed `{` so the user can see
+    where the brace was opened."""
+    with pytest.raises(ParserError) as exc_info:
+        _parse("funct hi() { coutln(1)")
+    err = exc_info.value
+    assert err.line == 1
+    # The `{` is at column 12 (after "funct hi() ").
+    assert err.col == 12
+    assert "unterminated block" in str(err)
+
+
+def test_expected_token_at_eof_carries_line_col():
+    """`_consume` at EOF should report the position past the last token,
+    not 0:0."""
+    with pytest.raises(ParserError) as exc_info:
+        _parse("funct hi(")
+    err = exc_info.value
+    assert err.line == 1
+    assert err.col > 0
