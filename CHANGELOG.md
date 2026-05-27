@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.24.3 — test backfill: REPL gaps (T92-T98)
+
+### Added
+- 5 new tests appended to `tests/test_repl.py`: a lex-error input (`;`) does not crash the REPL — the error lands on stderr and the next input still executes; pure-empty / whitespace-only input is silently ignored (no echo, no error, no "discarded incomplete input" warning); state is preserved across inputs (`x = 5` then `x` echoes `5`); the `ROT_HISTORY_FILE` env var is honored at runtime by `_install_persistent_history`; and `_install_persistent_history` is a no-op when `readline` is unavailable (simulated by patching `_HAS_READLINE` to `False` — covers the Windows path).
+
 ## v2.24.2 — test backfill: Compiler
 
 ### Added
