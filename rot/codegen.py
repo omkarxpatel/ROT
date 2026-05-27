@@ -74,6 +74,10 @@ class Compiler:
 
     def __init__(self) -> None:
         self.chunk = Chunk()
+        # Stack of active loop contexts for `break` / `continue`. Each
+        # entry: {"start": IP_to_jump_back_to,
+        #         "break_jumps": [idxs to patch when loop ends]}.
+        self._loop_stack: list[dict] = []
 
     def compile(self, program: ast.Program) -> Chunk:
         for stmt in program.body:
@@ -104,6 +108,20 @@ class Compiler:
             return
         if isinstance(stmt, ast.IfStmt):
             self._compile_if(stmt)
+            return
+        if isinstance(stmt, ast.WhileStmt):
+            self._compile_while(stmt)
+            return
+        if isinstance(stmt, ast.BreakStmt):
+            if not self._loop_stack:
+                raise InterpreterError("`break` outside of a loop")
+            idx = self.chunk.emit(Op.JUMP, 0)
+            self._loop_stack[-1]["break_jumps"].append(idx)
+            return
+        if isinstance(stmt, ast.ContinueStmt):
+            if not self._loop_stack:
+                raise InterpreterError("`continue` outside of a loop")
+            self.chunk.emit(Op.JUMP, self._loop_stack[-1]["start"])
             return
         raise NotImplementedError(
             f"codegen: statement {type(stmt).__name__!r} not yet supported"
@@ -157,6 +175,61 @@ class Compiler:
         for idx in end_jumps:
             self.chunk.patch_jump(idx, end_ip)
 
+    def _compile_short_circuit(
+        self, expr: ast.BinaryOp, *, jump_on: Op
+    ) -> None:
+        """Emit short-circuit bytecode for `and` / `or`.
+
+        For `a and b` (jump_on=JUMP_IF_FALSE) the layout is:
+
+            compile a
+            DUP                       # keep `a` for the short-circuit case
+            JUMP_IF_FALSE → end       # pops one copy; if falsy, a is the result
+            POP                       # truthy path: discard `a`, evaluate `b`
+            compile b
+            end:                      # stack: [a] (short) or [b] (full)
+
+        `or` swaps JUMP_IF_FALSE → JUMP_IF_TRUE. Both produce the
+        Python-style "return the operand, not the boolean" semantics
+        the tree-walker already implements.
+        """
+        self._compile_expr(expr.left)
+        self.chunk.emit(Op.DUP)
+        end_idx = self.chunk.emit(jump_on, 0)
+        self.chunk.emit(Op.POP)
+        self._compile_expr(expr.right)
+        self.chunk.patch_jump(end_idx, len(self.chunk.code))
+
+    def _compile_while(self, stmt: ast.WhileStmt) -> None:
+        """Emit a back-edge loop:
+
+            loop_start:
+              compile cond
+              JUMP_IF_FALSE → end
+              compile body
+              JUMP            → loop_start
+            end:                              (patches break + skip)
+
+        `break` JUMPs are collected on the loop context and patched
+        to `end`; `continue` JUMPs go straight to `loop_start`.
+        """
+        loop_start = len(self.chunk.code)
+        self._compile_expr(stmt.cond)
+        skip_idx = self.chunk.emit(Op.JUMP_IF_FALSE, 0)
+
+        ctx = {"start": loop_start, "break_jumps": []}
+        self._loop_stack.append(ctx)
+        try:
+            self._compile_block(stmt.body)
+        finally:
+            self._loop_stack.pop()
+
+        self.chunk.emit(Op.JUMP, loop_start)
+        end_ip = len(self.chunk.code)
+        self.chunk.patch_jump(skip_idx, end_ip)
+        for idx in ctx["break_jumps"]:
+            self.chunk.patch_jump(idx, end_ip)
+
     # ─── Expressions ───────────────────────────────────────────────
 
     def _compile_expr(self, expr: ast.Expression) -> None:
@@ -179,6 +252,12 @@ class Compiler:
             self.chunk.emit(Op.LOAD_NAME, idx)
             return
         if isinstance(expr, ast.BinaryOp):
+            if expr.op == "and":
+                self._compile_short_circuit(expr, jump_on=Op.JUMP_IF_FALSE)
+                return
+            if expr.op == "or":
+                self._compile_short_circuit(expr, jump_on=Op.JUMP_IF_TRUE)
+                return
             self._compile_expr(expr.left)
             self._compile_expr(expr.right)
             op = _BIN_OP_MAP.get(expr.op)

@@ -2,6 +2,50 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.3 — M2: `and` / `or` short-circuit + `while` + `break` / `continue`
+
+### Added
+- New opcode `DUP` (duplicate top of stack), used by short-circuit
+  evaluation to keep one copy on the stack while the conditional
+  jump pops the other.
+- `Compiler._compile_short_circuit` emits the
+  `[lhs, DUP, JUMP_IF_*, POP, rhs]` pattern for both `and` and
+  `or`. The jump op selects which case short-circuits:
+  - `and` uses `JUMP_IF_FALSE` (skip when left is falsy → return
+    the left).
+  - `or` uses `JUMP_IF_TRUE` (skip when left is truthy → return
+    the left).
+  Both preserve the tree-walker's Python-style "return the operand,
+  not just a boolean" semantics.
+- `Compiler._compile_while` emits a back-edge loop: condition →
+  `JUMP_IF_FALSE` → body → `JUMP` back to start. A per-loop
+  context on `self._loop_stack` tracks the loop start IP and any
+  break-jumps to back-patch when the loop closes.
+- `BreakStmt` emits a forward `JUMP` recorded on the loop context.
+  `ContinueStmt` emits a `JUMP` straight to the loop's start IP.
+  Both raise `InterpreterError` at codegen time if no loop is on
+  the stack — same surface as the tree-walker's runtime check.
+- VM dispatch for `DUP`.
+
+### Tests
+- `tests/test_codegen.py`: while emits back-edge, break is a
+  forward jump, continue jumps to start; break/continue outside a
+  loop raise; `and`/`or` emit the DUP + conditional-jump + POP
+  pattern with the right jump opcode.
+- `tests/test_vm.py`: while-loop counter, while-false-skip,
+  break-on-condition, continue-skips-iteration, and/or returning
+  the operand (not just a boolean), short-circuit evaluation
+  (`false and nope` doesn't raise).
+- Tests: 723 → **740 passing**.
+
+### Notes
+- `break` / `continue` inside an `if` inside a `while` work
+  because the loop context lives on a stack and is consulted by
+  the nearest enclosing loop — the same lexical scoping the
+  tree-walker uses.
+- Nested loops are correct because each loop pushes/pops its
+  context independently.
+
 ## v2.27.2 — M2: jumps (`JUMP`, `JUMP_IF_FALSE`, `JUMP_IF_TRUE`) + `if` / `elseif` / `else`
 
 ### Added

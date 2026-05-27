@@ -240,3 +240,78 @@ def test_vm_nested_if_inside_then_block():
     )
     vm = _run(src)
     assert vm.env["x"] == 7
+
+
+# ─── while + break + continue (v2.27.3) ──────────────────────────
+
+
+def test_vm_while_counts_to_three():
+    vm = _run("i = 0\nwhile (i < 3) { i = i + 1 }")
+    assert vm.env["i"] == 3
+
+
+def test_vm_while_false_skips_body():
+    vm = _run("i = 0\nwhile (false) { i = i + 1 }")
+    assert vm.env["i"] == 0
+
+
+def test_vm_break_exits_loop():
+    src = (
+        "i = 0\n"
+        "while (true) {\n"
+        "  i = i + 1\n"
+        "  if (i == 5) { break }\n"
+        "}\n"
+    )
+    vm = _run(src)
+    assert vm.env["i"] == 5
+
+
+def test_vm_continue_skips_rest_of_iteration():
+    src = (
+        "i = 0\n"
+        "sum = 0\n"
+        "while (i < 5) {\n"
+        "  i = i + 1\n"
+        "  if (i == 3) { continue }\n"
+        "  sum = sum + i\n"
+        "}\n"
+    )
+    # 1 + 2 + 4 + 5 = 12 (skipped 3)
+    vm = _run(src)
+    assert vm.env["sum"] == 12
+
+
+# ─── and / or short-circuit (v2.27.3) ────────────────────────────
+
+
+def test_vm_and_returns_left_when_falsy():
+    # `false and X` returns false without evaluating X.
+    vm = _run("x = false and true")
+    assert vm.env["x"] is False
+
+
+def test_vm_and_returns_right_when_left_truthy():
+    vm = _run("x = true and 42")
+    assert vm.env["x"] == 42
+
+
+def test_vm_or_returns_left_when_truthy():
+    vm = _run("x = 7 or 99")
+    assert vm.env["x"] == 7
+
+
+def test_vm_or_returns_right_when_left_falsy():
+    vm = _run('x = "" or "fallback"')
+    assert vm.env["x"] == "fallback"
+
+
+def test_vm_and_short_circuits_evaluating_right():
+    # If short-circuit didn't work, `nope` would raise undefined-name.
+    vm = _run("x = false and nope")
+    assert vm.env["x"] is False
+
+
+def test_vm_or_short_circuits_evaluating_right():
+    vm = _run("x = true or nope")
+    assert vm.env["x"] is True

@@ -22,6 +22,10 @@ class Op(IntEnum):
     LOAD_TRUE = 3    # Pushes True.
     LOAD_FALSE = 4   # Pushes False.
     POP = 5          # Pops and discards the top value.
+    DUP = 6          # Duplicates the top value (push a copy). Used by
+                     # short-circuit `and`/`or` to keep one copy on
+                     # the stack while the conditional jump pops the
+                     # other.
 
     # ─── Variables ─────────────────────────────────────────────────
     LOAD_NAME = 10   # arg: name-pool index. Pushes env[name].

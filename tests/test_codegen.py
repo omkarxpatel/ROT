@@ -8,6 +8,7 @@ Later Z's extend the set; each adds tests here.
 import pytest
 
 from rot.codegen import Chunk, Compiler
+from rot.errors import InterpreterError
 from rot.lexer import Lexer
 from rot.opcodes import Op
 from rot.syntax import Parser
@@ -164,9 +165,9 @@ def test_compile_identifier_loads_by_name():
 
 
 def test_compile_unsupported_statement_raises_not_implemented():
-    # `WhileStmt` isn't supported yet (lands in v2.27.3).
+    # `ForStmt` isn't supported yet (lands in a later Z).
     with pytest.raises(NotImplementedError):
-        _compile("while (true) { x = 1 }")
+        _compile("for x in [1 | 2] { y = x }")
 
 
 # ─── Comparison ops (v2.27.1) ────────────────────────────────────
@@ -256,3 +257,95 @@ def test_compile_if_with_elif_chain_emits_one_skip_per_branch():
     # Count JUMP: one per non-else branch (the if's and the elif's).
     j_count = sum(1 for instr in chunk.code if instr[0] == Op.JUMP)
     assert j_count == 2
+
+
+# ─── while / break / continue (v2.27.3) ──────────────────────────
+
+
+def test_compile_while_emits_back_edge():
+    chunk = _compile("while (false) { x = 1 }")
+    ops = [instr[0] for instr in chunk.code]
+    # Expect: LOAD_FALSE, JUMP_IF_FALSE, body (LOAD_CONST, STORE_NAME),
+    # JUMP back to start, RETURN.
+    assert ops == [
+        Op.LOAD_FALSE,
+        Op.JUMP_IF_FALSE,
+        Op.LOAD_CONST,
+        Op.STORE_NAME,
+        Op.JUMP,
+        Op.RETURN,
+    ]
+    # The JUMP at index 4 should target index 0 (loop start).
+    assert chunk.code[4] == (Op.JUMP, 0)
+    # The JUMP_IF_FALSE at index 1 should target index 5 (past the
+    # body's JUMP — the RETURN).
+    assert chunk.code[1] == (Op.JUMP_IF_FALSE, 5)
+
+
+def test_compile_break_emits_jump_to_loop_end():
+    chunk = _compile("while (true) { break }")
+    # The break compiles to a JUMP whose target is patched to the IP
+    # right after the loop's back-edge JUMP.
+    breaks = [
+        (i, instr) for i, instr in enumerate(chunk.code) if instr[0] == Op.JUMP
+    ]
+    # Two JUMPs: the break (forward) and the back-edge (backward).
+    assert len(breaks) == 2
+    # Back-edge targets 0 (loop start).
+    backedge = next(b for b in breaks if b[1][1] == 0)
+    # The other is the break — its target should be past everything.
+    break_jump = next(b for b in breaks if b[1][1] != 0)
+    assert break_jump[1][1] > backedge[0]
+
+
+def test_compile_continue_emits_jump_to_loop_start():
+    chunk = _compile("while (true) { continue }")
+    # continue → JUMP back to IP 0 (loop start).
+    continue_jumps = [
+        instr for instr in chunk.code
+        if instr[0] == Op.JUMP and instr[1] == 0
+    ]
+    # The continue + the back-edge both jump to 0.
+    assert len(continue_jumps) == 2
+
+
+def test_compile_break_outside_loop_raises():
+    with pytest.raises(InterpreterError):
+        _compile("break")
+
+
+def test_compile_continue_outside_loop_raises():
+    with pytest.raises(InterpreterError):
+        _compile("continue")
+
+
+# ─── and / or short-circuit (v2.27.3) ────────────────────────────
+
+
+def test_compile_and_uses_dup_and_jump_if_false():
+    chunk = _compile("x = true and false")
+    ops = [instr[0] for instr in chunk.code]
+    # LOAD_TRUE, DUP, JUMP_IF_FALSE, POP, LOAD_FALSE, STORE_NAME, RETURN.
+    assert ops == [
+        Op.LOAD_TRUE,
+        Op.DUP,
+        Op.JUMP_IF_FALSE,
+        Op.POP,
+        Op.LOAD_FALSE,
+        Op.STORE_NAME,
+        Op.RETURN,
+    ]
+
+
+def test_compile_or_uses_dup_and_jump_if_true():
+    chunk = _compile("x = true or false")
+    ops = [instr[0] for instr in chunk.code]
+    assert ops == [
+        Op.LOAD_TRUE,
+        Op.DUP,
+        Op.JUMP_IF_TRUE,
+        Op.POP,
+        Op.LOAD_FALSE,
+        Op.STORE_NAME,
+        Op.RETURN,
+    ]

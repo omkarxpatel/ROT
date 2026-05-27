@@ -74,6 +74,9 @@ class VM:
             if op == Op.POP:
                 self.stack.pop()
                 continue
+            if op == Op.DUP:
+                self.stack.append(self.stack[-1])
+                continue
             if op == Op.LOAD_NAME:
                 name = self.chunk.names[instr[1]]
                 if name not in self.env:
