@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.19.2 — REPL `//` comments no longer confuse the brace counter
+
+### Fixed
+- **C13**: `rot> // {` used to wedge the REPL in perma-continuation — `_needs_more` counted the `{` inside the `//` comment as opening a block, so every subsequent line just deepened the buffer with no way to recover. `_needs_more` now skips `//` comment regions: when it sees `//` outside a string, it advances to the next newline (or end of buffer) before resuming the scan. Real `{` after a comment on the same line (`{ // }`) still counts. Tests: `test_repl_needs_more_ignores_open_brace_in_comment`, `test_repl_needs_more_ignores_close_brace_in_comment`, `test_repl_needs_more_only_skips_to_end_of_line_in_comment`, `test_repl_needs_more_handles_comment_after_real_brace`, `test_repl_comment_with_brace_does_not_hang`.
+
 ## v2.19.1 — REPL multi-line string and f-string input
 
 ### Fixed

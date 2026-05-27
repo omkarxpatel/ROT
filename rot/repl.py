@@ -75,8 +75,9 @@ def start_repl() -> None:
 def _needs_more(source: str) -> bool:
     """Heuristic: input needs continuation if `{` / `[` / `(` are unbalanced
     outside string literals, OR if a string literal is still open at the end
-    of the buffer. Doesn't handle every edge case but covers the cases the
-    REPL hits in practice."""
+    of the buffer. `//`-comments are skipped (their `{`/`}` don't count).
+    Doesn't handle every edge case but covers the cases the REPL hits in
+    practice."""
     depth = 0
     in_string = False
     i = 0
@@ -93,6 +94,13 @@ def _needs_more(source: str) -> bool:
             i += 1
             continue
         # Outside a string.
+        # `//` starts a comment that runs to the next newline. Skip the
+        # comment region entirely — braces inside don't count.
+        if ch == "/" and i + 1 < len(source) and source[i + 1] == "/":
+            # Advance to the next newline (or end of buffer).
+            while i < len(source) and source[i] != "\n":
+                i += 1
+            continue
         if ch == "\\" and i + 1 < len(source):
             i += 2
             continue

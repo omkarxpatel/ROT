@@ -86,3 +86,40 @@ def test_repl_needs_more_ignores_braces_inside_string():
 def test_repl_needs_more_ignores_closing_brace_inside_string():
     from rot.repl import _needs_more
     assert _needs_more('"foo } bar"') is False
+
+
+# --- C13: `//` comments don't confuse the brace counter ---
+
+def test_repl_needs_more_ignores_open_brace_in_comment():
+    from rot.repl import _needs_more
+    # `{` is inside a `//` comment — should not request continuation.
+    assert _needs_more("// {") is False
+
+
+def test_repl_needs_more_ignores_close_brace_in_comment():
+    from rot.repl import _needs_more
+    assert _needs_more("// }") is False
+
+
+def test_repl_needs_more_only_skips_to_end_of_line_in_comment():
+    from rot.repl import _needs_more
+    # The `{` on line 1 is in a comment. The `{` on line 2 is real.
+    assert _needs_more("// {\n{") is True
+
+
+def test_repl_needs_more_handles_comment_after_real_brace():
+    from rot.repl import _needs_more
+    # Real `{` opens a block; `// }` is a comment, doesn't close anything.
+    assert _needs_more("{ // }") is True
+
+
+def test_repl_comment_with_brace_does_not_hang(monkeypatch, capsys):
+    # Regression for C13: a `{` inside a `//` comment used to put the REPL
+    # into perma-continuation. Single-line `// {` should execute and the REPL
+    # should be ready for the next input.
+    _drive_repl(monkeypatch, [
+        "// {",
+        'coutln("alive")',
+    ])
+    out, _ = capsys.readouterr()
+    assert "alive" in out
