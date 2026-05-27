@@ -2,6 +2,50 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.0 — Milestone 1 schema: Snapshot + EnvFrame + iter_execute skeleton
+
+### Strategic context
+- Opens the v2.26.x line described in [`HANDOFF.md`](HANDOFF.md). The
+  goal of Milestone 1 is a generator-based step-mode interpreter so the
+  playground at [`web/`](web/) can animate execution one statement at a
+  time. This is the foundation every later milestone (bytecode VM in M2,
+  cross-pane highlighting in M3, time-travel in M4) depends on.
+- The Y bump signals the strategic shift from "fill in language
+  features" to "make compilation visible." Subsequent fixes inside
+  Milestone 1 are patches (v2.26.1, .2, ...).
+
+### Added
+- `Snapshot` and `EnvFrame` dataclasses in
+  [`rot/interpreter.py`](rot/interpreter.py). A `Snapshot` records the
+  interpreter state after one top-level statement
+  (`statement_line/col/kind`, `env`, `output_since_last`, `error`).
+  `EnvFrame` is one layer of the lexical scope chain
+  (`scope_kind`, `scope_label`, `bindings`); outermost-first ordering,
+  builtins layer excluded.
+- `Interpreter.iter_execute(program)` — step-mode entry point that
+  yields one `Snapshot` per top-level statement. Mirrors the
+  uncaught-throw → `InterpreterError` semantics of `execute()` so
+  callers see the same surface.
+- `Interpreter._snapshot(stmt)` — builds the Snapshot for the
+  most-recently-executed statement. Will grow in v2.26.1/.2 to
+  serialize env state and drain captured output.
+
+### Notes
+- **Skeleton only.** Env serialization (`Environment._env_snapshot`)
+  arrives in v2.26.1. Output capture via a per-interpreter buffer
+  arrives in v2.26.2. v2.26.0 ships the schema and the entry-point
+  method so subsequent patches are pure wiring, not API design.
+- The fast `execute()` path is unchanged — CLI / REPL / examples /
+  imports continue running at full speed. `iter_execute` is opt-in for
+  callers that want step-by-step state (today: tests; soon: the
+  playground via the Pyodide bridge planned in v2.26.4).
+- 7 new tests in [`tests/test_interpreter.py`](tests/test_interpreter.py)
+  pin the skeleton's contract: one snapshot per statement, position +
+  kind reach the snapshot intact, empty programs yield nothing,
+  unwired env/output stays empty, uncaught throws surface as
+  `InterpreterError`, and the fast path still passes.
+- Tests: 628 → 635 passing.
+
 ## v2.25.18 — housekeeping: example refresh + version-file resync
 
 ### Changed

@@ -3953,3 +3953,83 @@ def test_fstring_multiple_specced_interpolations():
 def test_fstring_format_spec_string_truncate():
     # Width with precision on a string truncates.
     assert _run('coutln(f"{\"abcdef\":.3}")') == "abc\n"
+
+
+# ---------------------------------------------------------------------------
+# Milestone 1 — step-mode interpreter (v2.26.x)
+# ---------------------------------------------------------------------------
+# v2.26.0 lands the schema (Snapshot, EnvFrame) and the iter_execute
+# skeleton. Env serialization (v2.26.1) and output capture (v2.26.2)
+# arrive in later patches; tests for those land alongside.
+
+
+def _iter(source: str):
+    program = Parser(Lexer().tokenize(source)).parse()
+    return list(Interpreter().iter_execute(program))
+
+
+def test_iter_execute_yields_one_snapshot_per_top_level_statement():
+    source = 'x = 1\ny = 2\ncoutln(x + y)'
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        snapshots = _iter(source)
+    assert len(snapshots) == 3
+    # The fast path's side effects still happen — the buffer captures the
+    # actual stdout because v2.26.0 hasn't intercepted output yet.
+    assert captured.getvalue() == "3\n"
+
+
+def test_iter_execute_snapshot_carries_line_col_and_kind():
+    source = 'x = 1\ncoutln(x)'
+    snapshots = _iter(source)
+    assert snapshots[0].statement_line == 1
+    assert snapshots[0].statement_col == 1
+    assert snapshots[0].statement_kind == "Assign"
+    assert snapshots[1].statement_line == 2
+    assert snapshots[1].statement_kind == "ExprStmt"
+
+
+def test_iter_execute_kind_reports_each_ast_statement_type():
+    # Spot-check several statement kinds reach the snapshot intact.
+    source = (
+        'x = 0\n'
+        'let y = 1\n'
+        'if (true) { x = 2 }\n'
+        'while (x < 5) { x = x + 1 }\n'
+        'funct f() { return 0 }\n'
+    )
+    kinds = [s.statement_kind for s in _iter(source)]
+    assert kinds == ["Assign", "LetStmt", "IfStmt", "WhileStmt", "FuncDef"]
+
+
+def test_iter_execute_empty_program_yields_nothing():
+    assert _iter("") == []
+
+
+def test_iter_execute_skeleton_leaves_env_and_output_unwired():
+    # v2.26.0 is a schema-only skeleton. Env serialization (v2.26.1) and
+    # output capture (v2.26.2) intentionally have not been wired yet, so
+    # snapshots ship empty `env` / `output_since_last`. This test pins
+    # that contract so we notice when later patches actually wire them.
+    source = 'x = 1\ncoutln(x)'
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        snapshots = _iter(source)
+    for snap in snapshots:
+        assert snap.env == []
+        assert snap.output_since_last == ""
+        assert snap.error is None
+
+
+def test_iter_execute_uncaught_throw_surfaces_as_interpreter_error():
+    # Mirror execute() semantics: an uncaught `throw` becomes a clean
+    # InterpreterError, not a raw BaseException.
+    program = Parser(Lexer().tokenize('throw "boom"')).parse()
+    with pytest.raises(InterpreterError) as ei:
+        list(Interpreter().iter_execute(program))
+    assert "uncaught throw" in str(ei.value)
+
+
+def test_execute_fast_path_unchanged_after_iter_execute_added():
+    # Regression: adding iter_execute() shouldn't disturb execute().
+    assert _run('x = 1\ncoutln(x + 2)') == "3\n"

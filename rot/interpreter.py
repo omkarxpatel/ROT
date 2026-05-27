@@ -11,7 +11,8 @@ callables — they're the language's only built-ins so far.
 from __future__ import annotations
 
 import os
-from typing import Any, Callable
+from dataclasses import dataclass, field
+from typing import Any, Callable, Iterator
 
 from . import ast
 from .builtins import BUILTINS
@@ -332,6 +333,44 @@ class BoundMethod:
         return None
 
 
+@dataclass
+class EnvFrame:
+    """One layer of the lexical scope chain at the moment of a snapshot.
+
+    Returned outermost-first in `Snapshot.env`. The frozen builtins layer
+    is excluded — it never changes and would just be noise in the UI.
+
+    `bindings` is a plain dict of variable-name → rot value. Callers that
+    want a stable snapshot (mutation-resistant) should deep-copy at the
+    call site; the skeleton in v2.26.0 stores no bindings yet.
+    """
+
+    scope_kind: str            # "global", "function", "method", "block"
+    scope_label: str           # e.g. "global", "funct foo", "method Counter.tick"
+    bindings: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Snapshot:
+    """State of the interpreter after executing one top-level statement.
+
+    Consumed by step-mode callers — the playground's Animate mode walks a
+    generator of these. The fast `execute()` path does not produce
+    snapshots; only `iter_execute()` does.
+
+    v2.26.0 ships this as a skeleton: `statement_line/col/kind` are
+    populated, but `env` and `output_since_last` are placeholders until
+    v2.26.1 (env serializer) and v2.26.2 (output capture) wire them up.
+    """
+
+    statement_line: int
+    statement_col: int
+    statement_kind: str        # AST class name: "Assign", "ExprStmt", "IfStmt", ...
+    env: list[EnvFrame] = field(default_factory=list)
+    output_since_last: str = ""
+    error: "str | None" = None
+
+
 class Interpreter:
     def __init__(self) -> None:
         # Two-layer env: an immutable builtins layer at the root, and a
@@ -388,6 +427,42 @@ class Interpreter:
                 f"uncaught throw: {_stringify(t.value)}",
                 line=t.line, col=t.col,
             )
+
+    def iter_execute(self, program: ast.Program) -> Iterator[Snapshot]:
+        """Step-mode entry point. Yields one `Snapshot` per top-level
+        statement. Used by the playground's Animate mode; the CLI/REPL
+        continue to use `execute()` for normal full-speed runs.
+
+        v2.26.0 skeleton: snapshots carry the statement's position and
+        kind but their `env` and `output_since_last` fields are empty
+        placeholders. The env serializer arrives in v2.26.1; output
+        capture in v2.26.2. Both are then wired through `_snapshot()`.
+
+        Uncaught throws are converted to `InterpreterError` mirroring
+        `execute()` so callers see the same surface.
+        """
+        _set_active_interpreter(self)
+        try:
+            for stmt in program.body:
+                self._execute_statement(stmt)
+                yield self._snapshot(stmt)
+        except _ThrowSignal as t:
+            raise InterpreterError(
+                f"uncaught throw: {_stringify(t.value)}",
+                line=t.line, col=t.col,
+            )
+
+    def _snapshot(self, stmt: "ast.Statement") -> Snapshot:
+        """Build a `Snapshot` reflecting interpreter state after `stmt`.
+
+        v2.26.0 skeleton: emits position + kind. `env` and
+        `output_since_last` are filled in by later patches.
+        """
+        return Snapshot(
+            statement_line=getattr(stmt, "line", 0),
+            statement_col=getattr(stmt, "col", 0),
+            statement_kind=type(stmt).__name__,
+        )
 
     def _error(self, node: "Any", msg: str) -> "InterpreterError":
         """Build (don't raise) an InterpreterError carrying ``node``'s
