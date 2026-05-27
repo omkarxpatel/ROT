@@ -2,6 +2,12 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.1 — Lexer: reset state between `tokenize()` calls, return fresh list
+
+### Fixed
+- **L1**: `Lexer.tokenize()` did not reset internal state, so re-using a `Lexer` instance silently returned the previous call's tokens. After the first call, `self.pos` was past the end of the new source and `while not self._at_end()` exited immediately. `tokenize` now resets `self.source`, `self.pos`, `self.line`, `self.col`, and `self.tokens` at the top of every call. Tests: `test_lexer_reuse_returns_correct_tokens_on_second_call`, `test_lexer_reuse_resets_position_tracking`.
+- **L60**: `tokenize()` returned a direct reference to the lexer's internal `tokens` list, so a caller that mutated the result also mutated lexer state. Now returns `list(self.tokens)` — a shallow copy. Test: `test_tokenize_returns_fresh_list_not_internal_reference`.
+
 ## v2.19.7 — REPL echo: quote strings, always show null
 
 ### Fixed

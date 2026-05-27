@@ -176,3 +176,32 @@ def test_compound_assign_tokens():
     assert _lex("*=")[0] == ("*=", "STAR_EQ")
     assert _lex("/=")[0] == ("/=", "SLASH_EQ")
     assert _lex("%=")[0] == ("%=", "PERCENT_EQ")
+
+
+# v2.20.1 — L1: tokenize() must reset state between calls.
+def test_lexer_reuse_returns_correct_tokens_on_second_call():
+    lex = Lexer()
+    first = lex.tokenize("abc")
+    second = lex.tokenize("xyz")
+    assert [(t.lexeme, t.kind) for t in first] == [("abc", "IDENT")]
+    assert [(t.lexeme, t.kind) for t in second] == [("xyz", "IDENT")]
+
+
+def test_lexer_reuse_resets_position_tracking():
+    lex = Lexer()
+    lex.tokenize("a\nb\nc")
+    # Second call to a single-line source should track line 1, not pick up
+    # the previous call's incremented line counter.
+    tokens = lex.tokenize("hi")
+    assert tokens[0].line == 1
+    assert tokens[0].col == 1
+
+
+# v2.20.1 — L60: tokenize() returns a fresh list, not a shared reference.
+def test_tokenize_returns_fresh_list_not_internal_reference():
+    lex = Lexer()
+    result = lex.tokenize("abc")
+    result.clear()
+    # The lexer's internal tokens list should be untouched by caller mutation.
+    assert len(lex.tokens) == 1
+    assert lex.tokens[0].lexeme == "abc"

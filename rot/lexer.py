@@ -76,14 +76,24 @@ class Lexer:
         self.tokens: list[Token] = []
 
     def tokenize(self, source: str) -> list[Token]:
+        # Reset state so Lexer instances are reusable across calls (L1).
+        # Without this, self.pos / self.line / self.col / self.tokens
+        # would carry over from the previous tokenize call and a second
+        # call would silently return the prior call's tokens.
         self.source = source
+        self.pos = 0
+        self.line = 1
+        self.col = 1
+        self.tokens = []
         if self.trace:
             print("-" * 30)
         while not self._at_end():
             self._scan_token()
         if self.trace:
             print("-" * 30)
-        return self.tokens
+        # Return a fresh list copy so callers mutating the result don't
+        # silently affect a subsequent caller (L60).
+        return list(self.tokens)
 
     def _scan_token(self) -> None:
         start_line, start_col = self.line, self.col
