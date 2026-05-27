@@ -16,6 +16,7 @@ import time
 from colorama import Fore, init as colorama_init
 
 from . import ast
+from .errors import ParserError, InterpreterError
 from .interpreter import Interpreter
 from .lexer import Lexer
 from .syntax import Parser
@@ -41,7 +42,10 @@ class Compiler:
             print(f"\n\n{Fore.RED}Process 2 - Parser (AST):")
 
         started = time.time()
-        program = Parser(tokens).parse()
+        try:
+            program = Parser(tokens).parse()
+        except RecursionError:
+            raise ParserError("expression too deeply nested")
 
         if self.trace:
             print(f"AST: Program(body=[{len(program.body)} statements])")
@@ -58,6 +62,14 @@ class Compiler:
         if source_path is not None:
             import os
             interp.set_source_dir(os.path.dirname(os.path.abspath(source_path)))
-        interp.execute(program)
+        try:
+            interp.execute(program)
+        except RecursionError:
+            # Last-resort safety net — most rot recursion is caught in
+            # _evaluate_call, but a few interpreter sites (e.g. nested
+            # _evaluate of deep expressions) can still trip the Python
+            # recursion limit. Either way: don't let a Python traceback
+            # escape.
+            raise InterpreterError("call stack too deep")
         if self.trace:
             print(f"\nExecution time: {round(time.time() - started, 7)}s")

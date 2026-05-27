@@ -1430,3 +1430,26 @@ def test_cli_non_utf8_source_does_not_leak_traceback(tmp_path, capsys, monkeypat
     assert code == 2
     assert "Traceback" not in err
     assert "utf-8" in err.lower()
+
+
+# ==== v2.14.10: Compiler wraps RecursionError ===============================
+
+def test_compiler_parse_deeply_nested_does_not_leak_python_error():
+    # C6: parsing deeply nested parens used to leak a Python RecursionError.
+    from rot.compiler import Compiler
+    from rot.errors import ParserError
+    src = "(" * 2000 + "1" + ")" * 2000
+    with pytest.raises(ParserError) as exc_info:
+        Compiler().parse(src)
+    assert "deeply nested" in str(exc_info.value)
+    assert "Python" not in str(exc_info.value)
+
+
+def test_compiler_run_unbounded_recursion_does_not_leak_python_error():
+    # The interpreter side is already covered by v2.14.2's _evaluate_call
+    # catch. Just confirm Compiler.run also surfaces the right error.
+    from rot.compiler import Compiler
+    src = "funct r() { r() }\nr()"
+    with pytest.raises(InterpreterError) as exc_info:
+        Compiler().run(src)
+    assert "call stack too deep" in str(exc_info.value)

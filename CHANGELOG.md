@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.10 — Compiler wraps RecursionError
+
+### Fixed
+- **C6**: deeply nested parens (e.g. `((((((1))))))` with 2000+ levels) used to leak a Python `RecursionError` from the parser. `Compiler.parse` now catches `RecursionError` and raises `ParserError("expression too deeply nested")`. `Compiler.run` adds a defensive `RecursionError` -> `InterpreterError("call stack too deep")` net for any interpreter sites not covered by v2.14.2.
+
 ## v2.14.9 — CLI reads source as UTF-8 and reports decode errors cleanly
 
 ### Fixed
