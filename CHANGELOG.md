@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.22.1 — AST nodes carry `line` / `col` (schema change, no behavior change)
+
+### Added
+- Every dataclass node in `rot/ast.py` now has optional `line: int = 0` and `col: int = 0` fields, defaulting to 0 (= unknown source position). The defaults preserve the existing constructor surface — no parser site has been updated to populate them yet, so this release is a pure schema change. The fields are appended AFTER any existing fields with defaults so positional construction still works (`ast.Identifier("foo")`, `ast.NumberLit(10)`, etc.). Python 3.9 is supported, so `kw_only=True` was NOT used. Tests: `test_ast_nodes_default_line_col_to_zero` verifies the defaults.
+
 ## v2.21.6 — `_stringify_instance` cycle protection (stabilization)
 
 ### Fixed

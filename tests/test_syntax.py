@@ -434,3 +434,18 @@ def test_let_rejects_compound_target_in_parser():
 def test_let_requires_equals_sign():
     with pytest.raises(ParserError):
         _parse("let x 5")
+
+
+def test_ast_nodes_default_line_col_to_zero():
+    """v2.22.1: every AST node has optional `line` and `col` kwarg fields,
+    defaulted to 0 (= unknown). Constructing a node WITHOUT passing them
+    leaves both at 0 — so existing code that doesn't know about positions
+    keeps working unchanged."""
+    assert ast.Identifier(name="foo").line == 0
+    assert ast.Identifier(name="foo").col == 0
+    assert ast.NumberLit(value=42).line == 0
+    assert ast.StringLit(value="x").col == 0
+    assert ast.NullLit().line == 0
+    assert ast.BreakStmt().line == 0
+    assert ast.ContinueStmt().col == 0
+    assert ast.Program().line == 0
