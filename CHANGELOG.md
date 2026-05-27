@@ -2,6 +2,12 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.22.6 — `Environment.get` suggests ROT equivalents for Python-isms
+
+### Added
+- `_PYTHON_HINTS` table in `rot/interpreter.py` mapping common Python identifiers (`print`, `println`, `None`, `True`, `False`, `def`, `elif`, `self`) to their ROT equivalents (`cout`, `coutln`, `null`, `true`, `false`, `funct`, `elseif`, `this`). `Environment.get` consults the table on a name miss and, if matched, appends `(did you mean 'X'?)` to the "name 'X' is not defined" message. Non-Python-ism names keep the bare message.
+- New tests: `test_undefined_print_hints_at_cout`, `test_undefined_True_hints_at_true`, `test_undefined_None_hints_at_null`, `test_undefined_def_hints_at_funct`, `test_undefined_println_hints_at_coutln`, `test_undefined_self_hints_at_this`, `test_undefined_elif_hints_at_elseif`, `test_undefined_unknown_name_has_no_hint` (regression — plain unknowns must not get the hint suffix).
+
 ## v2.22.5 — Friendly token-display names in parser errors
 
 ### Added

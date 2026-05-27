@@ -76,6 +76,21 @@ _BINARY_OPS: dict[str, Callable[[Any, Any], Any]] = {
 }
 
 
+# Python-ism → ROT equivalent. Used by `Environment.get` to append a
+# helpful hint to "name 'X' is not defined" when the missing name is a
+# common Python identifier that has a different spelling in ROT.
+_PYTHON_HINTS: dict[str, str] = {
+    "print":   "cout",
+    "println": "coutln",
+    "None":    "null",
+    "True":    "true",
+    "False":   "false",
+    "def":     "funct",
+    "elif":    "elseif",
+    "self":    "this",
+}
+
+
 class Environment:
     """A lexically-scoped variable binding map.
 
@@ -106,6 +121,16 @@ class Environment:
             return self.values[name]
         if self.parent is not None:
             return self.parent.get(name)
+        # If the missing name is a recognizable Python-ism (`print`,
+        # `True`, `def`, `self`, ...) append a hint pointing the user at
+        # the ROT spelling. Plain unknown names still get the bare
+        # message — we shouldn't pretend to know what the user meant.
+        hint = _PYTHON_HINTS.get(name)
+        if hint is not None:
+            raise InterpreterError(
+                f"name {name!r} is not defined "
+                f"(did you mean {hint!r}?)"
+            )
         raise InterpreterError(f"name {name!r} is not defined")
 
     def set(self, name: str, value: Any) -> None:

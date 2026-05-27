@@ -2891,3 +2891,60 @@ def test_member_access_error_inside_method_reports_correct_line():
     err = _run_for_error(src)
     # `this.nonexistent` appears on line 3.
     assert err.line == 3
+
+
+# ---------- v2.22.6: Python-ism hints in undefined-name errors ---------
+
+
+def test_undefined_print_hints_at_cout():
+    """v2.22.6: a user typing Python's `print(...)` gets a helpful pointer
+    at the ROT equivalent."""
+    err = _run_for_error('print("hi")')
+    msg = str(err)
+    assert "print" in msg
+    assert "did you mean" in msg
+    assert "cout" in msg
+
+
+def test_undefined_True_hints_at_true():
+    err = _run_for_error('x = True')
+    assert "did you mean" in str(err)
+    assert "true" in str(err)
+
+
+def test_undefined_None_hints_at_null():
+    err = _run_for_error('cout(None)')
+    assert "did you mean" in str(err)
+    assert "null" in str(err)
+
+
+def test_undefined_def_hints_at_funct():
+    err = _run_for_error('def')
+    assert "did you mean" in str(err)
+    assert "funct" in str(err)
+
+
+def test_undefined_println_hints_at_coutln():
+    err = _run_for_error('println("hi")')
+    assert "coutln" in str(err)
+
+
+def test_undefined_self_hints_at_this():
+    err = _run_for_error('cout(self)')
+    assert "this" in str(err)
+    assert "did you mean" in str(err)
+
+
+def test_undefined_elif_hints_at_elseif():
+    """Bare `elif` outside an if-chain context — used as a bare identifier —
+    surfaces with a hint. In ROT, `elif` is not a keyword, so the lexer
+    classifies it as an IDENT; the interpreter's get-by-name then fails."""
+    err = _run_for_error('elif')
+    assert "elseif" in str(err)
+
+
+def test_undefined_unknown_name_has_no_hint():
+    """Regression: only Python-ism names get the hint suffix. Plain
+    unknown names produce the bare message."""
+    err = _run_for_error('totally_random_name')
+    assert "did you mean" not in str(err)
