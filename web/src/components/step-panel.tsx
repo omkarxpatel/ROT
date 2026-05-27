@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  AlertOctagon,
   ArrowDown,
   Check,
   ChevronRight,
@@ -94,6 +95,7 @@ export function StepPanel({
     ? Math.round(((stepIndex + 1) / totalSteps) * 100)
     : 0;
   const isAtEnd = hasSteps && stepIndex === totalSteps - 1;
+  const endedOnError = isAtEnd && Boolean(snapshot?.error);
   // Scale stage delays + staggers when playing so they fit inside
   // the user's chosen step interval. Cap at 1 (manual step / slow
   // play just uses the natural pacing) and at 0.2 (never compress
@@ -128,12 +130,32 @@ export function StepPanel({
               <div
                 className={cn(
                   "h-full transition-[width] duration-500 ease-out",
-                  isAtEnd ? "bg-emerald-400" : "bg-amber-400/80",
+                  endedOnError
+                    ? "bg-red-500"
+                    : isAtEnd
+                      ? "bg-emerald-400"
+                      : "bg-amber-400/80",
                 )}
                 style={{ width: `${progressPct}%` }}
               />
             </div>
-            {isAtEnd && (
+            {isAtEnd && endedOnError && (
+              <motion.span
+                key="halted"
+                initial={{ opacity: 0, scale: 0.7 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{
+                  duration: 0.4,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+                className="inline-flex items-center gap-1 rounded-full border border-red-500/40 bg-red-500/10 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-red-300"
+                title="Program halted on an error — see the Execution stage for details."
+              >
+                <AlertOctagon className="h-3 w-3" />
+                halted
+              </motion.span>
+            )}
+            {isAtEnd && !endedOnError && (
               <motion.span
                 key="done"
                 initial={{ opacity: 0, scale: 0.7 }}

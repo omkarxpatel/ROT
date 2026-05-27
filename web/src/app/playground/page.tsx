@@ -167,12 +167,18 @@ export default function PlaygroundPage() {
     setPlaying(true);
   }, [playing, snapshots.length, source, snapshotsSource, fetchSnapshots]);
 
-  // Auto-step loop. Re-scheduled per render when (playing | stepIndex |
-  // snapshots.length | speedMs) changes; that gives the speed slider a
-  // real-time effect without needing a ref.
+  // Auto-step loop. Re-scheduled per render when (playing, stepIndex,
+  // snapshots, speedMs) changes; that gives the speed slider a
+  // real-time effect without needing a ref. Also halts Play when the
+  // current snapshot carries an error — the user can Step manually
+  // past it (if there's anything left) and click Play to continue.
   useEffect(() => {
     if (!playing) return;
     if (stepIndex >= snapshots.length - 1) {
+      setPlaying(false);
+      return;
+    }
+    if (snapshots[stepIndex]?.error) {
       setPlaying(false);
       return;
     }
@@ -180,7 +186,7 @@ export default function PlaygroundPage() {
       setStepIndex((i) => Math.min(i + 1, snapshots.length - 1));
     }, speedMs);
     return () => window.clearTimeout(id);
-  }, [playing, stepIndex, snapshots.length, speedMs]);
+  }, [playing, stepIndex, snapshots, speedMs]);
 
   // When the user edits source after a step session, drop stale state
   // so the next Step/Play refetches. We don't auto-fetch here — the

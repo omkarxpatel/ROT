@@ -2,6 +2,29 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.28 — Pause Play on error + "halted" badge
+
+### Added
+- The auto-step loop in the playground page now checks
+  `snapshots[stepIndex]?.error` before scheduling the next tick.
+  If the current snapshot carries an error, Play auto-pauses so
+  the user can read the failure without it whirring past.
+- New "halted" badge in the Step Detail panel header — replaces
+  the green "✓ done" pill when the program ended on an error.
+  Red border + red `AlertOctagon` icon + title attribute pointing
+  at the Execution stage for details.
+- Progress bar in the Step Detail header turns red on
+  error-termination (was amber → emerald on clean completion).
+
+### Notes
+- Resuming after the auto-pause: the user manually Steps past the
+  error (if there are more snapshots) or clicks Reset and replays.
+- Since the interpreter's `iter_execute` halts iteration after the
+  first error, `error` only ever shows up on the last snapshot in
+  the stream. So in practice "paused on error" and "ended on error"
+  coincide.
+- Type-check clean. No Python changes; 669 tests still passing.
+
 ## v2.26.27 — Editor → AST highlight (inverse hover)
 
 ### Added
