@@ -89,6 +89,13 @@ class Lexer:
         self.tokens: list[Token] = []
 
     def tokenize(self, source: str) -> list[Token]:
+        # Reject non-string input up front (L30). Without this, downstream
+        # operations like `source[:1]` and `self._peek()` crash with a
+        # Python `AttributeError` / `TypeError` that leaks Python internals.
+        if not isinstance(source, str):
+            raise TypeError(
+                f"Lexer.tokenize requires str, got {type(source).__name__}"
+            )
         # Strip leading UTF-8 BOM (U+FEFF) so files saved by editors that
         # default to BOM-prefixed UTF-8 don't trip a bare
         # "unexpected character" error on the very first token (L28).

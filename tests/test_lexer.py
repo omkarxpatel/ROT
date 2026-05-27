@@ -374,3 +374,25 @@ def test_trace_mode_handles_long_lexeme_without_crashing(capsys):
     # truncate — Python field widths are min-width, not max — but it doesn't
     # crash).
     assert long_ident in captured
+
+
+# v2.20.8 — L30: non-string input must raise TypeError, not crash.
+def test_tokenize_with_none_raises_clean_typeerror():
+    with pytest.raises(TypeError) as exc_info:
+        Lexer().tokenize(None)
+    assert "Lexer.tokenize requires str" in str(exc_info.value)
+    assert "NoneType" in str(exc_info.value)
+
+
+def test_tokenize_with_int_raises_clean_typeerror():
+    with pytest.raises(TypeError) as exc_info:
+        Lexer().tokenize(42)
+    assert "Lexer.tokenize requires str" in str(exc_info.value)
+    assert "int" in str(exc_info.value)
+
+
+def test_tokenize_with_bytes_raises_clean_typeerror():
+    with pytest.raises(TypeError) as exc_info:
+        Lexer().tokenize(b"cout")
+    assert "Lexer.tokenize requires str" in str(exc_info.value)
+    assert "bytes" in str(exc_info.value)

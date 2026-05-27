@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.8 — Lexer: type-check `tokenize` input
+
+### Fixed
+- **L30**: `Lexer.tokenize(None)` (and `tokenize(42)`, `tokenize(b"...")`, etc.) used to crash with a raw Python `AttributeError: 'NoneType' object has no attribute ...` or `TypeError: 'int' object is not subscriptable` — Python internals leaking through. `tokenize` now type-checks its argument up front and raises `TypeError("Lexer.tokenize requires str, got {type.__name__}")`. Tests: `test_tokenize_with_none_raises_clean_typeerror`, `test_tokenize_with_int_raises_clean_typeerror`, `test_tokenize_with_bytes_raises_clean_typeerror`.
+
 ## v2.20.7 — Lexer: trace `_log` uses f-string field widths
 
 ### Fixed
