@@ -2,6 +2,16 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.21.6 — `_stringify_instance` cycle protection (stabilization)
+
+### Fixed
+- **B2 follow-up**: a `to_string()` method that re-stringified its own instance (`return "X(" + str(this) + ")"`, by accident or by design) used to recurse until Python's recursion limit kicked in, producing several hundred levels of nested `X(X(X(...` output before the inner `RecursionError` was caught by the `except Exception:` fallback. `_stringify_instance` now tracks instances currently being rendered in a module-level `_ACTIVE_INSTANCE_IDS` set (try/finally-scoped, matching the `_seen` pattern for list/dict cycles): re-entry on the same instance short-circuits to `<instance of {ClassName}>` immediately. Sibling renders of the same instance still work — the id is discarded on the way back up. Indirect cycles (instance → list → instance) are also caught because list-cycle detection (B61) and instance-cycle detection together bracket every recursive path through `_stringify`. Tests: `test_to_string_recursive_self_reference_bottoms_out`, `test_to_string_cycle_protection_does_not_break_sibling_renders`, `test_to_string_indirect_cycle_via_field_is_caught`, `test_to_string_separate_instances_with_same_class_each_render`.
+
+### Notes
+- v2.21.1-5 introduced rot-style list/dict rendering, instance display with `to_string()`, and the new shapes for functions/classes/bound methods. No pre-existing tests broke during the stability check — the changes flowed through `_stringify` cleanly without colliding with any locked-down output. All 461 tests pass (436 → 461 across the v2.21.x sweep). Examples (`examples/*.rot` vs `examples/*.expected`) still match byte-for-byte.
+- Follow-up: REPL echo prints both the function's printed output AND the auto-echoed return value, so `coutln([1])` shows `[1]` then `null`. Pre-existing v2.19.7 design tradeoff for consistent echo semantics; not addressed here. (Left as a separate item — see HANDOFF.)
+- Follow-up: `return f"..."` returns `null` because the parser's `_EXPR_STARTS` set doesn't include `FSTRING`. A bare `return` lexes, then the f-string becomes a separate `ExprStmt`. Not addressed here. (Left as a separate item.)
+
 ## v2.21.5 — `RotFunction` / `RotClass` / `BoundMethod` __str__
 
 ### Fixed

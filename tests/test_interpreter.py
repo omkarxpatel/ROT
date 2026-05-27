@@ -2714,3 +2714,72 @@ def test_builtin_function_not_affected_by_funct_rendering():
     assert "<funct" not in out
     assert "<class" not in out
     assert "<method" not in out
+
+
+# ---------- v2.21.6: stabilization — instance re-entry cycle protection ----
+
+def test_to_string_recursive_self_reference_bottoms_out():
+    # v2.21.6: a `to_string()` that calls `str(this)` (whether by accident or
+    # to wrap the default) used to recurse until Python's recursion limit
+    # kicked in, producing hundreds of nested `Bad(Bad(...))` levels with
+    # `<instance of Bad>` as the eventual base. _stringify_instance now
+    # tracks instances currently being rendered and short-circuits the
+    # second visit to the same instance, producing a single `<instance of
+    # X>` marker — same idea as the list/dict cycle marker.
+    src = (
+        'class Bad {\n'
+        '    to_string() { return "Bad(" + str(this) + ")" }\n'
+        '}\n'
+        'coutln(Bad())'
+    )
+    assert _run(src) == "Bad(<instance of Bad>)\n"
+
+
+def test_to_string_cycle_protection_does_not_break_sibling_renders():
+    # Regression: the cycle marker uses try/finally to remove the id on the
+    # way back up, so two appearances of the same instance side-by-side are
+    # NOT a cycle and both render fully.
+    src = (
+        'class A {\n'
+        '    init(n) { this.n = n }\n'
+        '    to_string() { return "A(" + str(this.n) + ")" }\n'
+        '}\n'
+        'a = A(7)\n'
+        'coutln([a | a])'
+    )
+    assert _run(src) == "[A(7) | A(7)]\n"
+
+
+def test_to_string_indirect_cycle_via_field_is_caught():
+    # Indirect cycle: A's `to_string` stringifies a list that contains A.
+    # The list-cycle marker handles the list side, and the instance-cycle
+    # marker handles the A side. Together they make sure the rendering
+    # bottoms out.
+    src = (
+        'class A {\n'
+        '    init() { this.children = [] }\n'
+        '    to_string() { return "A(" + str(this.children) + ")" }\n'
+        '}\n'
+        'a = A()\n'
+        'append(a.children | a)\n'
+        'coutln(a)'
+    )
+    # Outer call: _stringify_instance(a) → calls to_string → returns
+    # "A(" + str(this.children) + ")".
+    # str(this.children) recurses via _stringify into the list [a]; we're
+    # inside _ACTIVE_INSTANCE_IDS for a, so when the list-recursion hits a
+    # again, the re-entry guard returns `<instance of A>`.
+    assert _run(src) == "A([<instance of A>])\n"
+
+
+def test_to_string_separate_instances_with_same_class_each_render():
+    # Two distinct instances of the same class should each render fully —
+    # the cycle marker is id-based, not class-based.
+    src = (
+        'class A {\n'
+        '    init(n) { this.n = n }\n'
+        '    to_string() { return "A(" + str(this.n) + ")" }\n'
+        '}\n'
+        'coutln([A(1) | A(2) | A(1)])'
+    )
+    assert _run(src) == "[A(1) | A(2) | A(1)]\n"

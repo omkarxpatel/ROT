@@ -111,9 +111,20 @@ def _stringify_instance(instance: Any) -> str:
     return value — gives users an override hook for instance display. If
     `to_string` raises, returns a non-string, or has the wrong arity, fall
     back to the default form silently (display must not crash output).
+
+    Cycle protection: if `to_string()` re-enters _stringify on the same
+    instance (`return str(this) + ...`), the inner call short-circuits to
+    `<instance of {ClassName}>` to avoid infinite recursion. The list/dict
+    cycle marker (`[...]` / `{...}`) doesn't catch this because instances
+    aren't tracked in `_seen`. _ACTIVE_INSTANCE_IDS records instances
+    currently being stringified, scoped via try/finally so sibling
+    occurrences of the same instance still render fully.
     """
     method = instance.cls.methods.get("to_string")
     if method is not None:
+        if id(instance) in _ACTIVE_INSTANCE_IDS:
+            # Re-entrant `to_string()` on the same instance — break the loop.
+            return f"<instance of {instance.cls.name}>"
         # Find the active Interpreter. Set at Interpreter() construction
         # time, so any cout/coutln/str/f-string path through _stringify
         # will see it. If there's no active interpreter (extremely unusual
@@ -123,6 +134,7 @@ def _stringify_instance(instance: Any) -> str:
         if interp is not None:
             from .interpreter import BoundMethod
             bound = BoundMethod(instance, method, instance.cls.closure)
+            _ACTIVE_INSTANCE_IDS.add(id(instance))
             try:
                 result = bound.call([], interp)
                 if isinstance(result, str):
@@ -131,7 +143,15 @@ def _stringify_instance(instance: Any) -> str:
                 # to_string raised or had the wrong arity — fall back to
                 # the default form rather than crashing the display path.
                 pass
+            finally:
+                _ACTIVE_INSTANCE_IDS.discard(id(instance))
     return f"<instance of {instance.cls.name}>"
+
+
+# Tracks instances whose `to_string()` is currently executing. Used to
+# detect re-entry on the same instance (e.g. `to_string` calls `str(this)`)
+# and break the loop. Cleared in try/finally so sibling renders work.
+_ACTIVE_INSTANCE_IDS: "set[int]" = set()
 
 
 # Tracks the currently-running Interpreter so `_stringify` can invoke
