@@ -260,6 +260,15 @@ class BoundMethod:
         self.decl = decl
         self.closure = closure
 
+    def get_member(self, name: str) -> Any:
+        """I20: a `BoundMethod` exposes no members. Without this, `a.f.decl`
+        / `a.f.closure` / `a.f.instance` would leak the FuncDef AST, the
+        closure env, and the bound instance via Python getattr. Reject
+        everything: a bound method is a callable, not a record."""
+        raise InterpreterError(
+            f"cannot access {name!r} on a bound method"
+        )
+
     def call(self, args: list[Any], interpreter: "Interpreter") -> Any:
         if len(args) != len(self.decl.params):
             raise InterpreterError(
@@ -655,6 +664,10 @@ class Interpreter:
             # `name`, `closure`, `call`) would otherwise leak through getattr.
             # Route to a dedicated get_member that exposes nothing.
             if isinstance(target, RotClass):
+                return target.get_member(expr.member)
+            # I20 (BoundMethod): a `BoundMethod` similarly has `decl`,
+            # `closure`, `instance` Python attributes; expose none of them.
+            if isinstance(target, BoundMethod):
                 return target.get_member(expr.member)
             # I47: filter `_`-prefixed names (dunder + private) from the
             # Python-getattr fallback. Without this, `"abc".__class__`,

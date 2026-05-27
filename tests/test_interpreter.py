@@ -2172,3 +2172,53 @@ def test_rotclass_instance_method_call_still_works():
         'coutln(a.f())'
     )
     assert _run(src) == "42\n"
+
+
+# ==== v2.18.3: BoundMethod info-leak blocked (I20) ===========================
+
+def test_boundmethod_decl_attribute_not_exposed():
+    # I20 (BoundMethod): `a.f.decl` used to return the FuncDef AST.
+    src = (
+        'class A { f() {} }\n'
+        'a = A()\n'
+        'coutln(a.f.decl)'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    msg = str(exc_info.value)
+    assert "decl" in msg
+
+
+def test_boundmethod_closure_attribute_not_exposed():
+    # I20 (BoundMethod): `a.f.closure` used to return the Environment.
+    src = (
+        'class A { f() {} }\n'
+        'a = A()\n'
+        'coutln(a.f.closure)'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "closure" in str(exc_info.value)
+
+
+def test_boundmethod_instance_attribute_not_exposed():
+    # I20 (BoundMethod): `a.f.instance` used to return the bound RotInstance
+    # (a route to side-channel access).
+    src = (
+        'class A { f() {} }\n'
+        'a = A()\n'
+        'coutln(a.f.instance)'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "instance" in str(exc_info.value)
+
+
+def test_boundmethod_invocation_still_works():
+    # Regression: a.f() (a normal method call) still works.
+    src = (
+        'class A { f() { return 7 } }\n'
+        'a = A()\n'
+        'coutln(a.f())'
+    )
+    assert _run(src) == "7\n"

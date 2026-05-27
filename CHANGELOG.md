@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.18.3 — BoundMethod attribute access locked down
+
+### Fixed
+- **I20 (BoundMethod)**: `a.f.decl`, `a.f.closure`, `a.f.instance` (where `f` is a method on instance `a`) used to leak the FuncDef AST, the closure `Environment`, and the bound `RotInstance` via Python getattr — completing the I20 leak surface from v2.18.2. `BoundMethod` now has its own `get_member` that rejects every name (a bound method is a callable, not a record). The `MemberAccess` branch special-cases `isinstance(target, BoundMethod)` and routes there. Normal `a.f()` invocations still work. Tests: `test_boundmethod_decl_attribute_not_exposed`, `test_boundmethod_closure_attribute_not_exposed`, `test_boundmethod_instance_attribute_not_exposed`, `test_boundmethod_invocation_still_works`.
+
 ## v2.18.2 — RotClass attribute access locked down
 
 ### Fixed
