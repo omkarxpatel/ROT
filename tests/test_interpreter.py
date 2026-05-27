@@ -65,6 +65,32 @@ def test_if_elseif_else_full_chain():
     assert _run(src) == "eq\n"
 
 
+def test_if_else_if_two_word_form_runs_correctly():
+    # P6 (v2.25.4): `else if` is sugar for `elseif`; same semantics at
+    # runtime, just a different spelling at the source level.
+    src = (
+        'funct cmp(x | y) {\n'
+        '    if (x > y) { coutln("gt") }\n'
+        '    else if (x == y) { coutln("eq") }\n'
+        '    else { coutln("lt") }\n'
+        '}\n'
+        'cmp(1 | 2)'
+    )
+    assert _run(src) == "lt\n"
+
+
+def test_if_else_if_takes_the_matching_branch():
+    src = (
+        'funct cmp(x | y) {\n'
+        '    if (x > y) { coutln("gt") }\n'
+        '    else if (x == y) { coutln("eq") }\n'
+        '    else { coutln("lt") }\n'
+        '}\n'
+        'cmp(2 | 2)'
+    )
+    assert _run(src) == "eq\n"
+
+
 def test_arithmetic_precedence_matches_pratt_parser():
     # 1 + 2 * 3 should compute to 7, not 9.
     assert _run("coutln(1 + 2 * 3)") == "7\n"

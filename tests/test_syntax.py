@@ -261,6 +261,52 @@ def test_parses_if_elseif_else_chain():
     assert len(stmt.else_block.statements) == 1
 
 
+def test_parses_else_if_two_word_form_as_elif_branch():
+    # P6 (v2.25.4): `else if` is sugar for `elseif`. Both forms produce
+    # the same AST shape.
+    program = _strip_pos(_parse(
+        'if (x > y) { coutln(x) }\n'
+        'else if (x == y) { coutln("same") }\n'
+        'else { coutln(y) }'
+    ))
+    assert len(program.body) == 1
+    stmt = program.body[0]
+    assert isinstance(stmt, ast.IfStmt)
+    assert len(stmt.elif_branches) == 1
+    assert stmt.elif_branches[0].cond == ast.BinaryOp("==", ast.Identifier("x"), ast.Identifier("y"))
+    assert stmt.else_block is not None
+
+
+def test_else_if_mixed_with_elseif_in_same_chain():
+    # P6: `elseif` and `else if` are interchangeable and can mix within
+    # the same chain.
+    program = _strip_pos(_parse(
+        'if (a) { coutln("a") }\n'
+        'else if (b) { coutln("b") }\n'
+        'elseif (c) { coutln("c") }\n'
+        'else if (d) { coutln("d") }\n'
+        'else { coutln("else") }'
+    ))
+    stmt = program.body[0]
+    assert isinstance(stmt, ast.IfStmt)
+    assert len(stmt.elif_branches) == 3
+    assert stmt.else_block is not None
+
+
+def test_else_block_without_if_still_parses_as_plain_else():
+    # P6: a plain `else { ... }` (no `if` after) must still be parsed as
+    # the bare else branch — the lookahead must not consume the ELSE.
+    program = _strip_pos(_parse(
+        'if (x) { coutln("then") }\n'
+        'else { coutln("else") }'
+    ))
+    stmt = program.body[0]
+    assert isinstance(stmt, ast.IfStmt)
+    assert stmt.elif_branches == []
+    assert stmt.else_block is not None
+    assert len(stmt.else_block.statements) == 1
+
+
 def test_unterminated_block_raises_parser_error():
     with pytest.raises(ParserError):
         _parse("funct hi() { coutln(x)")

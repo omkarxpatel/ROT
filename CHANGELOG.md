@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.4 — parser: `else if` two-word form (P6)
+
+### Added
+- The parser now accepts `else if (...) { ... }` in addition to the existing single-keyword `elseif`. Both forms produce the same `ElifBranch` AST shape, so semantics are identical at runtime. The two forms can mix within the same chain. A plain `else { ... }` (no `if` after) is unchanged. Implementation: in `_parse_if_stmt`, the loop that collects elif branches also matches when ELSE is followed by IF (one-token lookahead). Tests: 3 new syntax tests (`test_parses_else_if_two_word_form_as_elif_branch`, `test_else_if_mixed_with_elseif_in_same_chain`, `test_else_block_without_if_still_parses_as_plain_else`), 2 new interpreter tests (`test_if_else_if_two_word_form_runs_correctly`, `test_if_else_if_takes_the_matching_branch`).
+
 ## v2.25.3 — imports: cycle no longer re-runs main file body (I40)
 
 ### Fixed

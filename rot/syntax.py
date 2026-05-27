@@ -404,8 +404,22 @@ class Parser:
         then_block = self._parse_block()
 
         elif_branches: list[ast.ElifBranch] = []
-        while self._check("ELIF"):
-            elif_tok = self._advance()
+        # P6: accept both the single keyword `elseif` and the two-word
+        # form `else if`. The two-word form is detected by a peek-ahead
+        # for IF following ELSE.
+        while self._check("ELIF") or (
+            self._check("ELSE")
+            and self._peek(1) is not None
+            and self._peek(1).kind == "IF"  # type: ignore[union-attr]
+        ):
+            if self._check("ELIF"):
+                elif_tok = self._advance()
+            else:
+                # `else if` — consume ELSE, then use the IF token as the
+                # branch's anchor so error messages point at the
+                # condition's start.
+                self._advance()  # ELSE
+                elif_tok = self._advance()  # IF
             self._consume("L_PAREN")
             elif_cond = self._parse_expression()
             self._consume("R_PAREN")
