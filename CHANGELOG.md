@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.9 — CLI reads source as UTF-8 and reports decode errors cleanly
+
+### Fixed
+- **C3**: a non-UTF-8 source file used to crash with a Python `UnicodeDecodeError` traceback. The CLI's `source_path.read_text()` now passes `encoding="utf-8"` explicitly and catches `UnicodeDecodeError`, routing it through `parser.error` for a one-line "is not valid UTF-8" message.
+
 ## v2.14.8 — CLI catches OSError broadly, not just FileNotFoundError
 
 ### Fixed

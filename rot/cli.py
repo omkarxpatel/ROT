@@ -59,13 +59,15 @@ def main() -> None:
         parser.error(f"file must be a .rot file (got {args.file})")
 
     try:
-        source = source_path.read_text()
+        source = source_path.read_text(encoding="utf-8")
     except FileNotFoundError:
         parser.error(f"file not found: {args.file}")
     except IsADirectoryError:
         parser.error(f"is a directory, not a file: {args.file}")
     except PermissionError:
         parser.error(f"permission denied: {args.file}")
+    except UnicodeDecodeError as e:
+        parser.error(f"{args.file} is not valid UTF-8: {e.reason}")
     except OSError as e:
         parser.error(f"cannot read {args.file}: {e}")
 

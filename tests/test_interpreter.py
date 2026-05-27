@@ -1418,3 +1418,15 @@ def test_cli_file_not_found_still_clean(tmp_path, capsys, monkeypatch):
     assert code == 2
     assert "Traceback" not in err
     assert "not found" in err.lower()
+
+
+# ==== v2.14.9: CLI uses UTF-8 and reports decode errors cleanly =============
+
+def test_cli_non_utf8_source_does_not_leak_traceback(tmp_path, capsys, monkeypatch):
+    # C3: previously leaked UnicodeDecodeError from read_text() using locale.
+    src = tmp_path / "bad.rot"
+    src.write_bytes(b"\xff\xfe // not utf-8\n")
+    out, err, code = _run_cli([str(src)], capsys, monkeypatch)
+    assert code == 2
+    assert "Traceback" not in err
+    assert "utf-8" in err.lower()
