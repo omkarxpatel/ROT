@@ -131,3 +131,48 @@ def test_vm_stack_is_empty_after_clean_run():
     # End of program → stack empty. Important invariant.
     vm = _run("a = 1\nb = 2\nc = a + b\nlet d = c")
     assert vm.stack == []
+
+
+# ─── Comparisons (v2.27.1) ───────────────────────────────────────
+
+
+def test_vm_equality_numbers():
+    vm = _run("a = 1 == 1\nb = 1 == 2")
+    assert vm.env == {"a": True, "b": False}
+
+
+def test_vm_inequality():
+    vm = _run("a = 1 != 1\nb = 1 != 2")
+    assert vm.env == {"a": False, "b": True}
+
+
+def test_vm_less_than_chain():
+    vm = _run("a = 1 < 2\nb = 2 < 2\nc = 3 < 2")
+    assert vm.env == {"a": True, "b": False, "c": False}
+
+
+def test_vm_less_equal():
+    vm = _run("a = 2 <= 2\nb = 3 <= 2")
+    assert vm.env == {"a": True, "b": False}
+
+
+def test_vm_greater_than_and_equal():
+    vm = _run("a = 3 > 2\nb = 2 > 3\nc = 2 >= 2\nd = 1 >= 2")
+    assert vm.env == {"a": True, "b": False, "c": True, "d": False}
+
+
+def test_vm_equality_works_across_types():
+    # 1 == "1" should be False (Python ==). Mirrors the tree-walker.
+    vm = _run('a = 1 == "1"\nb = "hi" == "hi"\nc = null == null')
+    assert vm.env == {"a": False, "b": True, "c": True}
+
+
+def test_vm_not_operator_truthiness():
+    vm = _run("a = not true\nb = not false\nc = not null\nd = not 0")
+    assert vm.env == {"a": False, "b": True, "c": True, "d": True}
+
+
+def test_vm_not_preserves_python_truthiness_for_strings_and_lists():
+    # `not ""` and `not 0` are True (falsy); `not "x"` is False.
+    vm = _run('a = not ""\nb = not "x"')
+    assert vm.env == {"a": True, "b": False}

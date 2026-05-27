@@ -164,12 +164,35 @@ def test_compile_identifier_loads_by_name():
 
 
 def test_compile_unsupported_statement_raises_not_implemented():
-    # `IfStmt` isn't supported yet in v2.27.0.
+    # `IfStmt` isn't supported yet (lands in v2.27.2 with jumps).
     with pytest.raises(NotImplementedError):
         _compile("if (true) { x = 1 }")
 
 
-def test_compile_unsupported_binary_op_raises_not_implemented():
-    # Comparison ops aren't wired yet.
-    with pytest.raises(NotImplementedError):
-        _compile("x = 1 == 1")
+# ─── Comparison ops (v2.27.1) ────────────────────────────────────
+
+
+def test_compile_eq_ne_lt_le_gt_ge():
+    # Each operator becomes its own opcode after both sides are loaded.
+    for src_op, expected in [
+        ("==", Op.EQ),
+        ("!=", Op.NE),
+        ("<", Op.LT),
+        ("<=", Op.LE),
+        (">", Op.GT),
+        (">=", Op.GE),
+    ]:
+        chunk = _compile(f"x = 1 {src_op} 2")
+        assert chunk.code[2][0] == expected, (
+            f"expected {expected.name} for {src_op!r}, got {chunk.code[2][0]}"
+        )
+
+
+def test_compile_not_unary():
+    chunk = _compile("x = not true")
+    assert chunk.code == [
+        (Op.LOAD_TRUE,),
+        (Op.NOT,),
+        (Op.STORE_NAME, 0),
+        (Op.RETURN,),
+    ]

@@ -2,6 +2,28 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.1 — M2: comparison ops (`== != < <= > >=`) + `not`
+
+### Added
+- 7 new opcodes in
+  [`rot/opcodes.py`](rot/opcodes.py): `EQ`, `NE`, `LT`, `LE`, `GT`,
+  `GE`, `NOT`.
+- Codegen: comparison binary ops route through `_BIN_OP_MAP` like
+  arithmetic; `not` is wired as the third unary branch in
+  `_compile_expr`'s `UnaryOp` handler.
+- VM dispatch handles the 7 new opcodes. Equality / inequality use
+  Python `==` / `!=` directly. Ordering ops wrap `TypeError` from
+  cross-type comparisons into `InterpreterError`. `NOT` uses
+  Python's `not` so truthiness rules match the tree-walker.
+
+### Tests
+- `tests/test_codegen.py`: a loop verifying `==`, `!=`, `<`, `<=`,
+  `>`, `>=` each emit the right opcode; a dedicated `not` test.
+- `tests/test_vm.py`: equality on numbers / strings / `null`,
+  inequality, all four ordering ops, mixed-type equality (`1 == "1"`
+  is False), `not true/false/null/0/""`, falsy-string truthiness.
+- Tests: 703 → 712 passing.
+
 ## v2.27.0 — Milestone 2 kickoff: bytecode opcode set + Chunk + Compiler + VM (foundation)
 
 ### Strategic context

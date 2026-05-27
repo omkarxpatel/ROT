@@ -135,6 +135,52 @@ class VM:
                 except TypeError as e:
                     raise InterpreterError(str(e))
                 continue
+            if op == Op.EQ:
+                b = self.stack.pop()
+                a = self.stack.pop()
+                self.stack.append(a == b)
+                continue
+            if op == Op.NE:
+                b = self.stack.pop()
+                a = self.stack.pop()
+                self.stack.append(a != b)
+                continue
+            if op == Op.LT:
+                b = self.stack.pop()
+                a = self.stack.pop()
+                try:
+                    self.stack.append(a < b)
+                except TypeError as e:
+                    raise InterpreterError(str(e))
+                continue
+            if op == Op.LE:
+                b = self.stack.pop()
+                a = self.stack.pop()
+                try:
+                    self.stack.append(a <= b)
+                except TypeError as e:
+                    raise InterpreterError(str(e))
+                continue
+            if op == Op.GT:
+                b = self.stack.pop()
+                a = self.stack.pop()
+                try:
+                    self.stack.append(a > b)
+                except TypeError as e:
+                    raise InterpreterError(str(e))
+                continue
+            if op == Op.GE:
+                b = self.stack.pop()
+                a = self.stack.pop()
+                try:
+                    self.stack.append(a >= b)
+                except TypeError as e:
+                    raise InterpreterError(str(e))
+                continue
+            if op == Op.NOT:
+                a = self.stack.pop()
+                self.stack.append(not a)
+                continue
             if op == Op.RETURN:
                 return
             raise InterpreterError(f"unknown opcode {int(op)}")

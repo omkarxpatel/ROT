@@ -135,6 +135,9 @@ class Compiler:
             if expr.op == "-":
                 self.chunk.emit(Op.NEG)
                 return
+            if expr.op == "not":
+                self.chunk.emit(Op.NOT)
+                return
             raise NotImplementedError(
                 f"codegen: unary op {expr.op!r} not yet supported"
             )
@@ -149,6 +152,12 @@ _BIN_OP_MAP: dict[str, Op] = {
     "*": Op.MUL,
     "/": Op.DIV,
     "%": Op.MOD,
+    "==": Op.EQ,
+    "!=": Op.NE,
+    "<": Op.LT,
+    "<=": Op.LE,
+    ">": Op.GT,
+    ">=": Op.GE,
 }
 
 

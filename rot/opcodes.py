@@ -36,6 +36,19 @@ class Op(IntEnum):
     MOD = 24
     NEG = 25         # Unary minus: pops a; pushes -a.
 
+    # ─── Comparison ────────────────────────────────────────────────
+    EQ = 30          # Pops b, a; pushes a == b.
+    NE = 31
+    LT = 32
+    LE = 33
+    GT = 34
+    GE = 35
+
+    # ─── Boolean ───────────────────────────────────────────────────
+    NOT = 40         # Pops a; pushes Python's `not a` (truthiness rules
+                     # match ROT's tree-walker since both rely on
+                     # Python's bool coercion).
+
     # ─── Control ───────────────────────────────────────────────────
     RETURN = 90      # Halt execution. Top of stack (if any) is the
                      # program's "result" — for a whole program that's
