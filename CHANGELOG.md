@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.19.4 — REPL `exit`, `quit`, `:q` commands
+
+### Added
+- **C17**: the REPL now recognizes `exit`, `quit`, and `:q` as session-end commands. Typing any of these (alone on a line, surrounding whitespace OK) at the main prompt exits cleanly. The commands are only honored when the buffer is empty — `exit` inside a multi-line block or string literal is still treated as ordinary input, so it doesn't accidentally end the session in the middle of typing. ctrl-D (EOF) continues to work as before. The welcome banner now lists the new commands. Tests: `test_repl_exit_command_exits_cleanly`, `test_repl_quit_command_exits_cleanly`, `test_repl_colon_q_command_exits_cleanly`, `test_repl_exit_with_surrounding_whitespace_still_exits`, `test_repl_exit_inside_continuation_is_not_an_exit_command`.
+
 ## v2.19.3 — REPL no longer swallows KeyboardInterrupt during execute
 
 ### Fixed

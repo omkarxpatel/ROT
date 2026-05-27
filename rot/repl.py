@@ -26,10 +26,15 @@ from .syntax import Parser
 PROMPT = "rot> "
 CONT_PROMPT = "...  "
 
+# Single-line REPL commands that exit the session cleanly. Only honored when
+# the buffer is empty (otherwise the user might be typing them as part of a
+# multi-line expression or string literal).
+EXIT_COMMANDS = frozenset({"exit", "quit", ":q"})
+
 
 def start_repl() -> None:
     print(f"rot {__version__} REPL")
-    print("type any expression or statement; ctrl-D to exit")
+    print("type any expression or statement; `exit`, `quit`, `:q`, or ctrl-D to exit")
     interp = Interpreter()
     buffer: list[str] = []
 
@@ -44,6 +49,12 @@ def start_repl() -> None:
             print("\n(interrupted)")
             buffer = []
             continue
+
+        # Exit commands — only honored when not in continuation mode, so
+        # `exit` typed inside a multi-line function body or string doesn't
+        # accidentally kill the REPL.
+        if not buffer and line.strip() in EXIT_COMMANDS:
+            return
 
         buffer.append(line)
         full = "\n".join(buffer)

@@ -177,3 +177,87 @@ def test_repl_system_exit_during_execute_propagates(monkeypatch):
     from rot.repl import start_repl
     with pytest.raises(SystemExit):
         start_repl()
+
+
+# --- C17: REPL exit commands ---
+
+def test_repl_exit_command_exits_cleanly(monkeypatch, capsys):
+    # `exit` alone should return without raising. If we got past `exit` and
+    # tried the next iteration, mock_input would raise EOFError — which is
+    # also a clean exit, so we have to make sure the second input is never
+    # consumed. Use a side-effect to detect that.
+    consumed = []
+
+    def mock_input(prompt=""):
+        if not consumed:
+            consumed.append("exit")
+            return "exit"
+        # Should never get here — fail loudly.
+        raise AssertionError("REPL kept reading after `exit`")
+
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    start_repl()  # returns cleanly
+    assert consumed == ["exit"]
+
+
+def test_repl_quit_command_exits_cleanly(monkeypatch):
+    consumed = []
+
+    def mock_input(prompt=""):
+        if not consumed:
+            consumed.append("quit")
+            return "quit"
+        raise AssertionError("REPL kept reading after `quit`")
+
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    start_repl()
+    assert consumed == ["quit"]
+
+
+def test_repl_colon_q_command_exits_cleanly(monkeypatch):
+    consumed = []
+
+    def mock_input(prompt=""):
+        if not consumed:
+            consumed.append(":q")
+            return ":q"
+        raise AssertionError("REPL kept reading after `:q`")
+
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    start_repl()
+    assert consumed == [":q"]
+
+
+def test_repl_exit_with_surrounding_whitespace_still_exits(monkeypatch):
+    consumed = []
+
+    def mock_input(prompt=""):
+        if not consumed:
+            consumed.append("  exit  ")
+            return "  exit  "
+        raise AssertionError("REPL kept reading after `  exit  `")
+
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    start_repl()
+    assert consumed == ["  exit  "]
+
+
+def test_repl_exit_inside_continuation_is_not_an_exit_command(monkeypatch, capsys):
+    # If the user typed `exit` while in the middle of a multi-line function
+    # body, the REPL must NOT exit — `exit` is a valid identifier and
+    # could be part of user code. Feed: open `{`, then `exit`, then close
+    # `}`. The parser will error (unknown name), and REPL should continue.
+    _drive_repl(monkeypatch, [
+        "funct f() {",
+        "exit",
+        "}",
+        'coutln("alive")',
+    ])
+    out, err = capsys.readouterr()
+    # We don't care that the body errors at parse-or-runtime; just that the
+    # REPL kept going to the next input after the multi-line block.
+    assert "alive" in out
