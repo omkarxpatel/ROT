@@ -2,6 +2,28 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.17 — handoff: strategic direction toward visible compilation
+
+### Changed
+- [`HANDOFF.md`](HANDOFF.md) rewritten as a combined snapshot + game plan.
+  Records the project state at v2.25.17 (628 tests, all CI green) and the
+  next strategic direction: turning the playground into a live animated
+  compiler explainer where any user can write any program and watch every
+  stage (lex → parse → AST → bytecode → execute) animate, cross-link, and
+  explain itself.
+- Four-milestone roadmap with a deep-dive on Milestone 1 (generator-based
+  step-mode interpreter + live env pane in the playground). The first
+  Y-bump (v2.26.0) marks the strategic shift; subsequent fixes within
+  Milestone 1 are patches.
+- Honors the v2.25.13-15 feedback that `paper/` is a final artifact near
+  end of project and `web/` should be updated on milestones, not every
+  patch.
+
+### Notes
+- Documentation-only patch. No language code changed.
+- This file is self-sufficient by design: a fresh session can read
+  HANDOFF.md and have the full context to pick up.
+
 ## v2.25.16 — refresh README for v2.25.x feature surface
 
 ### Changed
