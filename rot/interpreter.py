@@ -289,8 +289,12 @@ class Interpreter:
             self.env.set_local(stmt.name, RotFunction(stmt, self.env))
             return
         if isinstance(stmt, ast.ClassDef):
+            # Same reasoning as FuncDef: a `class A` declaration is a fresh
+            # local binding, not a rebind of any outer `A`. Otherwise nested
+            # `class A` inside `funct outer` would silently overwrite the
+            # outer `A` via the chain-walking `set`.
             method_map = {m.name: m for m in stmt.methods}
-            self.env.set(stmt.name, RotClass(stmt.name, method_map, self.env))
+            self.env.set_local(stmt.name, RotClass(stmt.name, method_map, self.env))
             return
         if isinstance(stmt, ast.IfStmt):
             self._execute_if(stmt)

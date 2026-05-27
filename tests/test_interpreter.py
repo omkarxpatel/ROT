@@ -779,6 +779,24 @@ def test_nested_funct_does_not_clobber_outer_funct():
     assert _run(src) == "inner\nouter\n"
 
 
+def test_nested_class_does_not_clobber_outer_class():
+    # I16: a nested `class A` inside `funct outer` used to silently overwrite
+    # the outer `A`. Same root cause as I15, same fix: ClassDef now binds
+    # locally via `set_local`.
+    src = (
+        'class A { name() { return "outer-A" } }\n'
+        'funct outer() {\n'
+        '    class A { name() { return "inner-A" } }\n'
+        '    a = A()\n'
+        '    coutln(a.name())\n'
+        '}\n'
+        'outer()\n'
+        'a = A()\n'
+        'coutln(a.name())\n'
+    )
+    assert _run(src) == "inner-A\nouter-A\n"
+
+
 def test_for_loop_var_is_local():
     # Loop variable shouldn't leak as a global if `i` isn't already declared.
     src = (

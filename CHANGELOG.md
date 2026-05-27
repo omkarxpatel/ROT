@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.16.2 — nested class declarations bind locally
+
+### Fixed
+- **I16**: a nested `class A` inside `funct outer` used to silently overwrite the outer `A` for the same reason `funct` did (I15) — the `ClassDef` branch in `_execute_statement` called the chain-walking `self.env.set(...)`. Class declarations now use `set_local`. Test: `test_nested_class_does_not_clobber_outer_class`.
+
 ## v2.16.1 — nested funct declarations bind locally
 
 ### Fixed
