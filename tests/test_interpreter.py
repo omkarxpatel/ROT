@@ -4004,22 +4004,22 @@ def test_iter_execute_empty_program_yields_nothing():
     assert _iter("") == []
 
 
-def test_iter_execute_error_field_is_none_in_skeleton():
-    # `Snapshot.error` is still always None — error capture is a later
-    # patch (Milestone 1 finish-out). For now uncaught errors propagate
-    # via raise, mirroring `execute()`.
+def test_iter_execute_error_field_is_none_on_clean_run():
+    # No error in the run → every snapshot's `error` is None.
     snapshots = _iter('x = 1\ncoutln(x)')
     for snap in snapshots:
         assert snap.error is None
 
 
-def test_iter_execute_uncaught_throw_surfaces_as_interpreter_error():
-    # Mirror execute() semantics: an uncaught `throw` becomes a clean
-    # InterpreterError, not a raw BaseException.
+def test_iter_execute_uncaught_throw_becomes_error_snapshot():
+    # v2.26.3: errors surface as `Snapshot.error` rather than raises,
+    # so the playground can render partial progress + the error
+    # message in the same step-mode timeline.
     program = Parser(Lexer().tokenize('throw "boom"')).parse()
-    with pytest.raises(InterpreterError) as ei:
-        list(Interpreter().iter_execute(program))
-    assert "uncaught throw" in str(ei.value)
+    snaps = list(Interpreter().iter_execute(program))
+    assert len(snaps) == 1
+    assert snaps[0].error is not None
+    assert "uncaught throw" in snaps[0].error
 
 
 def test_execute_fast_path_unchanged_after_iter_execute_added():
@@ -4165,13 +4165,14 @@ def test_iter_execute_clears_buffer_so_subsequent_execute_writes_to_stdout():
     assert captured.getvalue() == "fast\n"
 
 
-def test_iter_execute_clears_buffer_even_when_exception_raised():
-    # Same regression for the error path: an uncaught throw inside
-    # iter_execute should still leave _capture_buffer=None on exit.
+def test_iter_execute_clears_buffer_even_when_error_snapshot_yielded():
+    # Even when a statement errors out (v2.26.3 turns errors into
+    # snapshots, not raises), iter_execute's finally block must still
+    # restore _capture_buffer so a subsequent execute() goes to stdout.
     interp = Interpreter()
     program = Parser(Lexer().tokenize('throw "boom"')).parse()
-    with pytest.raises(InterpreterError):
-        list(interp.iter_execute(program))
+    snaps = list(interp.iter_execute(program))
+    assert snaps[-1].error is not None
     assert interp._capture_buffer is None
 
 
@@ -4183,3 +4184,116 @@ def test_iter_execute_cout_without_newline_appears_in_same_snapshot():
     snaps = _iter(source)
     assert snaps[0].output_since_last == "ab"
     assert snaps[1].output_since_last == "c\n"
+
+
+# --- v2.26.3: integration sweep across control flow / errors ---
+
+
+def test_iter_execute_loop_is_one_top_level_snapshot():
+    # M1 is top-level granularity: a `while` loop, however many
+    # iterations it runs, is ONE snapshot. Output aggregates; env
+    # reflects the final state.
+    source = (
+        'i = 0\n'
+        'while (i < 3) {\n'
+        '  coutln(i)\n'
+        '  i = i + 1\n'
+        '}\n'
+    )
+    snaps = _iter(source)
+    # `i = 0` then the while loop.
+    assert len(snaps) == 2
+    assert snaps[1].statement_kind == "WhileStmt"
+    assert snaps[1].output_since_last == "0\n1\n2\n"
+    assert snaps[1].env[0].bindings["i"] == 3
+
+
+def test_iter_execute_if_is_one_snapshot_reflecting_taken_branch():
+    source = (
+        'x = 0\n'
+        'if (true) { x = 1 } else { x = 2 }\n'
+    )
+    snaps = _iter(source)
+    assert len(snaps) == 2
+    assert snaps[1].statement_kind == "IfStmt"
+    assert snaps[1].env[0].bindings["x"] == 1
+
+
+def test_iter_execute_function_call_is_one_top_level_snapshot():
+    # The FuncDef is one snapshot; the call is another. The function's
+    # internal statements don't surface — M1 is top-level only.
+    source = (
+        'funct greet(name) {\n'
+        '  coutln("hi " + name)\n'
+        '}\n'
+        'greet("world")\n'
+    )
+    snaps = _iter(source)
+    assert len(snaps) == 2
+    assert snaps[0].statement_kind == "FuncDef"
+    assert snaps[1].statement_kind == "ExprStmt"  # the call expression
+    assert snaps[1].output_since_last == "hi world\n"
+
+
+def test_iter_execute_error_in_middle_yields_error_snapshot_then_stops():
+    # First statement runs cleanly. Second statement raises (undefined
+    # name). The error snapshot has `error` set; no further snapshots
+    # are yielded.
+    source = 'x = 1\nbogus_name\nx = 2'
+    snaps = _iter(source)
+    assert len(snaps) == 2
+    assert snaps[0].error is None
+    assert snaps[0].env[0].bindings == {"x": 1}
+    assert snaps[1].error is not None
+    assert "bogus_name" in snaps[1].error
+    # Iteration stopped: `x = 2` was never executed.
+    assert snaps[1].env[0].bindings == {"x": 1}
+
+
+def test_iter_execute_caught_throw_does_not_become_error_snapshot():
+    # try/catch absorbs the throw. iter_execute should see no error
+    # — the statement completed normally (as far as the top level is
+    # concerned) and the catch body's effects are in env.
+    source = (
+        'caught = null\n'
+        'try {\n'
+        '  throw "oops"\n'
+        '} catch (e) {\n'
+        '  caught = e\n'
+        '}\n'
+    )
+    snaps = _iter(source)
+    assert all(s.error is None for s in snaps)
+    assert snaps[-1].env[0].bindings["caught"] == "oops"
+
+
+def test_iter_execute_finally_runs_even_when_error_propagates():
+    # try/catch/finally where the catch re-throws: finally still runs
+    # (its side effects appear in env), then the error snapshot
+    # surfaces. ROT requires a `catch` clause; pairing `try`/`finally`
+    # alone is not in the grammar.
+    source = (
+        'ran_finally = false\n'
+        'try {\n'
+        '  throw "boom"\n'
+        '} catch (e) {\n'
+        '  throw e\n'
+        '} finally {\n'
+        '  ran_finally = true\n'
+        '}\n'
+    )
+    snaps = _iter(source)
+    # Two snapshots: the initial assignment, and the try/catch/finally.
+    assert len(snaps) == 2
+    assert snaps[1].error is not None
+    assert "boom" in snaps[1].error
+    # finally ran before the throw escaped.
+    assert snaps[1].env[0].bindings["ran_finally"] is True
+
+
+def test_iter_execute_for_loop_aggregates_output_across_iterations():
+    source = 'for x in [1 | 2 | 3] {\n  cout(x)\n}\n'
+    snaps = _iter(source)
+    assert len(snaps) == 1
+    assert snaps[0].statement_kind == "ForStmt"
+    assert snaps[0].output_since_last == "123"

@@ -489,30 +489,41 @@ class Interpreter:
         v2.26.2: `cout`/`coutln` route through a per-interpreter
         capture buffer; output produced by each statement is drained
         into `Snapshot.output_since_last` before the next statement
-        runs. The fast `execute()` path is unchanged — it leaves
-        `self._capture_buffer = None`, so output continues flowing to
-        real stdout.
+        runs.
+        v2.26.3: errors become snapshot fields rather than exceptions.
+        An `InterpreterError` (or uncaught throw) on statement N still
+        yields a snapshot for N — with `error` set to the rendered
+        message — and then iteration halts. The fast `execute()` path
+        is unchanged; it still raises.
 
-        Uncaught throws are converted to `InterpreterError` mirroring
-        `execute()` so callers see the same surface.
+        Non-`InterpreterError` Python exceptions (interpreter bugs,
+        `KeyboardInterrupt`, ...) are NOT caught — they propagate so
+        the harness sees them.
         """
         _set_active_interpreter(self)
         prior_buffer = self._capture_buffer
         self._capture_buffer = io.StringIO()
         try:
             for stmt in program.body:
-                self._execute_statement(stmt)
+                err_msg: "str | None" = None
+                try:
+                    self._execute_statement(stmt)
+                except _ThrowSignal as t:
+                    err_msg = str(InterpreterError(
+                        f"uncaught throw: {_stringify(t.value)}",
+                        line=t.line, col=t.col,
+                    ))
+                except InterpreterError as e:
+                    err_msg = str(e)
                 snap = self._snapshot(stmt)
                 snap.output_since_last = self._capture_buffer.getvalue()
+                snap.error = err_msg
                 # Reset for the next statement so each snapshot's output
                 # is attributed to the statement that produced it.
                 self._capture_buffer = io.StringIO()
                 yield snap
-        except _ThrowSignal as t:
-            raise InterpreterError(
-                f"uncaught throw: {_stringify(t.value)}",
-                line=t.line, col=t.col,
-            )
+                if err_msg is not None:
+                    return  # halt iteration after the failing statement
         finally:
             # Restore (typically to None) so a subsequent `execute()`
             # call on the same interpreter writes to real stdout again.

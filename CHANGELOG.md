@@ -2,6 +2,49 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.3 — M1 finish-out: errors as snapshots + control-flow integration sweep
+
+### Changed
+- `Interpreter.iter_execute()` now captures `InterpreterError` (and
+  uncaught `_ThrowSignal`) into `Snapshot.error` rather than raising.
+  The failing statement still yields a snapshot — with the rendered
+  error message in `error`, output drained, env serialized — and then
+  iteration halts. This matches the step-mode UX described in
+  [`HANDOFF.md`](HANDOFF.md): the playground timeline can show partial
+  progress plus the error inline, instead of the iterator blowing up.
+- The fast `execute()` path still raises on the same errors — only
+  step mode catches them.
+- Non-`InterpreterError` Python exceptions (interpreter bugs,
+  `KeyboardInterrupt`, ...) are still propagated; only the surface
+  contract for user-side errors changed.
+
+### Notes
+- One existing test was updated to the new contract
+  (`test_iter_execute_uncaught_throw_becomes_error_snapshot`), and one
+  buffer-cleanup regression test was rewritten to match the new
+  no-raise surface
+  (`test_iter_execute_clears_buffer_even_when_error_snapshot_yielded`).
+- 7 new integration tests in
+  [`tests/test_interpreter.py`](tests/test_interpreter.py) verify
+  step-mode behavior across the language surface:
+  - `while` loops are one top-level snapshot; output aggregates across
+    iterations; env reflects the final state.
+  - `if` chains are one snapshot reflecting the taken branch.
+  - Function calls produce one snapshot at the top level; the
+    function's internal statements don't surface (M1 is statement-
+    granularity at top level only).
+  - Errors mid-stream yield an error snapshot, then iteration halts.
+  - `try/catch` that absorbs a throw produces no error snapshot.
+  - `try/catch/finally` with a re-thrown error still runs the
+    `finally` block — its side effects are visible in the error
+    snapshot's env.
+  - `for x in [...]` loops aggregate output across iterations into a
+    single snapshot.
+- Tests: 650 → 657 passing.
+- **Milestone 1 backend is functionally complete.** The interpreter
+  produces fully-realized snapshots; the playground (v2.26.4–.8 of
+  the M1 line) now consumes them.
+
 ## v2.26.2 — M1 output capture: `cout`/`coutln` route through a per-snapshot buffer
 
 ### Added
