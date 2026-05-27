@@ -62,6 +62,12 @@ def main() -> None:
         source = source_path.read_text()
     except FileNotFoundError:
         parser.error(f"file not found: {args.file}")
+    except IsADirectoryError:
+        parser.error(f"is a directory, not a file: {args.file}")
+    except PermissionError:
+        parser.error(f"permission denied: {args.file}")
+    except OSError as e:
+        parser.error(f"cannot read {args.file}: {e}")
 
     try:
         compiler = Compiler(trace=args.trace)

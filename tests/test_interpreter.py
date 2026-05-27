@@ -1365,3 +1365,56 @@ def test_builtin_arity_error_uses_rot_name(call, name):
     assert f"_{name}" not in msg
     assert "_stringify" not in msg
     assert "_builtin_" not in msg
+
+
+# ==== v2.14.8: CLI broadens OSError handling on source file =================
+
+def _run_cli(args, capsys, monkeypatch):
+    """Invoke `rot.cli.main()` with `args` as argv and return (stdout, stderr, exit_code)."""
+    import sys
+    from rot import cli
+    monkeypatch.setattr(sys, "argv", ["rot"] + args)
+    try:
+        cli.main()
+        code = 0
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else 1
+    out = capsys.readouterr()
+    return out.out, out.err, code
+
+
+def test_cli_permission_error_does_not_leak_traceback(tmp_path, capsys, monkeypatch):
+    # C1: PermissionError on the source file used to escape as a Python
+    # traceback. Now should produce a clean argparse error.
+    src = tmp_path / "secret.rot"
+    src.write_text('coutln("hi")')
+    src.chmod(0o000)
+    try:
+        out, err, code = _run_cli([str(src)], capsys, monkeypatch)
+    finally:
+        src.chmod(0o644)
+    # argparse.error exits with code 2 and writes to stderr.
+    assert code == 2
+    assert "Traceback" not in err
+    assert "permission denied" in err.lower() or "cannot read" in err.lower()
+
+
+def test_cli_directory_arg_does_not_leak_traceback(tmp_path, capsys, monkeypatch):
+    # C2: passing a directory used to leak IsADirectoryError traceback.
+    d = tmp_path / "subdir.rot"
+    d.mkdir()
+    out, err, code = _run_cli([str(d)], capsys, monkeypatch)
+    assert code == 2
+    assert "Traceback" not in err
+    # Either "directory" or "cannot read" works.
+    low = err.lower()
+    assert "directory" in low or "cannot read" in low
+
+
+def test_cli_file_not_found_still_clean(tmp_path, capsys, monkeypatch):
+    # Make sure the existing FileNotFoundError path still works.
+    missing = tmp_path / "no.rot"
+    out, err, code = _run_cli([str(missing)], capsys, monkeypatch)
+    assert code == 2
+    assert "Traceback" not in err
+    assert "not found" in err.lower()

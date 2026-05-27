@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.8 — CLI catches OSError broadly, not just FileNotFoundError
+
+### Fixed
+- **C1, C2**: passing a path that exists but is unreadable (PermissionError) or is a directory (IsADirectoryError) used to leak a raw Python traceback. The CLI's `source_path.read_text()` now catches `IsADirectoryError`, `PermissionError`, and the general `OSError` after the existing `FileNotFoundError` handler, routing each through `argparse.parser.error` for a clean one-line message and exit code 2.
+
 ## v2.14.7 — builtin arity errors use rot names, not Python internals
 
 ### Fixed
