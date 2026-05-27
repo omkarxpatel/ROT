@@ -10,6 +10,7 @@ callables — they're the language's only built-ins so far.
 
 from __future__ import annotations
 
+import io
 import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator
@@ -439,6 +440,12 @@ class Interpreter:
         # raise a clear InterpreterError instead of escaping as BaseException.
         self._loop_depth: int = 0
         self._function_depth: int = 0
+        # Step-mode output capture (v2.26.2). When non-None, `cout` and
+        # `coutln` write to this buffer instead of sys.stdout. The fast
+        # `execute()` path leaves it None so output flows to stdout as
+        # always. `iter_execute()` installs a buffer on entry, drains it
+        # per snapshot, and clears on exit (try/finally).
+        self._capture_buffer: "io.StringIO | None" = None
         # Register as the active interpreter so `_stringify` can call
         # user-defined `to_string()` methods on RotInstance. The REPL drives
         # `_evaluate` directly (not always via `execute`), so registering
@@ -477,24 +484,39 @@ class Interpreter:
         statement. Used by the playground's Animate mode; the CLI/REPL
         continue to use `execute()` for normal full-speed runs.
 
-        v2.26.0 skeleton: snapshots carry the statement's position and
-        kind but their `env` and `output_since_last` fields are empty
-        placeholders. The env serializer arrives in v2.26.1; output
-        capture in v2.26.2. Both are then wired through `_snapshot()`.
+        v2.26.0 skeleton: position + kind only.
+        v2.26.1: env serialized via `Environment._env_snapshot()`.
+        v2.26.2: `cout`/`coutln` route through a per-interpreter
+        capture buffer; output produced by each statement is drained
+        into `Snapshot.output_since_last` before the next statement
+        runs. The fast `execute()` path is unchanged — it leaves
+        `self._capture_buffer = None`, so output continues flowing to
+        real stdout.
 
         Uncaught throws are converted to `InterpreterError` mirroring
         `execute()` so callers see the same surface.
         """
         _set_active_interpreter(self)
+        prior_buffer = self._capture_buffer
+        self._capture_buffer = io.StringIO()
         try:
             for stmt in program.body:
                 self._execute_statement(stmt)
-                yield self._snapshot(stmt)
+                snap = self._snapshot(stmt)
+                snap.output_since_last = self._capture_buffer.getvalue()
+                # Reset for the next statement so each snapshot's output
+                # is attributed to the statement that produced it.
+                self._capture_buffer = io.StringIO()
+                yield snap
         except _ThrowSignal as t:
             raise InterpreterError(
                 f"uncaught throw: {_stringify(t.value)}",
                 line=t.line, col=t.col,
             )
+        finally:
+            # Restore (typically to None) so a subsequent `execute()`
+            # call on the same interpreter writes to real stdout again.
+            self._capture_buffer = prior_buffer
 
     def _snapshot(self, stmt: "ast.Statement") -> Snapshot:
         """Build a `Snapshot` reflecting interpreter state after `stmt`.
@@ -1057,12 +1079,27 @@ class Interpreter:
         return result
 
 
+def _route_output(text: str) -> None:
+    """Write `text` to the active interpreter's capture buffer if step
+    mode is engaged, otherwise to real stdout. Centralized so cout and
+    coutln share a single routing decision."""
+    from .builtins import _active_interpreter
+    interp = _active_interpreter()
+    buf = getattr(interp, "_capture_buffer", None) if interp is not None else None
+    if buf is not None:
+        buf.write(text)
+    else:
+        # Use sys.stdout indirectly via print to preserve the
+        # contextlib.redirect_stdout behavior tests and the REPL rely on.
+        print(text, end="")
+
+
 def _builtin_cout(*args: Any) -> None:
-    print(*(_stringify(a) for a in args), sep="", end="")
+    _route_output("".join(_stringify(a) for a in args))
 
 
 def _builtin_coutln(*args: Any) -> None:
-    print(*(_stringify(a) for a in args), sep="")
+    _route_output("".join(_stringify(a) for a in args) + "\n")
 
 
 # Module-loading helpers attached as Interpreter methods below.

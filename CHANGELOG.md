@@ -2,6 +2,47 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.2 — M1 output capture: `cout`/`coutln` route through a per-snapshot buffer
+
+### Added
+- `Interpreter._capture_buffer: io.StringIO | None` — per-interpreter
+  output sink. Default `None` (the fast `execute()` path leaves it
+  alone). `iter_execute()` installs a fresh buffer on entry, drains
+  it into each snapshot's `output_since_last`, and resets it for the
+  next statement. A `try/finally` restores the prior buffer so the
+  buffer is always cleared on exit, even when an uncaught throw
+  aborts the run.
+- `_route_output(text)` helper in
+  [`rot/interpreter.py`](rot/interpreter.py) — single decision point
+  for `cout` / `coutln`. If the active interpreter has a buffer set,
+  writes to it; otherwise writes to stdout via `print`. Centralizing
+  the routing keeps the two builtins from drifting.
+
+### Changed
+- `_builtin_cout` and `_builtin_coutln` now build the full output
+  string and dispatch through `_route_output`. Newline semantics
+  unchanged (`cout` no trailing newline, `coutln` adds one).
+- `Interpreter.iter_execute()` now drains the capture buffer into
+  `snap.output_since_last` between statements. Output produced by a
+  statement is attributed to that statement's snapshot; statements
+  that produce nothing yield an empty string.
+
+### Notes
+- The fast `execute()` path is preserved end-to-end: CLI runs
+  (`python -m rot file.rot`), REPL, examples, and imports continue
+  printing to real stdout. Only step-mode callers see captured
+  output.
+- 8 new tests cover the contract: output per-statement, attribution
+  to the producing statement, mixed `cout`/`coutln`, aggregation
+  inside a single top-level statement (functions calling multiple
+  prints), no leakage to real stdout in step mode, fast-path
+  regression, and buffer-cleanup on both clean exit and exception.
+- Tests: 642 → 650 passing.
+- Milestone 1 backend (interpreter side) is now functionally
+  complete. v2.26.3 will add the integration test sweep
+  (loops/conditionals/error in middle); v2.26.4 will expose
+  `rot_step(source)` over Pyodide for the playground.
+
 ## v2.26.1 — M1 env serializer: `Environment._env_snapshot()` wired
 
 ### Added

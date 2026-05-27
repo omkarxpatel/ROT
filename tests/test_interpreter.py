@@ -3970,13 +3970,11 @@ def _iter(source: str):
 
 def test_iter_execute_yields_one_snapshot_per_top_level_statement():
     source = 'x = 1\ny = 2\ncoutln(x + y)'
-    captured = io.StringIO()
-    with contextlib.redirect_stdout(captured):
-        snapshots = _iter(source)
+    # In step mode (v2.26.2+) output is captured into snapshots, not
+    # printed to real stdout. We verify the snapshot count here; output
+    # routing has its own tests below.
+    snapshots = _iter(source)
     assert len(snapshots) == 3
-    # The fast path's side effects still happen — the buffer captures the
-    # actual stdout because v2.26.0 hasn't intercepted output yet.
-    assert captured.getvalue() == "3\n"
 
 
 def test_iter_execute_snapshot_carries_line_col_and_kind():
@@ -4006,15 +4004,12 @@ def test_iter_execute_empty_program_yields_nothing():
     assert _iter("") == []
 
 
-def test_iter_execute_output_still_unwired_in_v2_26_1():
-    # v2.26.1 wires env (see env-snapshot tests below) but leaves
-    # `output_since_last` empty until v2.26.2. Pin the partial contract.
-    source = 'x = 1\ncoutln(x)'
-    captured = io.StringIO()
-    with contextlib.redirect_stdout(captured):
-        snapshots = _iter(source)
+def test_iter_execute_error_field_is_none_in_skeleton():
+    # `Snapshot.error` is still always None — error capture is a later
+    # patch (Milestone 1 finish-out). For now uncaught errors propagate
+    # via raise, mirroring `execute()`.
+    snapshots = _iter('x = 1\ncoutln(x)')
     for snap in snapshots:
-        assert snap.output_since_last == ""
         assert snap.error is None
 
 
@@ -4102,3 +4097,89 @@ def test_env_snapshot_method_skips_frozen_layers():
     assert len(frames) == 1
     assert frames[0].scope_kind == "global"
     assert frames[0].bindings == {"x": 10}
+
+
+# --- v2.26.2: output capture wiring ---
+
+
+def test_iter_execute_captures_output_per_statement():
+    source = 'coutln("a")\ncoutln("b")\ncoutln("c")'
+    snaps = _iter(source)
+    assert [s.output_since_last for s in snaps] == ["a\n", "b\n", "c\n"]
+
+
+def test_iter_execute_attributes_output_to_producing_statement():
+    # Statements that don't print yield empty output_since_last.
+    source = 'x = 1\ncoutln(x)\ny = 2'
+    snaps = _iter(source)
+    assert snaps[0].output_since_last == ""   # `x = 1` produced no output
+    assert snaps[1].output_since_last == "1\n"
+    assert snaps[2].output_since_last == ""
+
+
+def test_iter_execute_concatenates_multiple_couts_within_one_statement():
+    # A single statement that internally produces multiple writes (e.g.
+    # via a function call) should aggregate them. ROT terminates
+    # statements with newlines, not `;`.
+    source = (
+        'funct trio() {\n'
+        '  cout("x")\n'
+        '  cout("y")\n'
+        '  coutln("z")\n'
+        '}\n'
+        'trio()\n'
+    )
+    snaps = _iter(source)
+    # First snapshot: the FuncDef itself, no output.
+    assert snaps[0].output_since_last == ""
+    # Second snapshot: the call. The whole trio() body is one
+    # statement at the top level, so all output lands here.
+    assert snaps[1].output_since_last == "xyz\n"
+
+
+def test_iter_execute_does_not_write_to_real_stdout():
+    # In step mode the capture buffer should swallow output entirely;
+    # real stdout stays clean.
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        _iter('coutln("hello")')
+    assert captured.getvalue() == ""
+
+
+def test_execute_fast_path_still_writes_to_real_stdout():
+    # Regression: the fast path leaves _capture_buffer=None, so output
+    # flows to stdout as always.
+    assert _run('coutln("hello")') == "hello\n"
+
+
+def test_iter_execute_clears_buffer_so_subsequent_execute_writes_to_stdout():
+    # After iter_execute completes (cleanly or via exception), the
+    # buffer must be restored to None so a follow-up execute() on the
+    # same interpreter still writes to stdout.
+    interp = Interpreter()
+    list(interp.iter_execute(Parser(Lexer().tokenize('coutln("step")')).parse()))
+    assert interp._capture_buffer is None
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        interp.execute(Parser(Lexer().tokenize('coutln("fast")')).parse())
+    assert captured.getvalue() == "fast\n"
+
+
+def test_iter_execute_clears_buffer_even_when_exception_raised():
+    # Same regression for the error path: an uncaught throw inside
+    # iter_execute should still leave _capture_buffer=None on exit.
+    interp = Interpreter()
+    program = Parser(Lexer().tokenize('throw "boom"')).parse()
+    with pytest.raises(InterpreterError):
+        list(interp.iter_execute(program))
+    assert interp._capture_buffer is None
+
+
+def test_iter_execute_cout_without_newline_appears_in_same_snapshot():
+    # `cout` (no newline) and `coutln` (newline) both route to the
+    # buffer; whatever was written between snapshots lands in the next
+    # output_since_last verbatim.
+    source = 'cout("ab")\ncoutln("c")'
+    snaps = _iter(source)
+    assert snaps[0].output_since_last == "ab"
+    assert snaps[1].output_since_last == "c\n"
