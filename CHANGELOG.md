@@ -2,6 +2,41 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.23 — QoL pack: auto-scroll env, done flourish, click-chip-to-jump
+
+### Added (three small wins)
+- **Auto-scroll** the env card to a changed/new binding row. Each
+  `BindingRow` has a ref; on `change` becoming non-null it calls
+  `scrollIntoView({ behavior: "smooth", block: "nearest" })`. Without
+  this, a binding deep in a large scope card stayed off-screen and
+  the user missed the env update entirely.
+- **Done flourish** in the Step Detail panel header: when
+  `stepIndex === totalSteps - 1`, an emerald "✓ done" pill animates
+  in next to the step counter, and the progress bar shifts from
+  amber to emerald. Tells the user "you've reached the end of the
+  program — there's nothing left to step."
+- **Click a token chip → editor jumps to its line:col**. `TokensView`
+  accepts an `onChipClick` handler; when set, chips render as
+  clickable buttons with a hover scale + brighten effect. The Step
+  panel exposes `onJumpToSource` upward, which the playground page
+  wires to the editor's new `jumpTo` prop. The editor dispatches a
+  CodeMirror selection effect with `scrollIntoView: true` and
+  refocuses, so the user can navigate source ↔ pipeline by clicking.
+
+### Changed
+- `Editor` accepts `jumpTo: { line, col, key } | null` and runs a
+  `useEffect` keyed on `jumpTo?.key` so repeated jumps to the same
+  position still re-fire.
+- `StepPanel` carries an `onJumpToSource` prop down to `StagedView`
+  and through to `TokensView`.
+- The progress bar's color is now derived from `isAtEnd`.
+
+### Notes
+- The auto-scroll uses `block: "nearest"` so it doesn't yank
+  scrolled-up rows back; only off-screen-below rows get pulled into
+  view.
+- Type-check clean. No Python changes; 669 tests still passing.
+
 ## v2.26.22 — Output type-on streaming + new-text emerald flash
 
 ### Added

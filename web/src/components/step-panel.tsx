@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDown,
+  Check,
   ChevronRight,
   Code2,
   ListTree,
@@ -32,6 +33,9 @@ interface StepPanelProps {
   previousSnapshot: RotSnapshot | null;
   stepIndex: number;
   totalSteps: number;
+  // When the user clicks a token chip, the playground jumps the
+  // editor cursor to that source position.
+  onJumpToSource?: (line: number, col: number) => void;
 }
 
 // Stage timing (seconds). The four reveals stagger so the user reads
@@ -53,11 +57,13 @@ export function StepPanel({
   previousSnapshot,
   stepIndex,
   totalSteps,
+  onJumpToSource,
 }: StepPanelProps) {
   const hasSteps = totalSteps > 0;
   const progressPct = hasSteps
     ? Math.round(((stepIndex + 1) / totalSteps) * 100)
     : 0;
+  const isAtEnd = hasSteps && stepIndex === totalSteps - 1;
 
   return (
     <div className="flex h-full flex-col">
@@ -82,10 +88,29 @@ export function StepPanel({
             </span>
             <div className="h-1 w-24 overflow-hidden rounded-full bg-border/60">
               <div
-                className="h-full bg-amber-400/80 transition-[width] duration-500 ease-out"
+                className={cn(
+                  "h-full transition-[width] duration-500 ease-out",
+                  isAtEnd ? "bg-emerald-400" : "bg-amber-400/80",
+                )}
                 style={{ width: `${progressPct}%` }}
               />
             </div>
+            {isAtEnd && (
+              <motion.span
+                key="done"
+                initial={{ opacity: 0, scale: 0.7 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{
+                  duration: 0.4,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+                className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-emerald-300"
+                title="Program finished — no more steps."
+              >
+                <Check className="h-3 w-3" />
+                done
+              </motion.span>
+            )}
           </div>
         )}
       </div>
@@ -99,6 +124,7 @@ export function StepPanel({
               snapshot={snapshot}
               previousSnapshot={previousSnapshot}
               stepIndex={stepIndex}
+              onJumpToSource={onJumpToSource}
             />
           ) : (
             <OnboardingMessage />
@@ -116,6 +142,7 @@ function StagedView({
   snapshot,
   previousSnapshot,
   stepIndex,
+  onJumpToSource,
 }: {
   source: string;
   tokens: RotToken[];
@@ -123,6 +150,7 @@ function StagedView({
   snapshot: RotSnapshot;
   previousSnapshot: RotSnapshot | null;
   stepIndex: number;
+  onJumpToSource?: (line: number, col: number) => void;
 }) {
   const stmtLine = snapshot.statement_line;
   const stmtCol = snapshot.statement_col;
@@ -248,6 +276,7 @@ function StagedView({
           staggerSec={0.05}
           flyFrom="above"
           pulses={tokenPulses}
+          onChipClick={onJumpToSource}
           empty="(no tokens on this line)"
         />
       </StageBlock>

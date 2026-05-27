@@ -23,6 +23,11 @@ interface EditorProps {
   // executing top-level statement in animate mode). null disables the
   // highlight; out-of-range values are ignored.
   highlightLine?: number | null;
+  // When the parent dispatches a "jump to this position" request (e.g.
+  // user clicked a token chip in the Step panel), the editor moves the
+  // cursor there and scrolls it into view. `key` increments per
+  // request so repeated jumps to the same coordinates still re-fire.
+  jumpTo?: { line: number; col: number; key: number } | null;
 }
 
 const setHighlightLine = StateEffect.define<number | null>();
@@ -124,7 +129,12 @@ const rotHighlight = HighlightStyle.define([
   { tag: t.comment, color: "#71717a", fontStyle: "italic" }, // zinc-500
 ]);
 
-export function Editor({ value, onChange, highlightLine }: EditorProps) {
+export function Editor({
+  value,
+  onChange,
+  highlightLine,
+  jumpTo,
+}: EditorProps) {
   const viewRef = useRef<EditorView | null>(null);
 
   const extensions = useMemo(
@@ -170,6 +180,28 @@ export function Editor({ value, onChange, highlightLine }: EditorProps) {
       ),
     });
   }, [highlightLine]);
+
+  // Imperative cursor jump on `jumpTo.key` change. Clamps the line
+  // and col to document bounds, sets the selection anchor at the
+  // resolved position, and scrolls it into view.
+  useEffect(() => {
+    if (!jumpTo) return;
+    const view = viewRef.current;
+    if (!view) return;
+    const lineNum = Math.max(
+      1,
+      Math.min(jumpTo.line, view.state.doc.lines),
+    );
+    const lineInfo = view.state.doc.line(lineNum);
+    const col = Math.max(0, jumpTo.col - 1);
+    const pos = Math.min(lineInfo.from + col, lineInfo.to);
+    view.dispatch({
+      selection: { anchor: pos },
+      scrollIntoView: true,
+    });
+    view.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jumpTo?.key]);
 
   return (
     <div className="h-full w-full">

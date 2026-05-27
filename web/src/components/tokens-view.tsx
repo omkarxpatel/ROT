@@ -32,6 +32,11 @@ interface TokensViewProps {
   // source token gets a visible nudge — completing the lex → parse
   // visual link.
   pulses?: Record<number, number>;
+  // Optional click handler. When set, chips render as buttons; the
+  // Step panel uses this to jump the editor cursor to the token's
+  // source position (line:col) for bidirectional source ↔ pipeline
+  // navigation.
+  onChipClick?: (line: number, col: number) => void;
 }
 
 export function TokensView({
@@ -43,6 +48,7 @@ export function TokensView({
   empty,
   flyFrom = "below",
   pulses,
+  onChipClick,
 }: TokensViewProps) {
   if (tokens.length === 0) {
     return (
@@ -56,6 +62,11 @@ export function TokensView({
     <div className="flex flex-wrap gap-1">
       {tokens.map((t, i) => {
         const pulseKey = pulses?.[i];
+        const clickable = Boolean(onChipClick);
+        const baseTitle = `${categoryLabel(t.kind)} (${t.kind.toLowerCase()}) — line ${t.line}:${t.col}`;
+        const title = clickable
+          ? `${baseTitle} — click to jump to source`
+          : baseTitle;
         return (
           <motion.span
             key={`${runKey}-${i}-${t.line}-${t.col}`}
@@ -66,17 +77,19 @@ export function TokensView({
               duration: 0.32,
               ease: [0.16, 1, 0.3, 1],
             }}
-            title={`${categoryLabel(t.kind)} (${t.kind.toLowerCase()}) — line ${t.line}:${t.col}`}
+            title={title}
+            onClick={
+              clickable ? () => onChipClick?.(t.line, t.col) : undefined
+            }
             className={cn(
               "relative inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[12px] leading-tight",
               tokenClass(t.kind),
+              clickable &&
+                "cursor-pointer transition-transform hover:scale-105 hover:brightness-125",
             )}
           >
             {escapeLexeme(t.lexeme)}
             {pulseKey != null && (
-              // Overlay ring that scales up and fades on each pulseKey
-              // change. Re-keyed by the pulse counter so the same chip
-              // can pulse multiple times within one step.
               <motion.span
                 key={`pulse-${pulseKey}`}
                 initial={{ opacity: 0.9, scale: 0.95 }}

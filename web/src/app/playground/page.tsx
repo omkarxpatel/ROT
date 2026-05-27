@@ -232,6 +232,20 @@ export default function PlaygroundPage() {
       ? snapshots[stepIndex]?.statement_line ?? null
       : null;
 
+  // Cursor jump request — incremented per click on a token chip so
+  // the editor's useEffect re-fires even for repeated jumps to the
+  // same coordinates.
+  const [editorJumpTo, setEditorJumpTo] = useState<{
+    line: number;
+    col: number;
+    key: number;
+  } | null>(null);
+  const jumpCounter = useRef(0);
+  const handleJumpToSource = useCallback((line: number, col: number) => {
+    jumpCounter.current += 1;
+    setEditorJumpTo({ line, col, key: jumpCounter.current });
+  }, []);
+
   const displayOutput = mode === "animate" ? animateOutput : pipeline.output;
   const displayError = mode === "animate" ? animateError : pipeline.error;
   const displayRunning =
@@ -297,6 +311,7 @@ export default function PlaygroundPage() {
               value={source}
               onChange={setSource}
               highlightLine={highlightLine}
+              jumpTo={editorJumpTo}
             />
           </div>
         </section>
@@ -327,6 +342,7 @@ export default function PlaygroundPage() {
                 }
                 stepIndex={stepIndex}
                 totalSteps={snapshots.length}
+                onJumpToSource={handleJumpToSource}
               />
             </div>
           )}
