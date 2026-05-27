@@ -2,6 +2,15 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.22.2 — Parser populates `line` / `col` on every AST node
+
+### Added
+- Every `_parse_X` method in `rot/syntax.py` now captures the starting token's `line` and `col` and stamps them onto the constructed AST node. Coverage is exhaustive across statements (`FuncDef`, `IfStmt`, `WhileStmt`, `ForStmt`, `Return`, `TryCatch`, `ThrowStmt`, `ImportStmt`, `LetStmt`, `BreakStmt`, `ContinueStmt`, `ClassDef`, `ExprStmt`, `Assign` / `IndexAssign` / `MemberAssign` via `_make_assign`), expressions (`Identifier`, `NumberLit`, `StringLit`, `BoolLit`, `NullLit`, `Call`, `Index`, `MemberAccess`, `ListLit`, `DictLit`, `UnaryOp`, `BinaryOp`), and supporting nodes (`Block`, `ElifBranch`, `Program`). For `BinaryOp` the position points at the OPERATOR token (so a runtime error like `cannot apply '+' to int and str` resolves to the `+`); for `Call` / `Index` / `MemberAccess` it points at the start of the callee/target so chained `obj.x.y` and `foo(...)` resolve to the source `obj` and `foo`. F-string-desugared chains share the f-string's position.
+- New tests: `test_parser_populates_line_col_on_call_stmt`, `test_parser_populates_line_col_on_identifier`, `test_parser_populates_line_col_across_lines`, `test_parser_populates_line_col_on_number_literal`, `test_parser_populates_line_col_on_function_def`, `test_parser_populates_line_col_on_binary_op_at_operator`.
+
+### Changed
+- All existing AST-shape tests in `tests/test_syntax.py` now run their parsed result through a small `_strip_pos` helper before comparing against the literal-constructed expected AST. The helper recursively zeroes every `line` / `col` field so the shape comparison stays unchanged — pre-existing tests don't assert on positions but their equality checks now would fail without the strip. Tests updated: `test_println_call_with_string_literal`, `test_call_with_multiple_number_args`, `test_call_with_no_args`, `test_bare_identifier_is_an_expression_statement`, `test_number_literal_atom`, `test_string_literal_strips_surrounding_quotes`, `test_nested_call_in_args`, `_expr` helper (powers ~12 `_expr(...)`-based tests), `test_binary_op_inside_call_args`, `test_parses_simple_function_def`, `test_parses_function_with_no_params`, `test_parses_simple_if_statement`, `test_parses_if_elseif_else_chain`, `test_assignment_produces_assign_node`, `test_assignment_value_can_be_a_complex_expression`, `test_return_with_expression`, `test_parses_while_statement`, `test_compound_assign_carries_op`, `test_full_example_functions_rot_parses_end_to_end`, `test_let_statement_parses_to_LetStmt`, `test_let_with_complex_expression`.
+
 ## v2.22.1 — AST nodes carry `line` / `col` (schema change, no behavior change)
 
 ### Added

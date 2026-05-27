@@ -112,7 +112,10 @@ class Parser:
         self.pos = 0
 
     def parse(self) -> ast.Program:
-        program = ast.Program()
+        first_tok = self._peek()
+        line = first_tok.line if first_tok else 1
+        col = first_tok.col if first_tok else 1
+        program = ast.Program(line=line, col=col)
         while not self._at_end():
             program.body.append(self._parse_statement())
         return program
@@ -121,6 +124,9 @@ class Parser:
         tok = self._peek()
         if tok is None:
             raise ParserError("unexpected end of input")
+        # Capture the line/col of the statement's first token; subdispatch
+        # methods (`_parse_func_def` etc.) re-peek it themselves.
+        sline, scol = tok.line, tok.col
         if tok.kind == "FUNCTION":
             return self._parse_func_def()
         if tok.kind == "IF":
@@ -133,10 +139,10 @@ class Parser:
             return self._parse_return()
         if tok.kind == "BREAK":
             self._advance()
-            return ast.BreakStmt()
+            return ast.BreakStmt(line=sline, col=scol)
         if tok.kind == "CONTINUE":
             self._advance()
-            return ast.ContinueStmt()
+            return ast.ContinueStmt(line=sline, col=scol)
         if tok.kind == "CLASS":
             return self._parse_class_def()
         if tok.kind == "TRY":
@@ -154,46 +160,51 @@ class Parser:
         if next_tok is not None:
             if next_tok.kind == "SETVALUE":
                 self._advance()
-                return self._make_assign(expr, "=", self._parse_expression())
+                return self._make_assign(expr, "=", self._parse_expression(), sline, scol)
             if next_tok.kind in _COMPOUND_ASSIGN_TOKENS:
                 op = _COMPOUND_ASSIGN_TOKENS[next_tok.kind]
                 self._advance()
-                return self._make_assign(expr, op, self._parse_expression())
-        return ast.ExprStmt(expr=expr)
+                return self._make_assign(expr, op, self._parse_expression(), sline, scol)
+        return ast.ExprStmt(expr=expr, line=sline, col=scol)
 
-    def _make_assign(self, target: ast.Expression, op: str, value: ast.Expression) -> ast.Statement:
+    def _make_assign(self, target: ast.Expression, op: str, value: ast.Expression,
+                     sline: int = 0, scol: int = 0) -> ast.Statement:
         if isinstance(target, ast.Identifier):
-            return ast.Assign(name=target.name, value=value, op=op)
+            return ast.Assign(name=target.name, value=value, op=op, line=sline, col=scol)
         if isinstance(target, ast.Index):
             return ast.IndexAssign(
-                target=target.target, index=target.index, value=value, op=op
+                target=target.target, index=target.index, value=value, op=op,
+                line=sline, col=scol,
             )
         if isinstance(target, ast.MemberAccess):
             return ast.MemberAssign(
-                target=target.target, member=target.member, value=value, op=op
+                target=target.target, member=target.member, value=value, op=op,
+                line=sline, col=scol,
             )
         raise ParserError(
-            f"invalid assignment target: {type(target).__name__}"
+            f"invalid assignment target: {type(target).__name__}",
+            sline, scol,
         )
 
     def _parse_while_stmt(self) -> ast.WhileStmt:
-        self._consume("WHILE")
+        while_tok = self._consume("WHILE")
         self._consume("L_PAREN")
         cond = self._parse_expression()
         self._consume("R_PAREN")
         body = self._parse_block()
-        return ast.WhileStmt(cond=cond, body=body)
+        return ast.WhileStmt(cond=cond, body=body, line=while_tok.line, col=while_tok.col)
 
     def _parse_for_stmt(self) -> ast.ForStmt:
-        self._consume("FOR")
+        for_tok = self._consume("FOR")
         var_tok = self._consume("IDENT")
         self._consume("IN")
         iter_expr = self._parse_expression()
         body = self._parse_block()
-        return ast.ForStmt(var=var_tok.lexeme, iter=iter_expr, body=body)
+        return ast.ForStmt(var=var_tok.lexeme, iter=iter_expr, body=body,
+                           line=for_tok.line, col=for_tok.col)
 
     def _parse_try_catch(self) -> ast.TryCatch:
-        self._consume("TRY")
+        try_tok = self._consume("TRY")
         try_block = self._parse_block()
         self._consume("CATCH")
         self._consume("L_PAREN")
@@ -201,19 +212,20 @@ class Parser:
         self._consume("R_PAREN")
         catch_block = self._parse_block()
         return ast.TryCatch(
-            try_block=try_block, catch_var=catch_var, catch_block=catch_block
+            try_block=try_block, catch_var=catch_var, catch_block=catch_block,
+            line=try_tok.line, col=try_tok.col,
         )
 
     def _parse_throw(self) -> ast.ThrowStmt:
-        self._consume("THROW")
+        throw_tok = self._consume("THROW")
         value = self._parse_expression()
-        return ast.ThrowStmt(value=value)
+        return ast.ThrowStmt(value=value, line=throw_tok.line, col=throw_tok.col)
 
     def _parse_import(self) -> ast.ImportStmt:
-        self._consume("IMPORT")
+        import_tok = self._consume("IMPORT")
         path_tok = self._consume("STRING_LIT")
         path = _decode_string_escapes(path_tok.lexeme[1:-1])
-        return ast.ImportStmt(path=path)
+        return ast.ImportStmt(path=path, line=import_tok.line, col=import_tok.col)
 
     def _parse_let_stmt(self) -> ast.LetStmt:
         """`let IDENT = expr` — opt-in fresh-local binding.
@@ -248,16 +260,18 @@ class Parser:
             )
         self._consume("SETVALUE")
         value = self._parse_expression()
-        return ast.LetStmt(name=name_tok.lexeme, value=value)
+        return ast.LetStmt(name=name_tok.lexeme, value=value,
+                           line=let_tok.line, col=let_tok.col)
 
     def _parse_class_def(self) -> ast.ClassDef:
-        self._consume("CLASS")
+        class_tok = self._consume("CLASS")
         name_tok = self._consume("IDENT")
         self._consume("L_CURLY")
         methods: list[ast.FuncDef] = []
         while not self._check("R_CURLY"):
             if self._at_end():
                 raise ParserError("unterminated class body")
+            method_tok = self._peek()
             method_name = self._consume("IDENT").lexeme
             self._consume("L_PAREN")
             params: list[str] = []
@@ -268,19 +282,25 @@ class Parser:
                     params.append(self._consume("IDENT").lexeme)
             self._consume("R_PAREN")
             body = self._parse_block()
-            methods.append(ast.FuncDef(name=method_name, params=params, body=body))
+            methods.append(ast.FuncDef(
+                name=method_name, params=params, body=body,
+                line=method_tok.line if method_tok else 0,
+                col=method_tok.col if method_tok else 0,
+            ))
         self._consume("R_CURLY")
-        return ast.ClassDef(name=name_tok.lexeme, methods=methods)
+        return ast.ClassDef(name=name_tok.lexeme, methods=methods,
+                            line=class_tok.line, col=class_tok.col)
 
     def _parse_return(self) -> ast.Return:
-        self._consume("RETURN")
+        return_tok = self._consume("RETURN")
         tok = self._peek()
         if tok is not None and tok.kind in _EXPR_STARTS:
-            return ast.Return(value=self._parse_expression())
-        return ast.Return(value=None)
+            return ast.Return(value=self._parse_expression(),
+                              line=return_tok.line, col=return_tok.col)
+        return ast.Return(value=None, line=return_tok.line, col=return_tok.col)
 
     def _parse_func_def(self) -> ast.FuncDef:
-        self._consume("FUNCTION")
+        func_tok = self._consume("FUNCTION")
         name_tok = self._consume("IDENT")
         self._consume("L_PAREN")
         params: list[str] = []
@@ -291,10 +311,11 @@ class Parser:
                 params.append(self._consume("IDENT").lexeme)
         self._consume("R_PAREN")
         body = self._parse_block()
-        return ast.FuncDef(name=name_tok.lexeme, params=params, body=body)
+        return ast.FuncDef(name=name_tok.lexeme, params=params, body=body,
+                           line=func_tok.line, col=func_tok.col)
 
     def _parse_if_stmt(self) -> ast.IfStmt:
-        self._consume("IF")
+        if_tok = self._consume("IF")
         self._consume("L_PAREN")
         cond = self._parse_expression()
         self._consume("R_PAREN")
@@ -302,12 +323,15 @@ class Parser:
 
         elif_branches: list[ast.ElifBranch] = []
         while self._check("ELIF"):
-            self._advance()
+            elif_tok = self._advance()
             self._consume("L_PAREN")
             elif_cond = self._parse_expression()
             self._consume("R_PAREN")
             elif_body = self._parse_block()
-            elif_branches.append(ast.ElifBranch(cond=elif_cond, body=elif_body))
+            elif_branches.append(ast.ElifBranch(
+                cond=elif_cond, body=elif_body,
+                line=elif_tok.line, col=elif_tok.col,
+            ))
 
         else_block: ast.Block | None = None
         if self._check("ELSE"):
@@ -319,17 +343,19 @@ class Parser:
             then_block=then_block,
             elif_branches=elif_branches,
             else_block=else_block,
+            line=if_tok.line, col=if_tok.col,
         )
 
     def _parse_block(self) -> ast.Block:
-        self._consume("L_CURLY")
+        brace_tok = self._consume("L_CURLY")
         statements: list[ast.Statement] = []
         while not self._check("R_CURLY"):
             if self._at_end():
                 raise ParserError("unterminated block — expected '}'")
             statements.append(self._parse_statement())
         self._consume("R_CURLY")
-        return ast.Block(statements=statements)
+        return ast.Block(statements=statements,
+                         line=brace_tok.line, col=brace_tok.col)
 
     def _parse_expression(self) -> ast.Expression:
         return self._parse_binary(0)
@@ -347,7 +373,8 @@ class Parser:
             # `prec + 1` makes operators left-associative; use `prec`
             # for right-associative operators (none yet in rot).
             right = self._parse_binary(prec + 1)
-            left = ast.BinaryOp(op=op_tok.lexeme, left=left, right=right)
+            left = ast.BinaryOp(op=op_tok.lexeme, left=left, right=right,
+                                line=op_tok.line, col=op_tok.col)
         return left
 
     def _parse_prefix(self) -> ast.Expression:
@@ -355,19 +382,21 @@ class Parser:
         if tok is None:
             raise ParserError("unexpected end of input")
         if tok.kind == "NOT":
-            self._advance()
+            not_tok = self._advance()
             # `not` binds looser than comparisons but tighter than `and`/`or`.
             # Consuming with min_prec=4 means inner expression can include
             # comparisons but not and/or — so `not a == b` parses as
             # `not (a == b)` (matches Python).
             operand = self._parse_binary(4)
-            return ast.UnaryOp(op="not", operand=operand)
+            return ast.UnaryOp(op="not", operand=operand,
+                               line=not_tok.line, col=not_tok.col)
         if tok.kind == "SUBTRACTION":
-            self._advance()
+            minus_tok = self._advance()
             # Unary minus is the tightest-binding prefix. Recursive so
             # `--x` parses as `-(-x)`.
             operand = self._parse_prefix()
-            return ast.UnaryOp(op="-", operand=operand)
+            return ast.UnaryOp(op="-", operand=operand,
+                               line=minus_tok.line, col=minus_tok.col)
         return self._parse_atom_or_call()
 
     def _parse_atom_or_call(self) -> ast.Expression:
@@ -384,22 +413,29 @@ class Parser:
         return atom
 
     def _parse_member_tail(self, target: ast.Expression) -> ast.MemberAccess:
-        self._consume("DOT")
+        dot_tok = self._consume("DOT")
         # Allow keyword tokens after `.` — `obj.class`, `obj.if`, etc. all
         # parse as member access with the keyword's lexeme as the name.
         name_tok = self._peek()
         if name_tok is None:
-            raise ParserError("expected member name after `.`")
+            raise ParserError("expected member name after `.`",
+                              dot_tok.line, dot_tok.col)
         if name_tok.kind != "IDENT" and not name_tok.lexeme.isidentifier():
             raise ParserError(
                 f"expected member name after `.`, got {name_tok.kind}",
                 name_tok.line, name_tok.col,
             )
         self._advance()
-        return ast.MemberAccess(target=target, member=name_tok.lexeme)
+        # Use the target's source position when available so the member
+        # access reports the start of the chain (e.g. `obj.x.y` → position
+        # of `obj`); fall back to the dot if the target has no line.
+        tline = getattr(target, 'line', 0) or dot_tok.line
+        tcol = getattr(target, 'col', 0) or dot_tok.col
+        return ast.MemberAccess(target=target, member=name_tok.lexeme,
+                                line=tline, col=tcol)
 
     def _parse_dict_literal(self) -> ast.DictLit:
-        self._consume("L_CURLY")
+        brace_tok = self._consume("L_CURLY")
         pairs: list[tuple[ast.Expression, ast.Expression]] = []
         if not self._check("R_CURLY"):
             pairs.append(self._parse_dict_pair())
@@ -407,7 +443,7 @@ class Parser:
                 self._advance()
                 pairs.append(self._parse_dict_pair())
         self._consume("R_CURLY")
-        return ast.DictLit(pairs=pairs)
+        return ast.DictLit(pairs=pairs, line=brace_tok.line, col=brace_tok.col)
 
     def _parse_dict_pair(self) -> tuple[ast.Expression, ast.Expression]:
         key = self._parse_expression()
@@ -416,7 +452,7 @@ class Parser:
         return (key, value)
 
     def _parse_call_tail(self, callee: ast.Expression) -> ast.Call:
-        self._consume("L_PAREN")
+        paren_tok = self._consume("L_PAREN")
         args: list[ast.Expression] = []
         if not self._check("R_PAREN"):
             args.append(self._parse_expression())
@@ -424,16 +460,22 @@ class Parser:
                 self._advance()
                 args.append(self._parse_expression())
         self._consume("R_PAREN")
-        return ast.Call(callee=callee, args=args)
+        # Use the callee's source position so `foo(x)` reports the position
+        # of `foo` rather than the `(`; fall back to the paren otherwise.
+        tline = getattr(callee, 'line', 0) or paren_tok.line
+        tcol = getattr(callee, 'col', 0) or paren_tok.col
+        return ast.Call(callee=callee, args=args, line=tline, col=tcol)
 
     def _parse_index_tail(self, target: ast.Expression) -> ast.Index:
-        self._consume("L_BRACKET")
+        bracket_tok = self._consume("L_BRACKET")
         index = self._parse_expression()
         self._consume("R_BRACKET")
-        return ast.Index(target=target, index=index)
+        tline = getattr(target, 'line', 0) or bracket_tok.line
+        tcol = getattr(target, 'col', 0) or bracket_tok.col
+        return ast.Index(target=target, index=index, line=tline, col=tcol)
 
     def _parse_list_literal(self) -> ast.ListLit:
-        self._consume("L_BRACKET")
+        bracket_tok = self._consume("L_BRACKET")
         elements: list[ast.Expression] = []
         if not self._check("R_BRACKET"):
             elements.append(self._parse_expression())
@@ -441,7 +483,8 @@ class Parser:
                 self._advance()
                 elements.append(self._parse_expression())
         self._consume("R_BRACKET")
-        return ast.ListLit(elements=elements)
+        return ast.ListLit(elements=elements,
+                           line=bracket_tok.line, col=bracket_tok.col)
 
     def _parse_atom(self) -> ast.Expression:
         tok = self._peek()
@@ -450,7 +493,7 @@ class Parser:
 
         if tok.kind == "THIS":
             self._advance()
-            return ast.Identifier(name="this")
+            return ast.Identifier(name="this", line=tok.line, col=tok.col)
         if tok.kind == "L_PAREN":
             self._advance()
             expr = self._parse_expression()
@@ -462,28 +505,30 @@ class Parser:
             return self._parse_dict_literal()
         if tok.kind in _NAME_LIKE:
             self._advance()
-            return ast.Identifier(name=tok.lexeme)
+            return ast.Identifier(name=tok.lexeme, line=tok.line, col=tok.col)
         if tok.kind == "NUMBER":
             self._advance()
             return ast.NumberLit(
-                value=float(tok.lexeme) if "." in tok.lexeme else int(tok.lexeme)
+                value=float(tok.lexeme) if "." in tok.lexeme else int(tok.lexeme),
+                line=tok.line, col=tok.col,
             )
         if tok.kind == "STRING_LIT":
             self._advance()
             # Strip surrounding quotes, then decode `\n`, `\t`, `\"`, etc.
-            return ast.StringLit(value=_decode_string_escapes(tok.lexeme[1:-1]))
+            return ast.StringLit(value=_decode_string_escapes(tok.lexeme[1:-1]),
+                                 line=tok.line, col=tok.col)
         if tok.kind == "FSTRING":
             self._advance()
             return self._parse_fstring_content(tok.lexeme[1:-1], tok.line, tok.col)
         if tok.kind == "TRUE":
             self._advance()
-            return ast.BoolLit(value=True)
+            return ast.BoolLit(value=True, line=tok.line, col=tok.col)
         if tok.kind == "FALSE":
             self._advance()
-            return ast.BoolLit(value=False)
+            return ast.BoolLit(value=False, line=tok.line, col=tok.col)
         if tok.kind == "NULL":
             self._advance()
-            return ast.NullLit()
+            return ast.NullLit(line=tok.line, col=tok.col)
         raise ParserError(
             f"expected expression, got {tok.kind} ({tok.lexeme!r})",
             tok.line,
@@ -552,15 +597,21 @@ class Parser:
                 decoded.append((kind, value))
 
         if not decoded:
-            return ast.StringLit(value="")
+            return ast.StringLit(value="", line=line, col=col)
 
         result: ast.Expression | None = None
         for kind, value in decoded:
             if kind == "static":
-                node: ast.Expression = ast.StringLit(value=value)  # type: ignore[arg-type]
+                node: ast.Expression = ast.StringLit(value=value, line=line, col=col)  # type: ignore[arg-type]
             else:
-                node = ast.Call(callee=ast.Identifier(name="str"), args=[value])  # type: ignore[list-item]
-            result = node if result is None else ast.BinaryOp(op="+", left=result, right=node)
+                node = ast.Call(
+                    callee=ast.Identifier(name="str", line=line, col=col),
+                    args=[value],  # type: ignore[list-item]
+                    line=line, col=col,
+                )
+            result = node if result is None else ast.BinaryOp(
+                op="+", left=result, right=node, line=line, col=col,
+            )
         assert result is not None
         return result
 

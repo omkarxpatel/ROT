@@ -3,6 +3,8 @@
 These exercise the AST shape end-to-end: source -> Lexer -> Parser -> AST.
 """
 
+import dataclasses
+
 import pytest
 
 from rot import ast
@@ -15,8 +17,34 @@ def _parse(source: str) -> ast.Program:
     return Parser(Lexer().tokenize(source)).parse()
 
 
+def _strip_pos(node):
+    """v2.22.2: the parser now stamps every AST node with `line` / `col`.
+    Most equality-based tests below predate that change and compare nodes
+    against literals constructed without positions. Walk the tree zeroing
+    `line` and `col` so the literal-style comparison continues to verify
+    the AST SHAPE without coupling tests to source positions. Tests that
+    care about positions can compare on raw nodes."""
+    if dataclasses.is_dataclass(node):
+        for f in dataclasses.fields(node):
+            v = getattr(node, f.name)
+            if f.name in ("line", "col"):
+                setattr(node, f.name, 0)
+            else:
+                _strip_pos(v)
+        return node
+    if isinstance(node, list):
+        for item in node:
+            _strip_pos(item)
+        return node
+    if isinstance(node, tuple):
+        for item in node:
+            _strip_pos(item)
+        return node
+    return node
+
+
 def test_println_call_with_string_literal():
-    program = _parse('coutln("hello")')
+    program = _strip_pos(_parse('coutln("hello")'))
     assert program == ast.Program(
         body=[
             ast.ExprStmt(
@@ -30,7 +58,7 @@ def test_println_call_with_string_literal():
 
 
 def test_call_with_multiple_number_args():
-    program = _parse("hi(10 | 20)")
+    program = _strip_pos(_parse("hi(10 | 20)"))
     assert program == ast.Program(
         body=[
             ast.ExprStmt(
@@ -44,24 +72,24 @@ def test_call_with_multiple_number_args():
 
 
 def test_call_with_no_args():
-    program = _parse("hi()")
+    program = _strip_pos(_parse("hi()"))
     assert program == ast.Program(
         body=[ast.ExprStmt(ast.Call(callee=ast.Identifier(name="hi"), args=[]))]
     )
 
 
 def test_bare_identifier_is_an_expression_statement():
-    program = _parse("hi")
+    program = _strip_pos(_parse("hi"))
     assert program == ast.Program(body=[ast.ExprStmt(ast.Identifier(name="hi"))])
 
 
 def test_number_literal_atom():
-    program = _parse("42")
+    program = _strip_pos(_parse("42"))
     assert program == ast.Program(body=[ast.ExprStmt(ast.NumberLit(value=42))])
 
 
 def test_string_literal_strips_surrounding_quotes():
-    program = _parse('"hello world"')
+    program = _strip_pos(_parse('"hello world"'))
     assert program == ast.Program(
         body=[ast.ExprStmt(ast.StringLit(value="hello world"))]
     )
@@ -73,7 +101,7 @@ def test_unterminated_call_raises_parser_error():
 
 
 def test_nested_call_in_args():
-    program = _parse("outer(inner(1))")
+    program = _strip_pos(_parse("outer(inner(1))"))
     assert program == ast.Program(
         body=[
             ast.ExprStmt(
@@ -92,8 +120,10 @@ def test_nested_call_in_args():
 
 
 def _expr(source: str) -> ast.Expression:
-    """Parse a source snippet and return the single contained expression."""
-    program = _parse(source)
+    """Parse a source snippet and return the single contained expression.
+    Source positions are stripped so the returned AST compares cleanly
+    against position-less literal constructions."""
+    program = _strip_pos(_parse(source))
     assert len(program.body) == 1
     return program.body[0].expr
 
@@ -166,7 +196,7 @@ def test_equality_binds_looser_than_comparison():
 
 
 def test_binary_op_inside_call_args():
-    program = _parse("coutln(1 + 2)")
+    program = _strip_pos(_parse("coutln(1 + 2)"))
     assert program == ast.Program(body=[
         ast.ExprStmt(
             ast.Call(
@@ -178,7 +208,7 @@ def test_binary_op_inside_call_args():
 
 
 def test_parses_simple_function_def():
-    program = _parse("funct hi(x | y) { coutln(x) }")
+    program = _strip_pos(_parse("funct hi(x | y) { coutln(x) }"))
     assert program == ast.Program(body=[
         ast.FuncDef(
             name="hi",
@@ -193,7 +223,7 @@ def test_parses_simple_function_def():
 
 
 def test_parses_function_with_no_params():
-    program = _parse('funct greet() { coutln("hi") }')
+    program = _strip_pos(_parse('funct greet() { coutln("hi") }'))
     assert program == ast.Program(body=[
         ast.FuncDef(name="greet", params=[], body=ast.Block(statements=[
             ast.ExprStmt(ast.Call(callee=ast.Identifier("coutln"), args=[ast.StringLit("hi")]))
@@ -202,7 +232,7 @@ def test_parses_function_with_no_params():
 
 
 def test_parses_simple_if_statement():
-    program = _parse("if (x > y) { coutln(x) }")
+    program = _strip_pos(_parse("if (x > y) { coutln(x) }"))
     assert program == ast.Program(body=[
         ast.IfStmt(
             cond=ast.BinaryOp(">", ast.Identifier("x"), ast.Identifier("y")),
@@ -216,11 +246,11 @@ def test_parses_simple_if_statement():
 
 
 def test_parses_if_elseif_else_chain():
-    program = _parse(
+    program = _strip_pos(_parse(
         'if (x > y) { coutln(x) }\n'
         'elseif (x == y) { coutln("same") }\n'
         'else { coutln(y) }'
-    )
+    ))
     assert len(program.body) == 1
     stmt = program.body[0]
     assert isinstance(stmt, ast.IfStmt)
@@ -237,7 +267,7 @@ def test_unterminated_block_raises_parser_error():
 
 
 def test_assignment_produces_assign_node():
-    program = _parse("x = 5")
+    program = _strip_pos(_parse("x = 5"))
     assert program == ast.Program(body=[
         ast.Assign(name="x", value=ast.NumberLit(5))
     ])
@@ -254,7 +284,7 @@ def test_assignment_distinguished_from_equality_expr():
 
 
 def test_assignment_value_can_be_a_complex_expression():
-    program = _parse("total = a + b * 2")
+    program = _strip_pos(_parse("total = a + b * 2"))
     assert program.body[0] == ast.Assign(
         name="total",
         value=ast.BinaryOp(
@@ -266,7 +296,7 @@ def test_assignment_value_can_be_a_complex_expression():
 
 
 def test_return_with_expression():
-    program = _parse("funct add(x | y) { return x + y }")
+    program = _strip_pos(_parse("funct add(x | y) { return x + y }"))
     func = program.body[0]
     assert isinstance(func, ast.FuncDef)
     ret = func.body.statements[0]
@@ -282,7 +312,7 @@ def test_bare_return_has_no_value():
 
 
 def test_parses_while_statement():
-    program = _parse("while (i < 10) { i = i + 1 }")
+    program = _strip_pos(_parse("while (i < 10) { i = i + 1 }"))
     assert program == ast.Program(body=[
         ast.WhileStmt(
             cond=ast.BinaryOp("<", ast.Identifier("i"), ast.NumberLit(10)),
@@ -351,7 +381,7 @@ def test_int_literal_stays_int():
 
 
 def test_compound_assign_carries_op():
-    program = _parse("x += 1")
+    program = _strip_pos(_parse("x += 1"))
     stmt = program.body[0]
     assert isinstance(stmt, ast.Assign)
     assert stmt.op == "+"
@@ -374,7 +404,7 @@ def test_full_example_functions_rot_parses_end_to_end():
     call all represented as nodes."""
     import pathlib
     source = (pathlib.Path(__file__).resolve().parent.parent / "examples/functions.rot").read_text()
-    program = _parse(source)
+    program = _strip_pos(_parse(source))
 
     # Two top-level statements: the funct def + the call at the end.
     assert len(program.body) == 2
@@ -401,14 +431,14 @@ def test_full_example_functions_rot_parses_end_to_end():
 def test_let_statement_parses_to_LetStmt():
     # v2.16.6: `let name = expr` parses into a dedicated ast.LetStmt node so
     # the interpreter can distinguish it from a plain Assign and bind locally.
-    program = _parse("let x = 42")
+    program = _strip_pos(_parse("let x = 42"))
     assert program == ast.Program(
         body=[ast.LetStmt(name="x", value=ast.NumberLit(value=42))]
     )
 
 
 def test_let_with_complex_expression():
-    program = _parse("let total = a + b * 2")
+    program = _strip_pos(_parse("let total = a + b * 2"))
     assert isinstance(program.body[0], ast.LetStmt)
     let_stmt = program.body[0]
     assert let_stmt.name == "total"
@@ -449,3 +479,59 @@ def test_ast_nodes_default_line_col_to_zero():
     assert ast.BreakStmt().line == 0
     assert ast.ContinueStmt().col == 0
     assert ast.Program().line == 0
+
+
+def test_parser_populates_line_col_on_call_stmt():
+    """v2.22.2: the parser stamps every AST node with the source position
+    of its first token. The top-level ExprStmt and its Call should report
+    line 1 col 1 (offsets are 1-indexed and counted from the start)."""
+    program = _parse("cout(1)")
+    stmt = program.body[0]
+    assert isinstance(stmt, ast.ExprStmt)
+    assert stmt.line == 1 and stmt.col == 1
+    assert isinstance(stmt.expr, ast.Call)
+    assert stmt.expr.line == 1 and stmt.expr.col == 1
+
+
+def test_parser_populates_line_col_on_identifier():
+    """An identifier reports the column it starts at, not 0."""
+    program = _parse("    foo")
+    stmt = program.body[0]
+    assert isinstance(stmt, ast.ExprStmt)
+    assert isinstance(stmt.expr, ast.Identifier)
+    assert stmt.expr.line == 1
+    # `foo` starts after four spaces of indentation; col is 1-indexed.
+    assert stmt.expr.col == 5
+
+
+def test_parser_populates_line_col_across_lines():
+    """Multi-line source: line numbers should reflect the actual line."""
+    program = _parse("x = 1\ny = 2\nz = 3")
+    assert program.body[0].line == 1
+    assert program.body[1].line == 2
+    assert program.body[2].line == 3
+
+
+def test_parser_populates_line_col_on_number_literal():
+    program = _parse("42")
+    assert isinstance(program.body[0].expr, ast.NumberLit)
+    assert program.body[0].expr.line == 1
+    assert program.body[0].expr.col == 1
+
+
+def test_parser_populates_line_col_on_function_def():
+    program = _parse("\nfunct hi() { }")
+    assert isinstance(program.body[0], ast.FuncDef)
+    assert program.body[0].line == 2  # second line
+    assert program.body[0].col == 1
+
+
+def test_parser_populates_line_col_on_binary_op_at_operator():
+    """For a binary op, line/col should point at the OPERATOR — the
+    invariant the interpreter relies on when reporting `cannot apply '+' ...`."""
+    program = _parse("a + b")
+    binop = program.body[0].expr
+    assert isinstance(binop, ast.BinaryOp)
+    assert binop.line == 1
+    # `a + b` — col 3 is the `+`.
+    assert binop.col == 3
