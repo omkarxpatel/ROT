@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.17.1 — variable compound assign wraps Python errors
+
+### Fixed
+- **I3, I5, I6**: `x /= 0`, `x %= 0`, `s -= 1`, `null += 1` (and any other variable-target compound assign) used to leak a raw Python `ZeroDivisionError` / `TypeError` because the `Assign` compound branch in `_execute_statement` called `op_fn(current, new_value)` without a try/except. The plain binary-op path (`_evaluate`'s `BinaryOp` branch) has wrapped these since v2.14.1, but the compound-assign path didn't. Now wraps the call in `try/except (ZeroDivisionError, TypeError)` and re-raises as `InterpreterError` with the same `division by zero` / `cannot apply '<op>' to <T1> and <T2>: <msg>` style. Tests: `test_variable_compound_assign_divide_by_zero_raises_interpreter_error`, `test_variable_compound_assign_modulo_by_zero_raises_interpreter_error`, `test_variable_compound_assign_string_minus_int_raises_interpreter_error`, `test_variable_compound_assign_null_plus_int_raises_interpreter_error`.
+
 ## v2.16.6 — `let` keyword for opt-in fresh-local binding
 
 ### Added

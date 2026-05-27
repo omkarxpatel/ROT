@@ -348,7 +348,21 @@ class Interpreter:
                 op_fn = _BINARY_OPS.get(stmt.op)
                 if op_fn is None:
                     raise InterpreterError(f"unknown compound op {stmt.op!r}")
-                self.env.set(stmt.name, op_fn(current, new_value))
+                # The plain binary-op path (_evaluate) wraps Python errors;
+                # the compound-assign path must do the same so `x /= 0`,
+                # `s -= 1`, `null += 1`, etc. raise InterpreterError instead
+                # of leaking raw Python ZeroDivisionError/TypeError. Match
+                # the style/message used in _evaluate's BinaryOp wrapper.
+                try:
+                    result = op_fn(current, new_value)
+                except ZeroDivisionError:
+                    raise InterpreterError("division by zero")
+                except TypeError as e:
+                    raise InterpreterError(
+                        f"cannot apply {stmt.op!r} to {type(current).__name__} "
+                        f"and {type(new_value).__name__}: {e}"
+                    )
+                self.env.set(stmt.name, result)
             return
         if isinstance(stmt, ast.LetStmt):
             # `let x = ...` introduces a FRESH local binding without walking

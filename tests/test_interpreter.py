@@ -1225,6 +1225,36 @@ def test_index_assign_out_of_bounds_raises_interpreter_error():
         _run('xs = [1]\nxs[5] = 99')
 
 
+def test_variable_compound_assign_divide_by_zero_raises_interpreter_error():
+    # I3: `x /= 0` used to leak a raw Python ZeroDivisionError because the
+    # Assign compound branch called op_fn(current, new_value) without a
+    # try/except. The plain binary-op path always wrapped it.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("x = 10\nx /= 0")
+    assert "division by zero" in str(exc_info.value).lower()
+
+
+def test_variable_compound_assign_modulo_by_zero_raises_interpreter_error():
+    # I3: same path, modulo variant.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("x = 10\nx %= 0")
+    assert "division by zero" in str(exc_info.value).lower()
+
+
+def test_variable_compound_assign_string_minus_int_raises_interpreter_error():
+    # I5: `s -= 1` used to leak a raw Python TypeError. Now wrapped.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('s = "a"\ns -= 1')
+    assert "cannot apply" in str(exc_info.value)
+
+
+def test_variable_compound_assign_null_plus_int_raises_interpreter_error():
+    # I6: `null += 1` used to leak a raw Python TypeError. Now wrapped.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("x = null\nx += 1")
+    assert "cannot apply" in str(exc_info.value)
+
+
 def test_for_over_non_iterable_raises_interpreter_error():
     with pytest.raises(InterpreterError) as exc_info:
         _run("for x in 123 { coutln(x) }")
