@@ -1,0 +1,544 @@
+\documentclass[11pt]{article}
+
+% ---------- Packages ----------
+\usepackage[margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue!50!black
+}
+
+% ---------- Section spacing ----------
+\titlespacing*{\section}{0pt}{1.6ex plus 0.4ex minus .2ex}{0.8ex plus .2ex}
+\titlespacing*{\subsection}{0pt}{1.2ex plus 0.3ex minus .2ex}{0.6ex plus .2ex}
+
+% ---------- Line breaking: allow more flex around long \texttt runs ----------
+\setlength{\emergencystretch}{2em}
+
+% ---------- Listings styles ----------
+\definecolor{rotKeyword}{HTML}{1F4E79}
+\definecolor{rotString}{HTML}{8B4513}
+\definecolor{rotComment}{HTML}{6E7781}
+\definecolor{rotBg}{HTML}{F6F8FA}
+\definecolor{rotFrame}{HTML}{D0D7DE}
+
+\lstdefinelanguage{rot}{
+    morekeywords={funct, let, if, else, elseif, while, for, in, return,
+                  break, continue, class, this, true, false, null,
+                  try, catch, throw, finally, import, super,
+                  and, or, not, cout, coutln},
+    sensitive=true,
+    morecomment=[l]{//},
+    morestring=[b]",
+    morestring=[b]'
+}
+
+\lstdefinestyle{rotstyle}{
+    language=rot,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{rotKeyword}\bfseries,
+    stringstyle=\color{rotString},
+    commentstyle=\color{rotComment}\itshape,
+    backgroundcolor=\color{rotBg},
+    frame=single,
+    rulecolor=\color{rotFrame},
+    framesep=4pt,
+    aboveskip=8pt,
+    belowskip=8pt,
+    showstringspaces=false,
+    breaklines=true,
+    columns=fullflexible,
+    keepspaces=true,
+    xleftmargin=4pt,
+    xrightmargin=4pt
+}
+
+\lstdefinestyle{pystyle}{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{rotKeyword}\bfseries,
+    stringstyle=\color{rotString},
+    commentstyle=\color{rotComment}\itshape,
+    backgroundcolor=\color{rotBg},
+    frame=single,
+    rulecolor=\color{rotFrame},
+    framesep=4pt,
+    aboveskip=8pt,
+    belowskip=8pt,
+    showstringspaces=false,
+    breaklines=true,
+    columns=fullflexible,
+    keepspaces=true,
+    xleftmargin=4pt,
+    xrightmargin=4pt
+}
+
+\lstdefinestyle{plainstyle}{
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{rotBg},
+    frame=single,
+    rulecolor=\color{rotFrame},
+    framesep=4pt,
+    aboveskip=8pt,
+    belowskip=8pt,
+    breaklines=true,
+    columns=fullflexible,
+    keepspaces=true,
+    xleftmargin=4pt,
+    xrightmargin=4pt
+}
+
+\lstset{style=rotstyle}
+
+% ---------- Title ----------
+\title{\textbf{ROT: Designing a 3{,}000-Line Tree-Walking Interpreter}}
+\author{Omkar Patel \and Claude Opus 4.7 (1M context)}
+\date{May 2026 \quad \textemdash \quad ROT v2.25.12}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+ROT is a small, hand-rolled programming language --- a learning project and portfolio piece --- whose current release (v2.25.12) ships a tree-walking interpreter, a recursive-descent parser, lexically-scoped closures with explicit shadowing, classes with bound methods, error handling with \texttt{finally}, slicing, f-strings with format specs, a module system, an interactive REPL, and \texttt{rustc}-style errors. The implementation is about 3{,}000 lines of Python with 628 passing tests on Python 3.9 through 3.12. This paper is a design retrospective. It walks through ROT's pipeline, dwells on the two design choices that shaped most of the code (chain-walking assignment and source-located errors), and pulls out the lessons that turned out to be worth more than the language itself.
+\end{abstract}
+
+% ============================================================
+\section{Introduction}
+% ============================================================
+
+ROT started as a regex transpiler in v1.0.0: hand a string to a giant pattern table, swap a few tokens, and \texttt{exec()} the result as Python. That was instructive for about a week. It bottomed out the moment the language needed anything Python's syntax couldn't fake --- different scoping rules, custom error messages, a real call model. So the project pivoted. The transpiler was replaced by a hand-rolled lexer in v1.6.0, an AST in v1.7.0--v1.8.0, an emitter in v1.9.0, and finally a true tree-walking interpreter in v2.0.0 that dropped \texttt{exec()} entirely. By v2.25, ROT had grown a complete control-flow surface (loops, \texttt{break}/\texttt{continue}, exceptions with \texttt{finally}), user classes, an explicit-shadow \texttt{let} keyword, slicing, f-string format specs, a small module system, and a REPL with persistent history. The language's source weight is roughly 3{,}000 lines; the test suite is roughly 6{,}000.
+
+The point of ROT is not to be production-grade --- it's a tree-walker, so it's inherently slower than even an interpreted bytecode VM. The point is to own the entire pipeline end-to-end and reason about each design decision under the assumption that you might have to live with it. Hosting a language inside Python is convenient until the host starts leaking: a stray \texttt{getattr} call gives the user \texttt{\_\_class\_\_} on every string, a \texttt{break} signal walks past a function boundary into the caller's loop, a Python \texttt{ZeroDivisionError} surfaces with a Python traceback through your nice \texttt{try}/\texttt{catch} block. Each of these is a small bug. Together they answer a real question: what does it mean to actually \emph{contain} a language?
+
+The rest of this paper takes the architecture in order --- surface syntax, the four-stage pipeline, the environment model, control-flow signals, error rendering, and the information-leak hardening pass that closed the host gap --- and ends with a few lessons that generalize past the language itself.
+
+% ============================================================
+\section{Surface Syntax}
+% ============================================================
+
+ROT's surface is a deliberate hybrid. The braces and the type-of-thing flavor are from C++; the dynamism is from Python; the quirks are mine.
+
+\begin{itemize}[leftmargin=*,nosep,topsep=4pt,partopsep=0pt]
+  \item \texttt{funct} for function definition, not \texttt{def}. The name is short and unambiguous.
+  \item \texttt{cout} and \texttt{coutln} for printing. \texttt{coutln} adds a newline; \texttt{cout} does not. Homage to \texttt{std::cout}.
+  \item \texttt{|} as the parameter and argument separator, not \texttt{,}. Pure stylistic choice from the v1.0 design; kept because it forces every reader to notice they're not reading Python.
+  \item \texttt{this}, not \texttt{self}. C++ camp on this one.
+  \item \texttt{//} for comments, C-style.
+  \item Curly-brace blocks. No significant indentation.
+  \item Lowercase identifiers only (\texttt{[a-z\_][a-z\_0-9]*}). Keywords are lowercase; identifiers match.
+  \item Built-in literals: \texttt{true}, \texttt{false}, \texttt{null}.
+\end{itemize}
+
+A side-by-side helps. Here's a small program that filters and sums; on the left in ROT, on the right in Python:
+
+\begin{minipage}[t]{0.50\textwidth}
+\begin{lstlisting}[style=rotstyle]
+funct sum_positive(xs) {
+    total = 0
+    for x in xs {
+        if (x > 0) {
+            total += x
+        }
+    }
+    return total
+}
+
+coutln(sum_positive([1 | -2 | 3 | -4]))
+\end{lstlisting}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.45\textwidth}
+\begin{lstlisting}[style=pystyle]
+def sum_positive(xs):
+    total = 0
+    for x in xs:
+        if x > 0:
+            total += x
+    return total
+
+
+print(sum_positive([1, -2, 3, -4]))
+\end{lstlisting}
+\end{minipage}
+
+The surface earns its keep by being immediately readable to anyone who has used C++ or Python --- but readable in a way that signals it isn't either of them. That matters for a language whose semantics differ from both (see Sections~4 and 5).
+
+% ============================================================
+\section{The Pipeline}
+% ============================================================
+
+ROT runs source through four stages: lex, parse, evaluate, execute. There's no intermediate Python; \texttt{exec()} has been gone since v2.0.0. Figure~\ref{fig:pipeline} sketches the data flow for a one-line program.
+
+\begin{figure}[h!]
+\centering
+\begin{lstlisting}[style=plainstyle, frame=none, basicstyle=\ttfamily\footnotesize]
+"coutln(1 + 2)"                          <-- source string
+
+  v Lexer (rot/lexer.py)
+
+[Token(PRINTLN, "coutln"),
+ Token(L_PAREN, "("),
+ Token(NUMBER, "1"),
+ Token(ADDITION, "+"),
+ Token(NUMBER, "2"),
+ Token(R_PAREN, ")")]
+
+  v Parser (rot/syntax.py)
+
+Program(body=[
+  ExprStmt(Call(
+    callee=Identifier("coutln"),
+    args=[BinaryOp("+", NumberLit(1), NumberLit(2))]
+  ))
+])
+
+  v Interpreter (rot/interpreter.py)
+
+  - _execute_statement(ExprStmt)
+    - _evaluate(Call)
+      - resolve "coutln" -> Python callable in builtins env
+      - _evaluate each arg
+        - _evaluate(BinaryOp "+", 1, 2) -> 3
+      - invoke callable(3)
+
+  v stdout
+
+"3\n"
+\end{lstlisting}
+\caption{End-to-end data flow for \texttt{coutln(1 + 2)}.}
+\label{fig:pipeline}
+\end{figure}
+
+The lexer (\texttt{rot/lexer.py}, $\sim$320 lines) is hand-rolled and character-by-character. It dispatches on the next character --- digit, letter, quote, slash, etc.\ --- and emits a \texttt{Token} carrying \texttt{(lexeme, kind, line, col)}. Keywords are looked up in a small dict after a lowercase-letter run is consumed; everything else becomes \texttt{IDENT}. The lexer raises \texttt{LexerError(line, col)} on illegal characters instead of silently dropping them. It also threads source position through every token; the parser and interpreter rely on this for error rendering (Section~6).
+
+The parser (\texttt{rot/syntax.py}, $\sim$870 lines) is recursive-descent for statements and Pratt-style for expressions. There's one method per grammar rule (\texttt{\_parse\_func\_def}, \texttt{\_parse\_if\_stmt}, \texttt{\_parse\_atom}, and so on) and one precedence table for infix operators. Every AST node carries the \texttt{line/col} of its first token, which is what makes \texttt{rustc}-style error rendering possible later.
+
+The interpreter (\texttt{rot/interpreter.py}, $\sim$990 lines) walks the AST directly. There are two dispatchers --- one over statement node types, one over expression node types. Functions are \texttt{RotFunction} objects that hold their declaration and a snapshot of the closure environment. Classes are \texttt{RotClass}; instances are \texttt{RotInstance}; methods bound to an instance are \texttt{BoundMethod}. The environment is a single mutable type, \texttt{Environment}, with one quirk in its \texttt{set} method --- which is the topic of Section~4.
+
+A standalone AST-to-Python emitter (\texttt{rot/emitter.py}) lived from v1.9.0 to v2.22. It compiled to Python and used \texttt{exec()}. After v2.0.0 dropped \texttt{exec()} from the main path, the emitter became dead weight, and a v2.13.0 audit cataloged about 40 drift items in it: missing \texttt{nonlocal} declarations broke the v2.10.0 closure-mutation feature; \texttt{null}/\texttt{true}/\texttt{false} were emitted as Python's \texttt{None}/\texttt{True}/\texttt{False} and printed wrong; \texttt{assert(cond, msg)} was emitted as Python's \texttt{assert (False, 'msg')}, a two-tuple that is always truthy. The emitter was removed wholesale in v2.23.0. A tree-walking interpreter is the right \emph{reference} implementation: it directly encodes the language's semantics, which means you can read the language by reading the interpreter. Any future bytecode VM (Section~10) will be tested against its outputs.
+
+% ============================================================
+\section{Environment Design}
+% ============================================================
+
+The interesting design problem in any small interpreter is name binding. ROT's solution is two methods on a single \texttt{Environment} type --- \texttt{set} and \texttt{set\_local} --- plus a top \texttt{frozen} layer for builtins and an explicit \texttt{let} keyword for opt-out shadowing. Each piece exists because of a specific bug or footgun that came before it.
+
+\subsection{Chain-walking \texttt{set}}
+
+\texttt{Environment.set(name, value)} walks the parent chain. If \texttt{name} is already bound anywhere up the chain, the existing binding is mutated; otherwise, a new binding lands in the current scope. The whole point of this --- introduced in v2.10.0 --- is that closures can mutate the enclosing scope by default:
+
+\begin{lstlisting}[style=rotstyle]
+funct make_counter() {
+    count = 0
+    funct inc() {
+        count += 1     // walks up, finds outer `count`, mutates it
+        return count
+    }
+    return inc
+}
+
+c = make_counter()
+coutln(c())   // 1
+coutln(c())   // 2
+\end{lstlisting}
+
+Without chain-walking, this would silently create a local \texttt{count} inside \texttt{inc} and Python would crash with \texttt{UnboundLocalError} on \texttt{count += 1} --- which is exactly the well-known Python footgun that \texttt{nonlocal} was invented to patch. ROT's design says: closure-mutation is the default; the trade-off is that you cannot shadow an outer variable just by reusing its name.
+
+\subsection{\texttt{set\_local} at declaration sites}
+
+Chain-walking is the right default for assignment. It is the wrong default for declarations. Imagine:
+
+\begin{lstlisting}[style=rotstyle]
+funct outer() {
+    funct work() { return 1 }
+    funct inner() {
+        funct work() { return 2 }   // outer.work suddenly returns 2 also?
+        return work()
+    }
+}
+\end{lstlisting}
+
+Treating \texttt{funct work} as an assignment makes the nested declaration chain-walk into the outer scope and silently rebind \texttt{outer.work} too. That's not a closure --- that's a name-collision bug masquerading as one. The v2.13.0 audit catalogued this as findings I15 and I16 (nested function and class declarations clobbering outer same-named ones).
+
+The fix in v2.16.x was to use a different method, \texttt{set\_local}, at every declaration site:
+
+\begin{itemize}[leftmargin=*,nosep,topsep=4pt,partopsep=0pt]
+  \item \texttt{funct} declarations.
+  \item \texttt{class} declarations.
+  \item Method parameters and \texttt{this} in \texttt{BoundMethod.call}.
+  \item Function parameters in \texttt{RotFunction.call}.
+  \item \texttt{for x in iter} loop variables.
+  \item The \texttt{catch (e)} binding (which otherwise would clobber a global \texttt{e}, including the math constant).
+\end{itemize}
+
+\texttt{set\_local} binds in \emph{this} scope, full stop --- no chain walk. The principle: \emph{declarations are local; only user assignment walks the chain}.
+
+\subsection{The frozen builtins layer}
+
+Even with \texttt{set\_local} at declaration sites, plain \texttt{pi = 3.0} would still chain-walk up the env tree, hit the builtin \texttt{pi}, and silently overwrite it. The fix in v2.16.5 was to put builtins in their own \texttt{Environment} with \texttt{frozen=True}, and root the user's globals as a child of it. Writes that walk the chain into the frozen layer are rejected:
+
+\begin{lstlisting}[style=rotstyle]
+pi = 3.0
+// error: cannot reassign builtin 'pi'
+
+let pi = 3.0    // ok -- `let` declares a new local, no chain walk
+coutln(pi)      // 3.0
+\end{lstlisting}
+
+This is the only place in the interpreter where a write can fail for a reason other than "you tried to assign to a non-name." It's also why the builtins live in a separate \texttt{Environment} rather than being injected into the user's globals: the \texttt{frozen} bit is per-environment, not per-key.
+
+\subsection{The \texttt{let} keyword}
+
+What if the user actually \emph{does} want to shadow an outer name --- not by accident, but on purpose? Adding \texttt{let} in v2.16.6 gave them an explicit way to opt out of chain-walking:
+
+\begin{lstlisting}[style=rotstyle]
+funct shadow_demo() {
+    x = 1
+    funct inner() {
+        let x = 99    // explicit fresh local; no chain walk
+        coutln(x)     // 99
+    }
+    inner()
+    coutln(x)         // 1 -- outer x is untouched
+}
+\end{lstlisting}
+
+\texttt{let name = expr} runs \texttt{env.set\_local(name, value)} regardless of what's in the parent chain. It's the explicit form of "I know there's a same-named variable above me; I want my own." Bare \texttt{=} keeps the v2.10.0 closure-mutation semantics. The pair --- implicit chain-walk for assignment, explicit \texttt{let} for shadowing --- separates the two intents.
+
+\subsection{The honest trade-off}
+
+Chain-walking assignment is not strictly better than fresh-local assignment. It buys you closure-mutation without ceremony, but it also buys you action-at-a-distance: if a function deep inside a call chain assigns to a name that happens to exist in an enclosing scope, it mutates that enclosing scope. In a long call chain across modules, this can be hard to debug. The v2.16.6 design point is that ROT prefers the trade because the most common case --- counters, accumulators, building up state in a closure --- is more ergonomic, and the rare case (deliberate shadow) is covered by an explicit keyword. Python made the opposite choice (\texttt{nonlocal} as opt-in mutation). Both are defensible; ROT's choice is the one we made.
+
+% ============================================================
+\section{Control-Flow Signals}
+% ============================================================
+
+\texttt{break}, \texttt{continue}, \texttt{return}, and \texttt{throw} all need a way to unwind the AST walker non-locally. The choice ROT makes is the simplest one: each of them raises a Python \texttt{BaseException} subclass that the relevant statement handler catches.
+
+\begin{lstlisting}[style=pystyle]
+class _ReturnSignal(BaseException):
+    def __init__(self, value): self.value = value
+
+class _BreakSignal(BaseException): pass
+class _ContinueSignal(BaseException): pass
+
+class _ThrowSignal(BaseException):
+    def __init__(self, value, line=0, col=0):
+        self.value = value
+        self.line = line
+        self.col = col
+\end{lstlisting}
+
+They subclass \texttt{BaseException} (not \texttt{Exception}) deliberately: a user \texttt{try}/\texttt{catch} translates to a Python \texttt{try/except Exception}, so the control-flow signals slip past it as they should. \texttt{return} bubbles up to whichever \texttt{RotFunction.call} or \texttt{BoundMethod.call} is on the Python stack, where \texttt{except \_ReturnSignal} catches it and returns the carried value. \texttt{break} and \texttt{continue} bubble up to the nearest \texttt{WhileStmt} or \texttt{ForStmt} handler.
+
+\subsection{The lexical-scope bug}
+
+A naïve implementation has a quiet bug. Picture the interpreter holding a single \texttt{\_loop\_depth} counter (incremented on \texttt{while}/\texttt{for}, decremented on exit), and a function body that does \texttt{break}:
+
+\begin{lstlisting}[style=rotstyle]
+funct quit() { break }
+
+for i in range(5) {
+    coutln(i)
+    quit()
+    coutln("after quit")
+}
+\end{lstlisting}
+
+What you want: a clear error --- \texttt{`break` outside of a loop} --- because \texttt{quit}'s body has no enclosing loop. What you get without the fix: \texttt{break} raises \texttt{\_BreakSignal}, which propagates straight up through \texttt{quit}'s \texttt{RotFunction.call} (no \texttt{except} for it), past \texttt{\_evaluate\_call}, up to the \texttt{for} loop body --- which catches \texttt{\_BreakSignal} and exits. The output is just \texttt{0}, then nothing. \texttt{break} crossed a function boundary into the caller's loop. The v2.13.0 audit logged it as finding I1.
+
+The fix (v2.15.1) sits in the two function-call sites. They save and zero out \texttt{\_loop\_depth} on entry, restore it in a \texttt{finally} block, and explicitly catch any break or continue signal that escapes the body, re-raising it as a clean error:
+
+\begin{lstlisting}[style=pystyle]
+prior_loop_depth = interpreter._loop_depth
+interpreter._loop_depth = 0
+# ... execute body ...
+try:
+    interpreter._execute_block(self.decl.body)
+except _ReturnSignal as signal:
+    return signal.value
+except _BreakSignal:
+    raise InterpreterError("`break` outside of a loop")
+except _ContinueSignal:
+    raise InterpreterError("`continue` outside of a loop")
+finally:
+    interpreter._loop_depth = prior_loop_depth
+\end{lstlisting}
+
+The same idea applies at the top of \texttt{Interpreter.execute}: an uncaught \texttt{\_ThrowSignal} would otherwise propagate as a raw \texttt{BaseException} with a Python traceback. The outer \texttt{try/except \_ThrowSignal} catches it and re-raises an \texttt{InterpreterError("uncaught throw: ...", line, col)}. The principle is the same in both places: \emph{a control-flow signal that's not lexically valid here must surface as a clean user-facing error, never as a Python traceback}.
+
+% ============================================================
+\section{Error Rendering}
+% ============================================================
+
+Errors in ROT look like \texttt{rustc}'s. They name the file, point at the line, draw a caret under the column, and offer a hint when the user typed a Python-ism:
+
+\begin{lstlisting}[style=plainstyle, basicstyle=\ttfamily\footnotesize]
+error: name 'print' is not defined (did you mean 'cout'?)
+ --> hello.rot:1:1
+  |
+1 | print("hi")
+  | ^
+\end{lstlisting}
+
+The before-and-after is starker than it sounds. The v2.13.0-era error for the same input was three Python frames of traceback ending in \texttt{NameError: name 'print' is not defined} --- no source line, no caret, no hint. Getting from there to here took two patches that turned out to matter past ROT itself.
+
+\subsection{The \texttt{\_locate} dispatcher pattern}
+
+Every AST node carries \texttt{line}/\texttt{col}, and most \texttt{InterpreterError} raise sites carry the position of the relevant node. But several errors are raised deep inside helper methods --- \texttt{Environment.get} for an undefined name, builtin wrappers that receive arguments without nodes, Python interop errors that surface inside \texttt{getattr}. There are about 30 such raise sites, scattered across the file. Going site by site and threading a position into each one is a lot of edits and a lot of new bugs.
+
+The pattern in v2.22.3 was instead: wrap \texttt{\_evaluate} and \texttt{\_execute\_statement} in thin dispatchers that catch any position-less \texttt{InterpreterError} and patch it with the current AST node's position. One wrapper, one helper:
+
+\begin{lstlisting}[style=pystyle]
+def _evaluate(self, expr):
+    try:
+        return self._evaluate_impl(expr)
+    except InterpreterError as e:
+        raise self._locate(e, expr)
+
+def _locate(self, err, node):
+    if getattr(err, "line", 0):
+        return err   # inner site knew better -- keep its position
+    line = getattr(node, "line", 0) if node is not None else 0
+    col  = getattr(node, "col", 0)  if node is not None else 0
+    if not line:
+        return err
+    return type(err)(err.message, line=line, col=col)
+\end{lstlisting}
+
+The hook is one function. The 30 raise sites stay as they were. Errors raised from \texttt{Environment.get}, from builtin call failures, from \texttt{getattr} interop --- all get located on whatever AST node was being evaluated at the time. Inner errors with their own position are left alone, because the inner site knew its position better than the outer wrapper does.
+
+\subsection{The renderer}
+
+The actual block layout is in \texttt{RotError.format(source, filename)} in \texttt{rot/errors.py}. Given an error with a \texttt{(line, col)}, the source string, and the file name, it produces the header line, the source line numbered to match, and a caret under the offending column. The line-number gutter is padded to the digit width of the line number so multi-line files align cleanly. When there's no location (\texttt{line == 0}), it falls back to a bare \texttt{error: <message>}. The CLI and REPL both call \texttt{err.format(...)} instead of \texttt{f"rot error: \{err\}"}; \texttt{str(err)} still produces the old \texttt{"line N:C: msg"} format, so the existing test suite stays green.
+
+\subsection{Python-ism hints}
+
+A common user mistake on ROT is typing Python: \texttt{print(...)}, \texttt{None}, \texttt{True}, \texttt{def}, \texttt{self}. The v2.22.6 patch added a small \texttt{\_PYTHON\_HINTS} table to \texttt{Environment.get}: on a name miss, if the missing name is a recognizable Python identifier, the error message appends \texttt{(did you mean 'X'?)}. Concretely:
+
+\begin{lstlisting}[style=plainstyle, basicstyle=\ttfamily\footnotesize]
+name 'print' is not defined  (did you mean 'cout'?)
+name 'None' is not defined   (did you mean 'null'?)
+name 'def' is not defined    (did you mean 'funct'?)
+name 'self' is not defined   (did you mean 'this'?)
+\end{lstlisting}
+
+Plain unknown names don't get the suffix --- the table is a closed set. The honest principle: don't pretend to know what the user meant; suggest only when the suggestion is confidently correct.
+
+% ============================================================
+\section{Information-Leak Hardening}
+% ============================================================
+
+Hosting a language inside Python is convenient, and it's also a security surface. Every time the interpreter falls through to a Python operation --- \texttt{getattr}, a builtin's method, an attribute lookup --- there's a question of what the user sees through that channel. The v2.18.x sweep closed every leak it could find.
+
+\subsection{The \texttt{\_\_class\_\_} leak}
+
+The original \texttt{MemberAccess} handler had a graceful fallback: if the target wasn't a \texttt{RotInstance}, just delegate to Python's \texttt{getattr}. That meant you could read Python attributes off any string, list, or dict:
+
+\begin{lstlisting}[style=rotstyle]
+"abc".__class__              // <class 'str'>
+"abc".__class__.__bases__    // (<class 'object'>,)
+[1 | 2].__init__             // <method-wrapper '__init__' of list object>
+"a".encode()                 // b'a'  <-- a Python bytes object
+\end{lstlisting}
+
+That's a sandbox escape in spirit. Even without active hostility, it pollutes the language with concepts it never intended to expose: Python's type tree, metaclass internals, \texttt{bytes}. None of those exist in ROT. The fix in v2.18.x is three parts.
+
+\textbf{Part one}: reject member names starting with \texttt{\_}. Dunder and private Python conventions are out of scope for ROT, so blocking them is cheap.
+
+\begin{lstlisting}[style=pystyle]
+if expr.member.startswith("_"):
+    type_name = _builtin_type(target)
+    raise InterpreterError(
+        f"no member {expr.member!r} on {type_name}"
+    )
+\end{lstlisting}
+
+\textbf{Part two}: give \texttt{RotClass} and \texttt{BoundMethod} their own \texttt{get\_member} that exposes nothing. Without these, even after the \texttt{\_}-prefix filter, names like \texttt{A.methods}, \texttt{A.name}, \texttt{A.closure}, \texttt{a.f.decl}, \texttt{a.f.instance} would still slip through Python \texttt{getattr} fallback. The dedicated \texttt{get\_member} methods give a clear error for known names (\texttt{cannot access method 'X' directly on class A; call it on an instance}) and reject every other lookup.
+
+\textbf{Part three}: reject Python \texttt{bytes} returns at the call site. \texttt{"abc".encode()} returns a \texttt{bytes} object, which has no ROT type and prints with Python's \texttt{b'...'} repr. The fix is a post-call check:
+
+\begin{lstlisting}[style=pystyle]
+if isinstance(result, (bytes, bytearray, memoryview)):
+    raise InterpreterError(
+        f"method {name!r} returns Python {type(result).__name__}, "
+        f"which is not a ROT type"
+    )
+\end{lstlisting}
+
+\subsection{The principle}
+
+The cumulative effect is small but real: a ROT program cannot navigate to Python's type hierarchy, cannot read a class's internals, cannot acquire a \texttt{bytes} object, and cannot read \texttt{\_}-prefixed attributes on anything. It's not a hardened sandbox --- a determined user could still find an edge case in a builtin --- but the obvious paths are shut. The principle generalizes past ROT: \emph{a hosted language must not leak its host}, and the cost of meeting that property is mostly attention, not code.
+
+% ============================================================
+\section{Testing Methodology}
+% ============================================================
+
+ROT has 628 tests across six files. They divide along four axes.
+
+\textbf{Per-layer unit tests} (\texttt{test\_lexer.py}, \texttt{test\_syntax.py}, \texttt{test\_interpreter.py}) drive each pipeline stage in isolation. The interpreter file is the largest by a wide margin --- 3{,}900 lines, exercising operator semantics, scope rules, control-flow, classes, error messages, and the closure-mutation feature with regression tests for every audit finding it touches.
+
+\textbf{End-to-end golden tests} (\texttt{test\_end\_to\_end.py}) pair every \texttt{.rot} program in \texttt{examples/} with a \texttt{.expected} file and compare captured stdout. If a refactor changes observable output anywhere, this fails first.
+
+\textbf{CLI tests} (\texttt{test\_cli.py}) drive \texttt{python -m rot} via subprocess: \texttt{--version}, \texttt{--no-run}, \texttt{--trace}, error exit codes, the \texttt{rustc}-style block on stderr, default-to-REPL behavior with EOF, BOM-in-source handling, and permission-denied paths. Subprocess drives matter because the CLI is the surface the user actually touches.
+
+\textbf{REPL tests} (\texttt{test\_repl.py}) feed inputs through stdin and check stdout/stderr. They cover multi-line continuation, state preservation across inputs, lex-error recovery, the persistent-history path, and the \texttt{Ctrl-C} signal-handling fix from v2.19.x.
+
+The v2.13.0 audit drove a 12-agent / 81-commit sweep that lifted the test count from 201 to 628 over a few sessions. Each agent owned one minor-version window, cluster of bugs, and matching test additions. That sequencing matters for a particular reason: most bug-fix commits in that range also include a test that pins the new behavior. Tests are the durable artifact; the fix is the perishable one.
+
+% ============================================================
+\section{Lessons Learned}
+% ============================================================
+
+A few of these are language-design lessons; most are not.
+
+\textbf{Patterns over edits.} The \texttt{\_locate} dispatcher is the cleanest design decision in the codebase. Thirty raise sites needed a position. The work-style answer is to thread one through each one. The pattern answer is to wrap \texttt{\_evaluate} and \texttt{\_execute\_statement} so a single layer patches positions on the way out. One change, every site covered, no risk of forgetting one. Across the v2.14--v2.25 sweep, the patterns that fixed dozens of findings at once (the \texttt{set\_local} switch, the builtins-layer frozen env, the dunder-filter at \texttt{MemberAccess}) consistently beat per-site fixes on both line count and bug count.
+
+\textbf{Pin the buggy behavior first if you can't fix it yet.} The v2.24.8 patch added an explicit test for the import-cycle bug --- a test that asserted the \emph{wrong} output as the current behavior. The point wasn't to bless it: it was to make the next change visible. When v2.25.3 fixed the cycle, exactly that test failed, and the failure described what changed. The principle: \emph{the test suite's job is to make change visible, not to certify correctness}.
+
+\textbf{Information leak is a real security property even in a hobby language.} The \texttt{\_\_class\_\_} leak wouldn't damage a single-user toy --- there's no adversary. But "what does my language expose by default" is a property of the language, not of the threat model. Once you start treating it as a real property, the rest of the design improves: \texttt{RotClass}/\texttt{BoundMethod} grow real APIs instead of being thin wrappers around Python objects; the type-introspection builtins become honest; the language as a whole stops accidentally being Python.
+
+\textbf{Closure semantics are a real design choice, not an obvious default.} Section~4 walked through the chain-walking \texttt{set} versus the explicit \texttt{let} pair. The interesting part isn't which one we picked; it's that the pick is non-trivial. Python's choice (\texttt{nonlocal}) is fine; ROT's choice (chain-walk + \texttt{let}) is also fine; making the choice without realizing you were making it would have produced a language with a quiet, recurring footgun. The audit's finding I14 was that exact case: assignment inside a function silently mutated a same-named global, and there was no \texttt{let} to opt out. The fix wasn't to change the chain walk; it was to recognize the design choice and ship the keyword that made it deliberate.
+
+\textbf{Subclass \texttt{BaseException} for control flow, not \texttt{Exception}.} Using \texttt{BaseException} for \texttt{\_ReturnSignal} \& friends means that a user-level \texttt{try/catch} (which maps to Python's \texttt{except Exception}) can't accidentally swallow them. Using plain \texttt{Exception} would have been a debug nightmare: a \texttt{catch} that silently consumed a \texttt{return} would manifest as the function "running to completion" with a \texttt{null} return. The smaller language-design lesson generalizes: when you use exceptions as a non-local jump, make sure they don't share an ancestor with the exceptions your users can catch.
+
+\textbf{Track \texttt{(line, col)} from token zero.} The single highest-leverage decision in the v1.x line was adding source position to \texttt{Token} in v1.2.0. By the time we wanted \texttt{rustc}-style errors in v2.22.7, the position was already on every token and every AST node; the rendering layer was a one-day patch. If positions hadn't been there from the start, the same patch would have been a months-long refactor across every node type and every raise site. The principle: \emph{instrument early, even if you don't yet know what for}.
+
+% ============================================================
+\section{Future Work}
+% ============================================================
+
+The natural next direction is the bytecode VM. Phase~4 of the \texttt{ARCHITECTURE.md} roadmap sketches it: design a small instruction set (about 30 opcodes --- \texttt{LOAD\_CONST}, \texttt{ADD}, \texttt{JUMP\_IF\_FALSE}, \texttt{CALL}, \texttt{RETURN}), compile AST to bytecode, and write a stack-based VM in a single file. The tree-walking interpreter would stay as the reference implementation; the test suite would run against both. Reference: Bob Nystrom's \emph{Crafting Interpreters}~\cite{nystrom2021}, whose Part~III walks this exact path for a similar small language (Lox).
+
+Smaller open items, in roughly the order of how often I've wanted them:
+
+\begin{itemize}[leftmargin=*,nosep,topsep=4pt,partopsep=0pt]
+  \item \textbf{Inheritance and \texttt{super}.} \texttt{super} is reserved with a clear "not supported" error since v2.25.7. Adding single-inheritance is a natural minor release; multiple inheritance is intentionally out of scope.
+  \item \textbf{Multi-line strings.} Triple-quoted, Python-style. Mostly a lexer change.
+  \item \textbf{Integer division.} Deferred in v2.25.6 because \texttt{//} is the comment marker. An alternate token (\texttt{\textasciitilde/}, \texttt{\textbackslash\textbackslash}) was evaluated and rejected. For now, \texttt{floor(a / b)} suffices.
+  \item \textbf{Closure late-binding.} ROT inherits Python's footgun: a loop that creates closures over the loop variable captures by reference, so all the closures see the final value. The v2.24.5 test pinned this; a deliberate fix is open.
+  \item \textbf{Tail-call optimization.} Currently capped at Python's recursion limit. A real TCO pass would matter for deep recursion examples.
+\end{itemize}
+
+% ============================================================
+\section{Conclusion}
+% ============================================================
+
+ROT is a small language that taught me a large number of small lessons. The visible artifact is a tree-walking interpreter with the surface of a hybrid C++/Python toy. The invisible artifact is everything I now know about names binding into the right scope, signals propagating to the right handler, errors carrying the right position from the moment they're raised, and host languages not leaking their hosts. The next phase is a bytecode VM that runs faster; the harder phase was the one that's already done.
+
+% ============================================================
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

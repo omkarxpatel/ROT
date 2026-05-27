@@ -2,6 +2,25 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.13 — design-retrospective paper
+
+### Added
+- [`paper/`](paper/) — a ~11-page LaTeX design retrospective for ROT.
+  Authors: Omkar Patel with Claude Opus 4.7 (1M context). Covers the
+  pipeline, environment design (chain-walking `set`, `set_local`, `let`,
+  frozen builtins), control-flow signals, the `_locate` dispatcher for
+  source-located errors, info-leak hardening, testing methodology, and
+  lessons learned. References Nystrom's *Crafting Interpreters*, Pratt
+  1973, and the rustc error format.
+- [`paper/main.pdf`](paper/main.pdf) — the rendered artifact (296 KB).
+- [`paper/main.tex`](paper/main.tex), [`paper/references.bib`](paper/references.bib),
+  [`paper/README.md`](paper/README.md) — source + build instructions.
+- [`paper/.gitignore`](paper/.gitignore) — LaTeX intermediate artifacts.
+
+### Notes
+- Documentation-only patch. No language code changed.
+- Compiles cleanly via `latexmk -pdf main.tex` with TeX Live.
+
 ## v2.25.12 — refresh HANDOFF.md for the v2.13 → v2.25 sweep
 
 ### Changed
