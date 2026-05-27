@@ -779,6 +779,42 @@ def test_nested_funct_does_not_clobber_outer_funct():
     assert _run(src) == "inner\nouter\n"
 
 
+def test_reassigning_this_in_method_is_rejected():
+    # I22: previously, `this = 5` inside a method would silently mutate the
+    # method's local `this` binding (since methods bind `this` via set_local).
+    # Subsequent uses of `this.something` would then fail confusingly. The
+    # interpreter now rejects `this = ...` at the Assign branch whenever
+    # `this` is currently in scope (i.e. we're inside a method).
+    src = (
+        'class A { f() { this = 5 } }\n'
+        'a = A()\n'
+        'a.f()\n'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "cannot reassign 'this'" in str(exc_info.value)
+
+
+def test_reassigning_this_in_compound_assign_is_rejected():
+    # `this += 1` would silently mutate the local `this` binding the same
+    # way `this = 5` did. Same guard catches compound ops.
+    src = (
+        'class A { f() { this += 1 } }\n'
+        'a = A()\n'
+        'a.f()\n'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "cannot reassign 'this'" in str(exc_info.value)
+
+
+def test_top_level_this_assign_still_legal_for_compat():
+    # Top-level `this = "outer"` is treated as a normal name binding — the
+    # I22 guard only fires when `this` is in scope (inside a method). This
+    # preserves the pre-existing test setup pattern.
+    assert _run('this = "outer"\ncoutln(this)') == "outer\n"
+
+
 def test_catch_var_does_not_clobber_outer_binding():
     # I12: `catch (e)` used to bind `e` via chain-walking `set`, which would
     # find any existing outer `e` (including the math constant) and rebind it.

@@ -300,6 +300,13 @@ class Interpreter:
             self._execute_if(stmt)
             return
         if isinstance(stmt, ast.Assign):
+            # `this = ...` inside a method would silently mutate the local
+            # `this` binding (since methods set_local "this"), breaking the
+            # method body's view of its instance. Reject if `this` is in
+            # scope (we're inside a method). At top level `this` isn't bound,
+            # so `this = ...` there is treated as a normal name binding.
+            if stmt.name == "this" and self._is_this_in_scope():
+                raise InterpreterError("cannot reassign 'this'")
             new_value = self._evaluate(stmt.value)
             if stmt.op == "=":
                 self.env.set(stmt.name, new_value)
@@ -435,6 +442,19 @@ class Interpreter:
     def _execute_block(self, block: ast.Block) -> None:
         for stmt in block.statements:
             self._execute_statement(stmt)
+
+    def _is_this_in_scope(self) -> bool:
+        """True iff `this` is bound somewhere up the env chain. Used to
+        differentiate `this = ...` inside a method (must be rejected — would
+        silently mutate the local `this`) from `this = ...` at top level
+        (treated as a normal name, since the user's scaffolding code may use
+        it that way and `this` is not a reserved binding outside methods)."""
+        env: "Environment | None" = self.env
+        while env is not None:
+            if "this" in env.values:
+                return True
+            env = env.parent
+        return False
 
     def _execute_catch(self, stmt: ast.TryCatch, value: Any) -> None:
         """Run the catch block in a fresh local scope so the catch variable

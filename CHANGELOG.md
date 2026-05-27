@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.16.4 — reject reassigning `this` inside a method
+
+### Fixed
+- **I22**: inside a method, `this = <expr>` (or `this += 1`, etc.) used to silently mutate the method's local `this` binding (methods bind `this` via `set_local`), breaking the rest of the method body's view of its instance. The `Assign` branch in `_execute_statement` now rejects `stmt.name == "this"` whenever `this` is bound somewhere up the env chain (i.e. we're inside a method). Top-level `this = ...` remains legal — a pre-existing test (`test_this_in_method_does_not_clobber_outer_this`) uses it as scaffolding, and outside of methods `this` is not a reserved name. Tests: `test_reassigning_this_in_method_is_rejected`, `test_reassigning_this_in_compound_assign_is_rejected`, `test_top_level_this_assign_still_legal_for_compat`.
+
 ## v2.16.3 — catch variable scoped to the catch block
 
 ### Fixed
