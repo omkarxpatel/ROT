@@ -797,6 +797,16 @@ class Interpreter:
             step = _eval_part(expr.step, "step")
             if step == 0:
                 raise InterpreterError("slice step cannot be zero")
+            # Reject slicing on collection types that don't support it
+            # before reaching Python. Up through 3.11 dict[slice] raised
+            # TypeError ("unhashable type: 'slice'"); from 3.12 onward
+            # slice is hashable and dict[slice] raises KeyError instead.
+            # Explicit check makes the rot-side error message stable
+            # across Python versions and lets us keep a tight catch.
+            if isinstance(target, dict):
+                raise InterpreterError(
+                    f"cannot slice {type(target).__name__}"
+                )
             try:
                 return target[slice(start, stop, step)]
             except TypeError as e:

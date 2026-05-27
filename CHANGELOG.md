@@ -2,6 +2,24 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.11 — dict-slice error works on Python 3.12+
+
+### Fixed
+- `d[a:b]` on a dict now raises a clean `InterpreterError("cannot slice dict")`
+  on every supported Python version. Up through 3.11 the underlying
+  `dict[slice]` raised `TypeError` (slice was unhashable), which our slice
+  handler caught. Python 3.12 made `slice` hashable, so the same code path
+  raised `KeyError` instead — uncaught, leaking a Python traceback.
+- v2.25.9's `test_slice_on_dict_errors` therefore passed on local 3.9 but
+  failed on CI 3.12.
+
+### Changed
+- Slice evaluation (`rot/interpreter.py:776-805`) now explicitly rejects
+  `isinstance(target, dict)` before trying `target[slice(...)]`, so the
+  error message and type are stable across Python versions.
+- The regression test now asserts `match="cannot slice"` directly instead
+  of the previous "or TypeError not in str" hedge.
+
 ## v2.25.10 — f-string format specs (I38)
 
 ### Added

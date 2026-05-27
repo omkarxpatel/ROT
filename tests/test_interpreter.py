@@ -3831,11 +3831,12 @@ def test_slice_bool_index_rejected():
 
 
 def test_slice_on_dict_errors():
-    # Python's dict doesn't support slicing — should yield a clean
-    # rot-side error rather than a Python TypeError.
-    with pytest.raises(InterpreterError) as exc_info:
+    # dicts don't support slicing. The interpreter intercepts before
+    # reaching Python so the message is stable across Python versions
+    # (3.9-3.11 raise TypeError "unhashable", 3.12+ raise KeyError since
+    # slice became hashable).
+    with pytest.raises(InterpreterError, match="cannot slice"):
         _run('d = {"a": 1}\ncoutln(d[1:2])')
-    assert "cannot slice" in str(exc_info.value) or "TypeError" not in str(exc_info.value)
 
 
 def test_slice_in_for_loop_iteration():
