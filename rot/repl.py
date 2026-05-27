@@ -187,12 +187,47 @@ def _needs_more(source: str) -> bool:
     return depth > 0 or in_string
 
 
+def _repl_repr(value: object) -> str:
+    """Format `value` for REPL echo.
+
+    - Strings are quoted (`""` echoes as `""`, not a blank line) and use
+      rot's `\\` / `\"` / `\n` / `\t` / `\r` escapes for legibility.
+    - `null` always prints as `null` (Python-style echo, not silent).
+    - Everything else falls through to `_stringify` (which already gives
+      `true`/`false` for booleans and rot-style output for the rest).
+    """
+    if value is None:
+        return "null"
+    if isinstance(value, str):
+        # Custom repr: double-quoted, escape backslash and double-quote,
+        # plus the common whitespace escapes. We do this by hand rather
+        # than using Python's `repr()` so the output matches rot string
+        # literal syntax (double quotes, not single).
+        out = ['"']
+        for ch in value:
+            if ch == "\\":
+                out.append("\\\\")
+            elif ch == '"':
+                out.append('\\"')
+            elif ch == "\n":
+                out.append("\\n")
+            elif ch == "\t":
+                out.append("\\t")
+            elif ch == "\r":
+                out.append("\\r")
+            else:
+                out.append(ch)
+        out.append('"')
+        return "".join(out)
+    return _stringify(value)
+
+
 def _execute_with_echo(interp: Interpreter, program: ast.Program) -> None:
-    """If the program is a single expression statement, evaluate and print
-    its non-null result (Python-REPL style). Otherwise just execute."""
+    """If the program is a single expression statement, evaluate and echo
+    its result (Python-REPL style). Strings are quoted; `null` prints as
+    `null` rather than being silently suppressed. Otherwise just execute."""
     if len(program.body) == 1 and isinstance(program.body[0], ast.ExprStmt):
         value = interp._evaluate(program.body[0].expr)
-        if value is not None:
-            print(_stringify(value))
+        print(_repl_repr(value))
         return
     interp.execute(program)

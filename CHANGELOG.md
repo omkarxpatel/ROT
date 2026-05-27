@@ -2,6 +2,13 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.19.7 — REPL echo: quote strings, always show null
+
+### Fixed
+- **C15**: typing `""` (empty string) at the REPL used to echo a blank line — visually indistinguishable from a no-op. Strings are now echoed with surrounding quotes and rot's standard escape sequences for `\`, `"`, `\n`, `\t`, `\r`, so `""` displays as `""` and `"a\nb"` displays as `"a\nb"` (the embedded newline is re-escaped).
+- **C16**: typing `null` at the REPL used to be silently suppressed — the user got nothing back, which was confusing. `null` (and any expression that evaluates to null) now echoes `null`. Side effect: function calls that return null (like `coutln("foo")`) now also echo `null` after their printed output; this is the tradeoff for consistent echo semantics.
+- New helper `_repl_repr` formats values for echo: strings use the rot-styled quote-and-escape format above, `None` becomes `"null"`, everything else falls through to `_stringify` (which already handles booleans and numbers in rot style). Tests: `test_repl_empty_string_echoes_with_quotes`, `test_repl_non_empty_string_echoes_with_quotes`, `test_repl_string_with_newline_escape_displays_escape`, `test_repl_string_with_inner_quote_displays_escape`, `test_repl_null_literal_echoes_null`, `test_repl_variable_bound_to_null_echoes_null`, plus six unit tests on `_repl_repr` directly.
+
 ## v2.19.6 — REPL warns on EOF with buffered input
 
 ### Fixed

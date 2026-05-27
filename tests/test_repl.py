@@ -345,3 +345,84 @@ def test_repl_eof_during_unterminated_string_warns(monkeypatch, capsys):
     _drive_repl(monkeypatch, ['"hello'])
     out, err = capsys.readouterr()
     assert "discarded incomplete input" in err
+
+
+# --- C15: empty string echoes as `""`, not blank line ---
+
+def test_repl_empty_string_echoes_with_quotes(monkeypatch, capsys):
+    _drive_repl(monkeypatch, ['""'])
+    out, _ = capsys.readouterr()
+    # Must echo as `""` (two double quotes), not as a blank line.
+    assert '""' in out
+
+
+def test_repl_non_empty_string_echoes_with_quotes(monkeypatch, capsys):
+    _drive_repl(monkeypatch, ['"hello"'])
+    out, _ = capsys.readouterr()
+    assert '"hello"' in out
+
+
+def test_repl_string_with_newline_escape_displays_escape(monkeypatch, capsys):
+    # A string containing a literal newline should display as `\n` in echo.
+    _drive_repl(monkeypatch, ['"a\\nb"'])
+    out, _ = capsys.readouterr()
+    # Source `"a\nb"` decodes to string `"a\nb"` (a newline); echo should
+    # render that newline as the escape `\n` again.
+    assert '"a\\nb"' in out
+
+
+def test_repl_string_with_inner_quote_displays_escape(monkeypatch, capsys):
+    # `"a\"b"` decodes to `a"b`; echo should re-escape the inner quote.
+    _drive_repl(monkeypatch, ['"a\\"b"'])
+    out, _ = capsys.readouterr()
+    assert '"a\\"b"' in out
+
+
+# --- C16: `null` literal echoes as `null` ---
+
+def test_repl_null_literal_echoes_null(monkeypatch, capsys):
+    _drive_repl(monkeypatch, ["null"])
+    out, _ = capsys.readouterr()
+    assert "null" in out
+
+
+def test_repl_variable_bound_to_null_echoes_null(monkeypatch, capsys):
+    _drive_repl(monkeypatch, ["x = null", "x"])
+    out, _ = capsys.readouterr()
+    assert "null" in out
+
+
+# --- _repl_repr unit tests ---
+
+def test_repl_repr_unit_null():
+    from rot.repl import _repl_repr
+    assert _repl_repr(None) == "null"
+
+
+def test_repl_repr_unit_empty_string():
+    from rot.repl import _repl_repr
+    assert _repl_repr("") == '""'
+
+
+def test_repl_repr_unit_plain_string():
+    from rot.repl import _repl_repr
+    assert _repl_repr("hi") == '"hi"'
+
+
+def test_repl_repr_unit_escapes_special_chars():
+    from rot.repl import _repl_repr
+    assert _repl_repr("a\nb") == '"a\\nb"'
+    assert _repl_repr('a"b') == '"a\\"b"'
+    assert _repl_repr("a\\b") == '"a\\\\b"'
+    assert _repl_repr("a\tb") == '"a\\tb"'
+
+
+def test_repl_repr_unit_int_unchanged():
+    from rot.repl import _repl_repr
+    assert _repl_repr(42) == "42"
+
+
+def test_repl_repr_unit_bool_rot_style():
+    from rot.repl import _repl_repr
+    assert _repl_repr(True) == "true"
+    assert _repl_repr(False) == "false"
