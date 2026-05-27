@@ -2,6 +2,12 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.2 — Lexer: bare CR (`\r`) handling
+
+### Fixed
+- **L2**: a bare carriage return (old-Mac line ending, `\r` not followed by `\n`) did not advance `self.line`. `_advance()` only bumps `self.line` on `\n`, and the `\r` branch in `_scan_token` only consumed an additional `\n` if one followed — so `"\ra\rb"` left every token on line 1 with monotonically increasing columns. The `\r` branch now manually does `self.line += 1; self.col = 1` when no `\n` follows. Test: `test_bare_cr_advances_line`, `test_crlf_advances_line_once` (regression for CRLF case).
+- **L4**: a `//` comment on a line ending with bare `\r` (no `\n`) used to consume the rest of the file. `_scan_comment` stopped only on `\n`. It now stops on either `\n` or `\r`, so CR-only line endings no longer cause a single COMMENT token to swallow everything after. Test: `test_comment_with_bare_cr_stops_at_cr`.
+
 ## v2.20.1 — Lexer: reset state between `tokenize()` calls, return fresh list
 
 ### Fixed

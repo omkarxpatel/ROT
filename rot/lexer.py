@@ -105,10 +105,15 @@ class Lexer:
             self._advance()
             self._add("\n", "NEWLINE", start_line, start_col)
         elif ch == "\r":
-            # CRLF on Windows: treat as a single newline. Also handle bare \r.
+            # CRLF on Windows: treat as a single newline. Also handle bare \r
+            # (old-Mac line endings) by manually advancing line tracking,
+            # since _advance only bumps `self.line` on `\n` (L2).
             self._advance()
             if self._peek() == "\n":
                 self._advance()
+            else:
+                self.line += 1
+                self.col = 1
             self._add("\n", "NEWLINE", start_line, start_col)
         elif ch == " " or ch == "\t":
             self._scan_horizontal_space(start_line, start_col)
@@ -135,8 +140,12 @@ class Lexer:
             raise LexerError(f"unexpected character {ch!r}", start_line, start_col)
 
     def _scan_comment(self, line: int, col: int) -> None:
+        # Stop on either `\n` or `\r` so:
+        #   * old-Mac (CR-only) line endings don't make a comment swallow
+        #     the rest of the file (L4)
+        #   * CRLF doesn't capture a trailing `\r` in the COMMENT lexeme (L3)
         start = self.pos
-        while not self._at_end() and self._peek() != "\n":
+        while not self._at_end() and self._peek() not in ("\n", "\r"):
             self._advance()
         self._add(self.source[start : self.pos], "COMMENT", line, col)
 

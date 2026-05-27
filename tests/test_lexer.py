@@ -205,3 +205,34 @@ def test_tokenize_returns_fresh_list_not_internal_reference():
     # The lexer's internal tokens list should be untouched by caller mutation.
     assert len(lex.tokens) == 1
     assert lex.tokens[0].lexeme == "abc"
+
+
+# v2.20.2 — L2: bare CR (old-Mac line ending) must advance line.
+def test_bare_cr_advances_line():
+    tokens = Lexer().tokenize("a\rb\rc")
+    a = next(t for t in tokens if t.lexeme == "a")
+    b = next(t for t in tokens if t.lexeme == "b")
+    c = next(t for t in tokens if t.lexeme == "c")
+    assert (a.line, a.col) == (1, 1)
+    assert (b.line, b.col) == (2, 1)
+    assert (c.line, c.col) == (3, 1)
+
+
+def test_crlf_advances_line_once():
+    tokens = Lexer().tokenize("a\r\nb")
+    a = next(t for t in tokens if t.lexeme == "a")
+    b = next(t for t in tokens if t.lexeme == "b")
+    assert (a.line, a.col) == (1, 1)
+    assert (b.line, b.col) == (2, 1)
+
+
+# v2.20.2 — L4: comment with bare CR must stop at the CR, not consume to EOF.
+def test_comment_with_bare_cr_stops_at_cr():
+    tokens = Lexer().tokenize("// foo\r bar")
+    # First token: a comment that stops at the CR (no `bar` swallowed).
+    assert tokens[0].lexeme == "// foo"
+    assert tokens[0].kind == "COMMENT"
+    # Verify the source after the CR continues to be tokenized: we expect a
+    # NEWLINE, then a SPACE, then the IDENT `bar`.
+    later = [(t.lexeme, t.kind) for t in tokens[1:]]
+    assert ("bar", "IDENT") in later
