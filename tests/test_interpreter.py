@@ -994,6 +994,85 @@ def test_return_at_top_level_raises_interpreter_error():
     assert "outside of a function" in str(exc_info.value)
 
 
+def test_break_inside_function_does_not_escape_into_callers_loop():
+    # I1: `break` in a function called from a loop must NOT bail the caller's
+    # loop. From the function's lexical view it's a break outside any loop.
+    src = (
+        'funct quit() { break }\n'
+        'for i in range(5) { quit() }'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "break" in str(exc_info.value)
+    assert "outside of a loop" in str(exc_info.value)
+
+
+def test_continue_inside_function_does_not_escape_into_callers_loop():
+    # I2: same as I1 but for `continue`.
+    src = (
+        'funct skip() { continue }\n'
+        'for i in range(5) { skip() }'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "continue" in str(exc_info.value)
+    assert "outside of a loop" in str(exc_info.value)
+
+
+def test_break_inside_method_does_not_escape_into_callers_loop():
+    # Same as I1, BoundMethod variant.
+    src = (
+        'class C { quit() { break } }\n'
+        'c = C()\n'
+        'for i in range(5) { c.quit() }'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "break" in str(exc_info.value)
+    assert "outside of a loop" in str(exc_info.value)
+
+
+def test_break_inside_a_loop_inside_a_function_still_works():
+    # Regression: break lexically inside a function's own loop is fine.
+    src = (
+        'funct count_to_two() {\n'
+        '    for i in range(10) {\n'
+        '        if (i == 2) { break }\n'
+        '        coutln(i)\n'
+        '    }\n'
+        '}\n'
+        'count_to_two()'
+    )
+    assert _run(src) == "0\n1\n"
+
+
+def test_continue_inside_a_loop_inside_a_function_still_works():
+    src = (
+        'funct only_odds() {\n'
+        '    for i in range(5) {\n'
+        '        if (i % 2 == 0) { continue }\n'
+        '        coutln(i)\n'
+        '    }\n'
+        '}\n'
+        'only_odds()'
+    )
+    assert _run(src) == "1\n3\n"
+
+
+def test_top_level_break_still_works_after_function_call_in_loop():
+    # Regression: the caller's loop_depth must be restored after a function
+    # returns. A subsequent `break` in the caller's loop should still work.
+    src = (
+        'funct noop() {}\n'
+        'for i in range(5) {\n'
+        '    noop()\n'
+        '    if (i == 2) { break }\n'
+        '    coutln(i)\n'
+        '}'
+    )
+    assert _run(src) == "0\n1\n"
+
+
 def test_method_param_does_not_clobber_outer_scope():
     src = (
         'x = 1\n'

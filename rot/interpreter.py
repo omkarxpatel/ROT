@@ -133,15 +133,30 @@ class RotFunction:
             local.set_local(param, value)
 
         prior = interpreter.env
+        # `_loop_depth` is interpreter-global. Without resetting it, a `break`
+        # inside this function would see a non-zero depth (because the caller
+        # is in a loop) and escape into that caller's loop. Save/restore so
+        # only loops lexically inside this function count.
+        prior_loop_depth = interpreter._loop_depth
+        interpreter._loop_depth = 0
         interpreter.env = local
         interpreter._function_depth += 1
         try:
-            interpreter._execute_block(self.decl.body)
-        except _ReturnSignal as signal:
-            return signal.value
+            try:
+                interpreter._execute_block(self.decl.body)
+            except _ReturnSignal as signal:
+                return signal.value
+            except _BreakSignal:
+                # A `break` that reached here was never caught by a loop
+                # inside this function — it's a `break` outside of any loop
+                # from the function's lexical perspective.
+                raise InterpreterError("`break` outside of a loop")
+            except _ContinueSignal:
+                raise InterpreterError("`continue` outside of a loop")
         finally:
             interpreter.env = prior
             interpreter._function_depth -= 1
+            interpreter._loop_depth = prior_loop_depth
         return None  # fell off the end without `return`
 
 
@@ -206,15 +221,25 @@ class BoundMethod:
         for param, value in zip(self.decl.params, args):
             local.set_local(param, value)
         prior = interpreter.env
+        # See RotFunction.call: reset `_loop_depth` so loops outside this
+        # method can't be broken from inside it.
+        prior_loop_depth = interpreter._loop_depth
+        interpreter._loop_depth = 0
         interpreter.env = local
         interpreter._function_depth += 1
         try:
-            interpreter._execute_block(self.decl.body)
-        except _ReturnSignal as signal:
-            return signal.value
+            try:
+                interpreter._execute_block(self.decl.body)
+            except _ReturnSignal as signal:
+                return signal.value
+            except _BreakSignal:
+                raise InterpreterError("`break` outside of a loop")
+            except _ContinueSignal:
+                raise InterpreterError("`continue` outside of a loop")
         finally:
             interpreter.env = prior
             interpreter._function_depth -= 1
+            interpreter._loop_depth = prior_loop_depth
         return None
 
 

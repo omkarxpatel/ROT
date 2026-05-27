@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.15.1 — break/continue can no longer escape a function boundary
+
+### Fixed
+- **I1, I2**: `break` or `continue` inside a function called from a loop used to silently bail the caller's loop, because `_loop_depth` was interpreter-global. `RotFunction.call` and `BoundMethod.call` now save and zero out `_loop_depth` on entry and restore it in `finally`, so loops outside the function body don't count. They also catch any `_BreakSignal` / `_ContinueSignal` that escapes the function body and re-raise as `InterpreterError("\`break\` outside of a loop")` / `InterpreterError("\`continue\` outside of a loop")` — matching the existing top-level message so error-text assertions stay green. Lexically valid `break` / `continue` (inside a loop inside the function) still work.
+
 ## v2.14.12 — regression test pins UTF-8 on every file-open site
 
 ### Fixed
