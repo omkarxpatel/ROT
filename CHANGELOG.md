@@ -2,6 +2,31 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.23.0 — remove the standalone emitter
+
+### Removed
+- `rot/emitter.py` and `tests/test_emitter.py`.
+
+### Rationale
+The emitter was an AST → Python source translator that hadn't been on the
+active compile path since v2.0.0. The v2.13.0 review and the comprehensive
+v2.13.0 bug audit cataloged 40 drift items (`E1`-`E40`): null/true/false
+mistranslation, `+`-coercion failure, `this` not renamed to `self`,
+`assert(cond, msg)` silently becoming an always-truthy tuple, the v2.10.0
+closure-mutation feature missing the required `nonlocal` declarations, and
+more. With the bytecode-VM direction being the next strategic step, the
+emitter was dead weight.
+
+### Updated
+- `rot/ast.py`, `rot/compiler.py`, `rot/keywords.py`, `ARCHITECTURE.md` —
+  docstrings and prose reference an emitter no longer.
+- `ARCHITECTURE.md` — removed the "Emitter side-path" section and the
+  emitter row in the modules table.
+
+### Notes
+- No interpreter or parser behavior changed.
+- Existing test count drops by 9 (the emitter unit tests).
+
 ## v2.22.7 — rustc-style source-line + caret error rendering
 
 ### Added

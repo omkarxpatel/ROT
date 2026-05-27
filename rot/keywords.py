@@ -12,8 +12,8 @@ classified as ``IDENT`` (since v2.6.0).
 Comments in rot use ``//`` (C-style), not ``#``.
 
 PY_EQUIVALENT was retired in v1.9.0 along with the token-to-string
-transpiler. The AST emitter (rot/emitter.py) now owns the
-token-kind-to-Python translation.
+transpiler. The standalone emitter that briefly owned the
+token-kind-to-Python translation was removed in v2.23.0.
 """
 
 from __future__ import annotations

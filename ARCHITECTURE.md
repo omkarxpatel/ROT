@@ -50,7 +50,7 @@ For release-by-release history see [`CHANGELOG.md`](CHANGELOG.md). For the curre
 
 Three stages on the active path, plus the orchestrator. Python's `exec()` is no longer involved — the interpreter walks the AST directly.
 
-(The v1.9.0 AST → Python emitter still lives in `rot/emitter.py` as a parallel/optional path, but the default compile flow goes straight through the interpreter now.)
+(The v1.9.0 AST → Python emitter was removed in v2.23.0; its known drift and the bytecode-VM direction made it dead weight.)
 
 ## The modules
 
@@ -64,7 +64,6 @@ Three stages on the active path, plus the orchestrator. Python's `exec()` is no 
 | [`rot/ast.py`](rot/ast.py) | AST node dataclasses | ~65 |
 | [`rot/syntax.py`](rot/syntax.py) | recursive-descent parser: tokens → AST (Pratt for expressions) | ~170 |
 | [`rot/interpreter.py`](rot/interpreter.py) | **tree-walking interpreter** over the AST | ~150 |
-| [`rot/emitter.py`](rot/emitter.py) | AST → Python source (off the active path; kept tested) | ~80 |
 | [`rot/keywords.py`](rot/keywords.py) | `KEYWORDS` lookup | ~25 |
 | [`rot/token.py`](rot/token.py) | `Token` dataclass | 10 |
 | [`rot/errors.py`](rot/errors.py) | `LexerError` / `ParserError` / `InterpreterError` carrying `(line, col)` | ~25 |
@@ -195,10 +194,6 @@ Errors that aren't syntax errors come out as `InterpreterError(line, col)`: unde
 
 This is the simplest interpreter architecture: literally walk the AST nodes and do what each one means. Slow per operation (every function call traverses Python objects), but the reference for what the language *means*. Future phases (bytecode VM, native codegen) optimize how it runs, not what it does.
 
-### Emitter side-path
-
-`rot/emitter.py` still exists. It walks the AST and produces equivalent Python source. It's not on the default execution path in v2.0.0 but its tests still pass, and a future `--transpile` flag could rewire it for diagnostics or polyglot output.
-
 ## Stage 4 — Compiler orchestration
 
 ```python
@@ -237,10 +232,10 @@ $ python -m rot --version                           # print version
 - **`test_lexer.py`** — keyword vs identifier classification, line/col tracking, multi-char operator tokens, `LexerError` location, comment lexing, `R_CURLY`, uppercase rejection.
 - **`test_syntax.py`** — AST construction: call shapes, atoms, Pratt precedence/associativity, parenthesized grouping, `FuncDef` / `IfStmt` / `Block`, plus a full-program parse of `examples/functions.rot`.
 - **`test_interpreter.py`** — runtime semantics: `cout`/`coutln`, function definition + call, arity check, `if/elif/else` selection, arithmetic precedence, undefined-name and lexical-scope errors.
-- **`test_emitter.py`** — AST → Python (off the active path but still verified): translation rules, indentation, precedence parens.
 - **`test_end_to_end.py`** — every `examples/*.rot` paired with a `.expected` file. Runs through `Compiler.run()` with captured stdout.
+- **`test_repl.py`** — REPL multi-line input, signal handling, history.
 
-57 tests, ~90 ms total runtime.
+500+ tests.
 
 ## Behavioral quirks worth knowing
 

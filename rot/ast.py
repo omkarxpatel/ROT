@@ -15,8 +15,7 @@ Every node carries optional ``line`` and ``col`` source-position fields
 the corresponding source span. The interpreter threads them into
 ``InterpreterError`` raises so runtime errors carry source location.
 Source-position fields live AFTER any existing fields with defaults so
-positional construction (kwargs in syntax.py, but positional in a few
-emitter tests) keeps working.
+positional construction (kwargs in syntax.py) keeps working.
 """
 
 from __future__ import annotations

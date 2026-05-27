@@ -2,11 +2,9 @@
 
 v2.0.0 replaced the Python-source emitter + exec() flow with a direct
 tree-walking interpreter (rot/interpreter.py). ROT no longer compiles
-to Python — it runs its own AST.
-
-The emitter (rot/emitter.py) still exists for anyone who wants to
-inspect an equivalent Python rendering, but it's no longer on the
-default execution path.
+to Python — it runs its own AST. The standalone emitter was removed
+in v2.23.0; if you want an AST-to-Python rendering, build it on top of
+rot.ast.
 """
 
 from __future__ import annotations
