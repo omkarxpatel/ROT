@@ -2373,3 +2373,66 @@ def test_fstring_list_uses_pipe_separator():
     # I39: f-string interpolation goes through `_stringify`, so lists also
     # render rot-style inside f-strings.
     assert _run('xs = [1 | 2]\ncoutln(f"got {xs}")') == "got [1 | 2]\n"
+
+
+# ==== v2.21.2: _stringify renders dicts in rot style (B1) =====================
+
+def test_stringify_empty_dict_renders_as_braces():
+    # B1: empty dict — Python's `{}` happens to be the rot literal too.
+    from rot.builtins import _stringify
+    assert _stringify({}) == "{}"
+
+
+def test_stringify_dict_with_string_keys():
+    # B1: `{'a': 1}` (Python repr with single quotes) is now `{"a": 1}` —
+    # double-quoted keys matching rot literal syntax.
+    from rot.builtins import _stringify
+    assert _stringify({"a": 1}) == '{"a": 1}'
+
+
+def test_stringify_dict_uses_pipe_separator():
+    # B1: dict entries are joined with rot's `|` separator (not Python's `,`).
+    from rot.builtins import _stringify
+    # Python dicts preserve insertion order (3.7+), so this is stable.
+    assert _stringify({"a": 1, "b": 2}) == '{"a": 1 | "b": 2}'
+
+
+def test_stringify_dict_with_rot_scalar_values():
+    # B1: values render in rot style — `null`/`true`/`false` not Python forms.
+    from rot.builtins import _stringify
+    assert _stringify({"a": True, "b": None}) == '{"a": true | "b": null}'
+
+
+def test_stringify_dict_with_non_string_keys():
+    # B1: non-string keys also go through `_stringify` (rot scalars).
+    from rot.builtins import _stringify
+    assert _stringify({1: True}) == "{1: true}"
+
+
+def test_stringify_dict_with_nested_list_value():
+    # B1: nested collections render rot-style at every depth.
+    from rot.builtins import _stringify
+    assert _stringify({"xs": [1, 2]}) == '{"xs": [1 | 2]}'
+
+
+def test_stringify_list_of_dicts():
+    # B1: lists of dicts render rot-style at both levels.
+    from rot.builtins import _stringify
+    assert _stringify([{"a": 1}, {"b": 2}]) == '[{"a": 1} | {"b": 2}]'
+
+
+def test_coutln_dict_renders_rot_style():
+    # B1: `coutln({"a": 1})` used to print `{'a': 1}` (Python repr). Now
+    # prints rot-style with double-quoted keys and `|` separator.
+    assert _run('coutln({"a": 1 | "b": 2})') == '{"a": 1 | "b": 2}\n'
+
+
+def test_coutln_dict_with_bool_value():
+    # B1: dict values render in rot style.
+    assert _run('coutln({"flag": true})') == '{"flag": true}\n'
+
+
+def test_fstring_dict_uses_rot_style():
+    # I39: f-string interpolation uses _stringify, so dicts render rot-style
+    # inside f-strings too.
+    assert _run('d = {"a": 1}\ncoutln(f"got {d}")') == 'got {"a": 1}\n'

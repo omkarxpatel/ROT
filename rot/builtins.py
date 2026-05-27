@@ -47,8 +47,10 @@ def _stringify(x: Any) -> str:
     `true`/`false` instead of `True`/`False`. Used by `str()` and by
     interpreter's cout/coutln to keep output consistent with source.
 
-    Lists render with rot's `|` separator (`[a | b | c]`) and recurse so
-    nested elements use rot style too.
+    Lists render with rot's `|` separator (`[a | b | c]`) and dicts render
+    as `{k: v | k2: v2}` — both recurse so nested elements use rot style
+    too. String keys in dicts are double-quoted (matching rot literal
+    syntax); other keys are stringified recursively.
     """
     if x is None:
         return "null"
@@ -56,7 +58,19 @@ def _stringify(x: Any) -> str:
         return "true" if x else "false"
     if isinstance(x, list):
         return "[" + " | ".join(_stringify(item) for item in x) + "]"
+    if isinstance(x, dict):
+        return "{" + " | ".join(
+            f"{_stringify_key(k)}: {_stringify(v)}" for k, v in x.items()
+        ) + "}"
     return str(x)
+
+
+def _stringify_key(k: Any) -> str:
+    """Render a dict key. String keys are double-quoted so the output looks
+    like a rot dict literal; everything else goes through `_stringify`."""
+    if isinstance(k, str):
+        return f'"{k}"'
+    return _stringify(k)
 
 
 def _builtin_str(*args: Any) -> str:

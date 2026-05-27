@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.21.2 — `_stringify` renders dicts in rot style
+
+### Fixed
+- **B1 (dicts)**: `coutln({"a": 1 | "b": true})` used to print `{'a': 1, 'b': True}` — Python's `str(dict)` was leaking through `_stringify`. `_stringify` now recurses into dicts, joining entries with rot's `|` separator and rendering string keys with double quotes (matching rot literal syntax). Non-string keys are stringified recursively, so booleans/null inside dicts also render rot-style. New helper `_stringify_key` handles the string-key quoting. Tests: `test_stringify_empty_dict_renders_as_braces`, `test_stringify_dict_with_string_keys`, `test_stringify_dict_uses_pipe_separator`, `test_stringify_dict_with_rot_scalar_values`, `test_stringify_dict_with_non_string_keys`, `test_stringify_dict_with_nested_list_value`, `test_stringify_list_of_dicts`, `test_coutln_dict_renders_rot_style`, `test_coutln_dict_with_bool_value`, `test_fstring_dict_uses_rot_style`.
+
 ## v2.21.1 — `_stringify` renders lists in rot style
 
 ### Fixed
