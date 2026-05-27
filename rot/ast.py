@@ -99,6 +99,22 @@ class Index:
 
 
 @dataclass
+class Slice:
+    """v2.25.9: a slice expression `target[start:stop:step]`.
+
+    Each of `start`, `stop`, `step` is optional; `None` means "default"
+    (Python slice semantics: `None` for start means 0 if step > 0 or
+    len-1 if step < 0; `None` for stop means len or -1; `None` for step
+    means 1)."""
+    target: "Expression"
+    start: "Expression | None" = None
+    stop: "Expression | None" = None
+    step: "Expression | None" = None
+    line: int = 0
+    col: int = 0
+
+
+@dataclass
 class MemberAccess:
     target: "Expression"
     member: str
@@ -115,7 +131,7 @@ class DictLit:
 
 Expression = Union[
     Identifier, NumberLit, StringLit, BoolLit, NullLit, Call, BinaryOp, UnaryOp,
-    ListLit, Index, MemberAccess, DictLit,
+    ListLit, Index, Slice, MemberAccess, DictLit,
 ]
 
 

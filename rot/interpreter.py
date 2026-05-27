@@ -773,6 +773,36 @@ class Interpreter:
                 raise InterpreterError(f"index error: {index!r}")
             except (IndexError, TypeError) as e:
                 raise InterpreterError(f"index error: {e}")
+        if isinstance(expr, ast.Slice):
+            # v2.25.9: evaluate each present component, defaulting to None
+            # so Python's slice() applies its standard semantics (start
+            # defaults to 0, stop to len, step to 1; negative bounds wrap
+            # from the end). Reject non-int slice components with a clean
+            # rot-side message.
+            target = self._evaluate(expr.target)
+            def _eval_part(part: "ast.Expression | None", name: str) -> "int | None":
+                if part is None:
+                    return None
+                val = self._evaluate(part)
+                if val is None:
+                    return None
+                if isinstance(val, bool) or not isinstance(val, int):
+                    raise InterpreterError(
+                        f"slice {name} must be an integer, got "
+                        f"{type(val).__name__}"
+                    )
+                return int(val)
+            start = _eval_part(expr.start, "start")
+            stop = _eval_part(expr.stop, "stop")
+            step = _eval_part(expr.step, "step")
+            if step == 0:
+                raise InterpreterError("slice step cannot be zero")
+            try:
+                return target[slice(start, stop, step)]
+            except TypeError as e:
+                raise InterpreterError(
+                    f"cannot slice {type(target).__name__}: {e}"
+                )
         if isinstance(expr, ast.MemberAccess):
             target = self._evaluate(expr.target)
             # rot instances have their own member lookup; everything else

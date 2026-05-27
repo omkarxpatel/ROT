@@ -2,6 +2,13 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.9 — language: slicing for strings and lists (I33)
+
+### Added
+- Slice expressions on strings and lists: `s[a:b]`, `xs[a:b]`, `s[a:b:c]`. Each of start/stop/step is optional — `xs[:3]`, `xs[2:]`, `xs[:]`, `xs[::2]`, `xs[::-1]` all work. Negative bounds wrap from the end, out-of-range bounds clamp (no error), and the step controls direction (`[::-1]` reverses). New AST node `ast.Slice(target, start, stop, step)`; parser routes to it from `_parse_index_tail` when it sees a `:` after the first component. Dict literals are unambiguous because they're inside `{...}` (COLON inside `[...]` is always a slice). Interpreter rejects non-int slice components and step=0 with clean rot-side errors. Slice on a dict surfaces "cannot slice dict: ..." rather than a raw Python TypeError.
+- Slice ASSIGNMENT (`xs[a:b] = ...`) is intentionally NOT supported in this release — the parser rejects it as an invalid assignment target. Can be added later if needed.
+- 23 new tests covering strings, lists, omitted components, negative bounds, step, reverse, mutation-safety, errors, and iteration.
+
 ## v2.25.8 — builtins: sum, sorted, reversed, keys, values, items, chr, ord, seed, exit (B62, B63)
 
 ### Added

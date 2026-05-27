@@ -577,13 +577,50 @@ class Parser:
         tcol = getattr(callee, 'col', 0) or paren_tok.col
         return ast.Call(callee=callee, args=args, line=tline, col=tcol)
 
-    def _parse_index_tail(self, target: ast.Expression) -> ast.Index:
+    def _parse_index_tail(self, target: ast.Expression) -> "ast.Index | ast.Slice":
+        """Parse `[expr]` (Index) or `[a:b]` / `[a:b:c]` / `[:b]` / `[::2]`
+        (Slice). v2.25.9: any of start/stop/step may be omitted; an empty
+        position defaults to None at the AST level (Python-slice semantics
+        at interpret time)."""
         bracket_tok = self._consume("L_BRACKET")
-        index = self._parse_expression()
-        self._consume("R_BRACKET")
         tline = getattr(target, 'line', 0) or bracket_tok.line
         tcol = getattr(target, 'col', 0) or bracket_tok.col
-        return ast.Index(target=target, index=index, line=tline, col=tcol)
+
+        # First component: present if the next token isn't `:` or `]`.
+        start: "ast.Expression | None" = None
+        if not self._check("COLON") and not self._check("R_BRACKET"):
+            start = self._parse_expression()
+
+        # If the next token isn't `:`, this is a plain Index (or we're at `]`).
+        if not self._check("COLON"):
+            if start is None:
+                # Empty `[]` is a parse error — keep the existing behavior
+                # of requiring an index expression.
+                raise ParserError(
+                    "expected expression inside '[]'",
+                    bracket_tok.line, bracket_tok.col,
+                )
+            self._consume("R_BRACKET")
+            return ast.Index(target=target, index=start, line=tline, col=tcol)
+
+        # Slice: consume the first colon and parse `stop`.
+        self._advance()  # consume COLON
+        stop: "ast.Expression | None" = None
+        if not self._check("COLON") and not self._check("R_BRACKET"):
+            stop = self._parse_expression()
+
+        # Optional second colon for the step.
+        step: "ast.Expression | None" = None
+        if self._check("COLON"):
+            self._advance()
+            if not self._check("R_BRACKET"):
+                step = self._parse_expression()
+
+        self._consume("R_BRACKET")
+        return ast.Slice(
+            target=target, start=start, stop=stop, step=step,
+            line=tline, col=tcol,
+        )
 
     def _parse_list_literal(self) -> ast.ListLit:
         bracket_tok = self._consume("L_BRACKET")

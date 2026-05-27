@@ -3738,3 +3738,127 @@ def test_exit_rejects_non_int_code():
 def test_exit_rejects_too_many_args():
     with pytest.raises(InterpreterError):
         _run("exit(1 | 2)")
+
+
+# ==== v2.25.9: slicing (strings + lists) ====================================
+
+
+def test_string_slice_basic():
+    assert _run('coutln("abcde"[1:3])') == "bc\n"
+
+
+def test_string_slice_omitted_start_defaults_to_zero():
+    assert _run('coutln("abcde"[:3])') == "abc\n"
+
+
+def test_string_slice_omitted_stop_defaults_to_end():
+    assert _run('coutln("abcde"[2:])') == "cde\n"
+
+
+def test_string_slice_both_omitted_returns_copy():
+    assert _run('coutln("abcde"[:])') == "abcde\n"
+
+
+def test_string_slice_negative_indices_wrap_from_end():
+    assert _run('coutln("abcde"[-3:-1])') == "cd\n"
+
+
+def test_string_slice_with_step():
+    assert _run('coutln("abcdef"[0:6:2])') == "ace\n"
+
+
+def test_string_slice_reverse_with_negative_step():
+    assert _run('coutln("abc"[::-1])') == "cba\n"
+
+
+def test_list_slice_basic():
+    assert _run("coutln([1 | 2 | 3 | 4 | 5][1:4])") == "[2 | 3 | 4]\n"
+
+
+def test_list_slice_omitted_start():
+    assert _run("coutln([1 | 2 | 3 | 4][:2])") == "[1 | 2]\n"
+
+
+def test_list_slice_omitted_stop():
+    assert _run("coutln([1 | 2 | 3 | 4][2:])") == "[3 | 4]\n"
+
+
+def test_list_slice_negative_bounds():
+    assert _run("coutln([10 | 20 | 30 | 40 | 50][-3:-1])") == "[30 | 40]\n"
+
+
+def test_list_slice_with_step():
+    assert _run("coutln([1 | 2 | 3 | 4 | 5 | 6][::2])") == "[1 | 3 | 5]\n"
+
+
+def test_list_slice_reverse():
+    assert _run("coutln([1 | 2 | 3 | 4][::-1])") == "[4 | 3 | 2 | 1]\n"
+
+
+def test_list_slice_out_of_range_yields_empty_no_error():
+    # Python-slice semantics: out-of-range bounds clamp, never error.
+    assert _run("coutln([1 | 2 | 3][10:20])") == "[]\n"
+
+
+def test_list_slice_does_not_mutate_original():
+    src = (
+        'xs = [1 | 2 | 3 | 4]\n'
+        'ys = xs[1:3]\n'
+        'coutln(xs)\n'
+        'coutln(ys)'
+    )
+    out = _run(src)
+    assert "[1 | 2 | 3 | 4]" in out
+    assert "[2 | 3]" in out
+
+
+def test_slice_step_zero_errors():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("coutln([1 | 2 | 3][::0])")
+    assert "step" in str(exc_info.value)
+
+
+def test_slice_non_int_index_errors():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln([1 | 2 | 3]["a":2])')
+    assert "must be an integer" in str(exc_info.value)
+
+
+def test_slice_bool_index_rejected():
+    # bools could silently coerce to 0/1; reject explicitly.
+    with pytest.raises(InterpreterError):
+        _run("coutln([1 | 2 | 3][true:false])")
+
+
+def test_slice_on_dict_errors():
+    # Python's dict doesn't support slicing — should yield a clean
+    # rot-side error rather than a Python TypeError.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('d = {"a": 1}\ncoutln(d[1:2])')
+    assert "cannot slice" in str(exc_info.value) or "TypeError" not in str(exc_info.value)
+
+
+def test_slice_in_for_loop_iteration():
+    # The slice result is a regular list and can be iterated.
+    src = 'for x in [1 | 2 | 3 | 4 | 5][1:4] { coutln(x) }'
+    assert _run(src) == "2\n3\n4\n"
+
+
+def test_slice_assignment_is_rejected_at_parse_time():
+    # `xs[1:3] = ...` is not supported yet; the parser rejects it.
+    from rot.errors import ParserError
+    with pytest.raises(ParserError):
+        _run("xs = [1 | 2 | 3]\nxs[0:2] = [9 | 9]")
+
+
+def test_string_slice_empty_result():
+    assert _run('coutln("abc"[2:2])') == "\n"
+
+
+def test_chained_slice_on_call_result():
+    # Slice can follow a call expression, just like plain indexing.
+    src = (
+        'funct xs() { return [10 | 20 | 30 | 40] }\n'
+        'coutln(xs()[1:3])'
+    )
+    assert _run(src) == "[20 | 30]\n"
