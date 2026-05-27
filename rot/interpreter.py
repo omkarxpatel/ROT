@@ -604,7 +604,20 @@ class Interpreter:
             index = self._evaluate(expr.index)
             try:
                 return target[index]
-            except (IndexError, KeyError, TypeError) as e:
+            except KeyError:
+                # I35: missing dict key used to produce `index error: 'k'`
+                # — no indication it was a dict lookup. Emit a clean
+                # "key 'k' not found in dict" message instead. (KeyError
+                # comes from dict indexing; list out-of-range raises
+                # IndexError, which falls through to the generic branch
+                # below.)
+                if isinstance(target, dict):
+                    raise InterpreterError(f"key {index!r} not found in dict")
+                # Defensive: in principle a non-dict target could raise
+                # KeyError (e.g. a Python user object overriding
+                # __getitem__), but in rot this path is dict-only today.
+                raise InterpreterError(f"index error: {index!r}")
+            except (IndexError, TypeError) as e:
                 raise InterpreterError(f"index error: {e}")
         if isinstance(expr, ast.MemberAccess):
             target = self._evaluate(expr.target)

@@ -1315,6 +1315,27 @@ def test_compound_index_assign_on_string_says_strings_are_immutable():
     assert "strings are immutable in rot" in str(exc_info.value)
 
 
+def test_missing_dict_key_says_key_not_found_in_dict():
+    # I35: `d["missing"]` used to produce `index error: 'missing'` — no
+    # indication it was a dict lookup. Now mentions both "key" and "dict".
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('d = {"a": 1}\ncoutln(d["missing"])')
+    msg = str(exc_info.value)
+    assert "key" in msg
+    assert "dict" in msg
+    assert "'missing'" in msg
+
+
+def test_list_out_of_range_index_still_says_index_error():
+    # Regression: lists still produce `index error: ...`. The I35 fix
+    # only changed dict messages; list IndexError must keep the existing
+    # phrasing so a future cleanup of list-error wording is a separate
+    # design decision.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("xs = [1 | 2]\ncoutln(xs[5])")
+    assert "index error" in str(exc_info.value)
+
+
 def test_for_over_non_iterable_raises_interpreter_error():
     with pytest.raises(InterpreterError) as exc_info:
         _run("for x in 123 { coutln(x) }")

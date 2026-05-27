@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.17.5 — missing dict key says "key 'k' not found in dict"
+
+### Fixed
+- **I35**: `d["missing"]` used to produce `index error: 'missing'` — no indication it was a dict lookup, just a generic index error. The `Index` branch in `_evaluate` now splits the `KeyError` handler out: dict targets produce `key 'missing' not found in dict`; `IndexError`/`TypeError` (lists, strings, wrong index types) keep the existing `index error: ...` phrasing. Tests: `test_missing_dict_key_says_key_not_found_in_dict`, `test_list_out_of_range_index_still_says_index_error` (regression pinning lists' existing wording).
+
 ## v2.17.4 — clean message for index-assign on a string
 
 ### Fixed
