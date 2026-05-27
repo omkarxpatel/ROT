@@ -78,6 +78,83 @@ _COMPOUND_ASSIGN_TOKENS: dict[str, str] = {
 }
 
 
+# Friendly user-facing names for token kinds. The parser's internal
+# `tok.kind` strings are jargon (`L_PAREN`, `COMMA`, `EQ_EQ`, ...) — fine
+# for the lexer's table but unhelpful in user-facing error messages.
+# ``_token_display`` looks up a friendly form; falls through to the raw
+# kind for anything not covered. The COMMA entry is `'|'` because ROT
+# uses `|` as the parameter/argument separator and lexes it under the
+# `COMMA` kind for legacy reasons.
+_TOKEN_DISPLAY: dict[str, str] = {
+    # Punctuation & operators
+    "L_PAREN":       "'('",
+    "R_PAREN":       "')'",
+    "L_CURLY":       "'{'",
+    "R_CURLY":       "'}'",
+    "L_BRACKET":     "'['",
+    "R_BRACKET":     "']'",
+    "COMMA":         "'|'",
+    "DOT":           "'.'",
+    "COLON":         "':'",
+    "SETVALUE":      "'='",
+    "EQ_EQ":         "'=='",
+    "NEQ":           "'!='",
+    "LESSTHAN":      "'<'",
+    "LE":            "'<='",
+    "GREATERTHAN":   "'>'",
+    "GE":            "'>='",
+    "ADDITION":      "'+'",
+    "SUBTRACTION":   "'-'",
+    "MULTIPLICATION": "'*'",
+    "DIVISION":      "'/'",
+    "MODULO":        "'%'",
+    "PLUS_EQ":       "'+='",
+    "MINUS_EQ":      "'-='",
+    "STAR_EQ":       "'*='",
+    "SLASH_EQ":      "'/='",
+    "PERCENT_EQ":    "'%='",
+    # Literals / structure
+    "STRING_LIT":    "string literal",
+    "FSTRING":       "f-string",
+    "NUMBER":        "number",
+    "IDENT":         "identifier",
+    "NEWLINE":       "end of line",
+    # Keywords
+    "FUNCTION":      "'funct'",
+    "RETURN":        "'return'",
+    "IF":            "'if'",
+    "ELIF":          "'elseif'",
+    "ELSE":          "'else'",
+    "WHILE":         "'while'",
+    "FOR":           "'for'",
+    "IN":            "'in'",
+    "BREAK":         "'break'",
+    "CONTINUE":      "'continue'",
+    "CLASS":         "'class'",
+    "THIS":          "'this'",
+    "TRY":           "'try'",
+    "CATCH":         "'catch'",
+    "THROW":         "'throw'",
+    "IMPORT":        "'import'",
+    "LET":           "'let'",
+    "TRUE":          "'true'",
+    "FALSE":         "'false'",
+    "NULL":          "'null'",
+    "AND":           "'and'",
+    "OR":            "'or'",
+    "NOT":           "'not'",
+    "PRINT":         "'cout'",
+    "PRINTLN":       "'coutln'",
+}
+
+
+def _token_display(kind: str) -> str:
+    """Map a token kind to its user-facing display string. Unknown kinds
+    fall through unchanged — better to show the raw kind than to hide an
+    error class behind a generic stand-in."""
+    return _TOKEN_DISPLAY.get(kind, kind)
+
+
 _ESCAPE_SEQUENCES: dict[str, str] = {
     "n":  "\n",
     "t":  "\t",
@@ -242,20 +319,20 @@ class Parser:
         if next_tok is not None and next_tok.kind in ("DOT", "L_BRACKET", "L_PAREN"):
             raise ParserError(
                 f"`let` target must be a bare identifier, "
-                f"got {next_tok.kind}",
+                f"got {_token_display(next_tok.kind)}",
                 next_tok.line,
                 next_tok.col,
             )
         if next_tok is not None and next_tok.kind != "SETVALUE":
             raise ParserError(
-                f"expected `=` after `let {name_tok.lexeme}`, "
-                f"got {next_tok.kind}",
+                f"expected '=' after `let {name_tok.lexeme}`, "
+                f"got {_token_display(next_tok.kind)}",
                 next_tok.line,
                 next_tok.col,
             )
         if next_tok is None:
             raise ParserError(
-                f"expected `=` after `let {name_tok.lexeme}`, got end of input",
+                f"expected '=' after `let {name_tok.lexeme}`, got end of input",
                 let_tok.line,
                 let_tok.col,
             )
@@ -430,7 +507,8 @@ class Parser:
                               dot_tok.line, dot_tok.col)
         if name_tok.kind != "IDENT" and not name_tok.lexeme.isidentifier():
             raise ParserError(
-                f"expected member name after `.`, got {name_tok.kind}",
+                f"expected member name after `.`, "
+                f"got {_token_display(name_tok.kind)}",
                 name_tok.line, name_tok.col,
             )
         self._advance()
@@ -539,7 +617,8 @@ class Parser:
             self._advance()
             return ast.NullLit(line=tok.line, col=tok.col)
         raise ParserError(
-            f"expected expression, got {tok.kind} ({tok.lexeme!r})",
+            f"expected expression, got {_token_display(tok.kind)} "
+            f"({tok.lexeme!r})",
             tok.line,
             tok.col,
         )
@@ -643,11 +722,13 @@ class Parser:
         if self._check(kind):
             return self._advance()
         tok = self._peek()
+        want = _token_display(kind)
         if tok is None:
             eline, ecol = self._eof_pos()
-            raise ParserError(f"expected {kind}, got end of input", eline, ecol)
+            raise ParserError(f"expected {want}, got end of input", eline, ecol)
+        got = _token_display(tok.kind)
         raise ParserError(
-            f"expected {kind}, got {tok.kind}",
+            f"expected {want}, got {got}",
             tok.line,
             tok.col,
         )

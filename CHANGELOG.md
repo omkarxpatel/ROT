@@ -2,6 +2,16 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.22.5 — Friendly token-display names in parser errors
+
+### Added
+- `_TOKEN_DISPLAY` table and `_token_display(kind)` helper in `rot/syntax.py`. Maps every token kind to a user-facing display string: punctuation/operators render as quoted glyphs (`L_PAREN` → `"'('"`, `EQ_EQ` → `"'=='"`, `COMMA` → `"'|'"` since `|` is ROT's argument separator), keywords render as quoted keyword (`FUNCTION` → `"'funct'"`, `IF` → `"'if'"`), and broad categories render as plain English (`IDENT` → `"identifier"`, `STRING_LIT` → `"string literal"`, `NUMBER` → `"number"`).
+- Updated parser sites that previously leaked raw kinds: `_consume` (`expected L_PAREN, got IDENT` → `expected '(', got identifier`), `_parse_atom`'s "expected expression" branch, `_parse_let_stmt`'s "expected = after let" branches, `_parse_member_tail`'s "expected member name after `.`".
+- New tests: `test_consume_error_uses_friendly_display_not_kind`, `test_atom_error_uses_friendly_display`, `test_member_after_dot_uses_friendly_display`.
+
+### Notes
+- Pre-existing tests in `test_syntax.py` used `with pytest.raises(ParserError):` without inspecting message contents, so none broke. The `with pytest.raises(ParserError, match="..."):` style was not in use for token-kind substrings, so no test had to be updated.
+
 ## v2.22.4 — `ParserError` raises consistently carry line/col
 
 ### Added

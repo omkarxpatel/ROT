@@ -571,3 +571,37 @@ def test_expected_token_at_eof_carries_line_col():
     err = exc_info.value
     assert err.line == 1
     assert err.col > 0
+
+
+# ---------- v2.22.5: friendly token-display names -----------------------
+
+
+def test_consume_error_uses_friendly_display_not_kind():
+    """v2.22.5: parser errors no longer leak raw token kinds like
+    `L_PAREN`, `IDENT`, etc. They're translated to user-facing display
+    strings via `_token_display`."""
+    with pytest.raises(ParserError) as exc_info:
+        _parse("funct hi x")
+    msg = str(exc_info.value)
+    assert "L_PAREN" not in msg
+    assert "'('" in msg
+    assert "IDENT" not in msg
+    assert "identifier" in msg
+
+
+def test_atom_error_uses_friendly_display():
+    with pytest.raises(ParserError) as exc_info:
+        _parse("1 + +")
+    msg = str(exc_info.value)
+    # The bad token is `+` (ADDITION); should render as `'+'` not `ADDITION`.
+    assert "ADDITION" not in msg
+    assert "'+'" in msg
+
+
+def test_member_after_dot_uses_friendly_display():
+    with pytest.raises(ParserError) as exc_info:
+        _parse("obj.+")
+    msg = str(exc_info.value)
+    # The bad token after `.` is `+` (ADDITION); rendered as `'+'`.
+    assert "ADDITION" not in msg
+    assert "'+'" in msg
