@@ -4404,6 +4404,47 @@ def test_iter_execute_nested_loops_step_each_inner_iteration():
     assert [s.output_since_last for s in couts] == ["11", "21", "12", "22"]
 
 
+def test_iter_execute_for_loop_records_iter_count_and_total():
+    source = 'for x in [10 | 20 | 30] {\n  cout(x)\n}\n'
+    snaps = _iter(source)
+    # Inside the body: snapshot.loop_iter increments 1..3, total is 3.
+    body_snaps = [s for s in snaps if s.loop_iter is not None]
+    assert [s.loop_iter for s in body_snaps] == [1, 2, 3]
+    assert all(s.loop_total == 3 for s in body_snaps)
+    # The outer ForStmt snapshot (after the loop completes) has no
+    # loop context — the stack has been popped.
+    assert snaps[-1].statement_kind == "ForStmt"
+    assert snaps[-1].loop_iter is None
+    assert snaps[-1].loop_total is None
+
+
+def test_iter_execute_while_loop_records_iter_count_with_unknown_total():
+    source = 'i = 0\nwhile (i < 3) {\n  i = i + 1\n}\n'
+    snaps = _iter(source)
+    body_snaps = [s for s in snaps if s.loop_iter is not None]
+    # Three iterations, each running the one inner Assign — three
+    # snapshots with loop_iter = 1, 2, 3.
+    assert [s.loop_iter for s in body_snaps] == [1, 2, 3]
+    # While loops don't know the total ahead of time.
+    assert all(s.loop_total is None for s in body_snaps)
+
+
+def test_iter_execute_nested_loops_report_innermost_iter():
+    source = (
+        'for i in [1 | 2] {\n'
+        '  for j in [10 | 20 | 30] {\n'
+        '    cout(j)\n'
+        '  }\n'
+        '}\n'
+    )
+    snaps = _iter(source)
+    # Innermost statement (cout) snapshots should carry the INNER loop's
+    # iter count; not the outer one.
+    cout_snaps = [s for s in snaps if s.output_since_last]
+    assert [s.loop_iter for s in cout_snaps] == [1, 2, 3, 1, 2, 3]
+    assert all(s.loop_total == 3 for s in cout_snaps)
+
+
 def test_iter_execute_recursion_steps_each_call_frame():
     # Recursive function: each call's body statements should record
     # snapshots, with the function-local frame visible at each depth.
@@ -4439,6 +4480,8 @@ def test_snapshot_to_dict_contains_every_field():
         "env",
         "output_since_last",
         "error",
+        "loop_iter",
+        "loop_total",
     }
     assert d["statement_kind"] == "Assign"
 

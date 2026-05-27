@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Code2,
   ListTree,
+  Repeat,
   Sparkles,
   Terminal,
 } from "lucide-react";
@@ -67,6 +68,12 @@ export function StepPanel({
             <span>Step Detail</span>
           </div>
           {snapshot && <CallBreadcrumb snapshot={snapshot} />}
+          {snapshot && snapshot.loop_iter != null && (
+            <LoopIterBadge
+              iter={snapshot.loop_iter}
+              total={snapshot.loop_total}
+            />
+          )}
         </div>
         {hasSteps && stepIndex >= 0 && (
           <div className="flex items-center gap-2">
@@ -545,6 +552,37 @@ function CallBreadcrumb({ snapshot }: { snapshot: RotSnapshot }) {
         })}
       </AnimatePresence>
     </div>
+  );
+}
+
+// "iter 2/3" badge with a repeat icon. Renders next to the call
+// breadcrumb when the current snapshot was taken inside a loop body.
+// `total` is null for while loops (unknown ahead of time) — render
+// "iter 2" without the slash in that case.
+function LoopIterBadge({
+  iter,
+  total,
+}: {
+  iter: number;
+  total: number | null;
+}) {
+  return (
+    <motion.span
+      key={`loop-${iter}-${total ?? "?"}`}
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      className="inline-flex items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 font-mono text-[10.5px] text-cyan-300"
+      title={
+        total != null
+          ? `Loop iteration ${iter} of ${total}`
+          : `Loop iteration ${iter} (total unknown — while loop)`
+      }
+    >
+      <Repeat className="h-3 w-3" />
+      iter {iter}
+      {total != null && `/${total}`}
+    </motion.span>
   );
 }
 

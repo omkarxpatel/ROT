@@ -431,6 +431,14 @@ class Snapshot:
     env: list[EnvFrame] = field(default_factory=list)
     output_since_last: str = ""
     error: "str | None" = None
+    # Loop context (v2.26.21). Set when this snapshot was recorded
+    # inside a `while` or `for` body. `loop_iter` is 1-indexed (the
+    # iteration this statement belongs to). `loop_total` is the
+    # iterable's length for `for` loops, None for `while` loops where
+    # the total isn't known. Top-of-stack tracking — for nested loops,
+    # the innermost loop's counter wins.
+    loop_iter: "int | None" = None
+    loop_total: "int | None" = None
 
     def to_dict(self) -> dict:
         """JSON-safe representation. The playground bridge calls this
@@ -442,6 +450,8 @@ class Snapshot:
             "env": [frame.to_dict() for frame in self.env],
             "output_since_last": self.output_since_last,
             "error": self.error,
+            "loop_iter": self.loop_iter,
+            "loop_total": self.loop_total,
         }
 
 
@@ -488,6 +498,13 @@ class Interpreter:
         self._step_mode: bool = False
         self._step_snapshots: "list[Snapshot]" = []
         self._error_recorded: bool = False
+        # Loop-iteration tracking (v2.26.21). Stack of [count, total];
+        # pushed when entering a `while` or `for` body, popped on exit.
+        # `count` increments per iteration. `total` is set for `for`
+        # loops (len of iterable) and None for `while` loops (unbounded).
+        # The snapshot reads the top of the stack so the UI can label
+        # which iteration this snapshot belongs to.
+        self._loop_iter_stack: "list[list[int | None]]" = []
         # Register as the active interpreter so `_stringify` can call
         # user-defined `to_string()` methods on RotInstance. The REPL drives
         # `_evaluate` directly (not always via `execute`), so registering
@@ -591,12 +608,20 @@ class Interpreter:
         v2.26.0: position + kind only.
         v2.26.1: env serialized via `Environment._env_snapshot()`.
         v2.26.2: `output_since_last` drained from the capture buffer.
+        v2.26.21: `loop_iter` / `loop_total` carried from the loop
+        iteration stack (innermost wins for nested loops).
         """
+        loop_iter: "int | None" = None
+        loop_total: "int | None" = None
+        if self._loop_iter_stack:
+            loop_iter, loop_total = self._loop_iter_stack[-1]
         return Snapshot(
             statement_line=getattr(stmt, "line", 0),
             statement_col=getattr(stmt, "col", 0),
             statement_kind=type(stmt).__name__,
             env=self.env._env_snapshot(),
+            loop_iter=loop_iter,
+            loop_total=loop_total,
         )
 
     def _error(self, node: "Any", msg: str) -> "InterpreterError":
@@ -752,8 +777,16 @@ class Interpreter:
             raise _ReturnSignal(value)
         if isinstance(stmt, ast.WhileStmt):
             self._loop_depth += 1
+            # Push a [count, total] frame on the iter stack; `total`
+            # for while loops is unknown until completion (and we
+            # don't bother computing it). `count` is incremented per
+            # body entry so inner-body snapshots can read it.
+            self._loop_iter_stack.append([0, None])
             try:
                 while self._evaluate(stmt.cond):
+                    self._loop_iter_stack[-1][0] = (
+                        (self._loop_iter_stack[-1][0] or 0) + 1
+                    )
                     try:
                         self._execute_block(stmt.body)
                     except _ContinueSignal:
@@ -761,6 +794,7 @@ class Interpreter:
                     except _BreakSignal:
                         break
             finally:
+                self._loop_iter_stack.pop()
                 self._loop_depth -= 1
             return
         if isinstance(stmt, ast.ForStmt):
@@ -771,9 +805,21 @@ class Interpreter:
                 raise InterpreterError(
                     f"cannot iterate over {type(iterable).__name__}"
                 )
+            # Capture total length when possible (lists, dicts, ranges,
+            # strings — anything backed by a sized container). Falls
+            # through to None for non-sized iterables.
+            total: "int | None"
+            try:
+                total = len(iterable)
+            except (TypeError, AttributeError):
+                total = None
             self._loop_depth += 1
+            self._loop_iter_stack.append([0, total])
             try:
                 for item in iterator:
+                    self._loop_iter_stack[-1][0] = (
+                        (self._loop_iter_stack[-1][0] or 0) + 1
+                    )
                     # for-loop var binds at the current scope, not walking up
                     self.env.set_local(stmt.var, item)
                     try:
@@ -783,6 +829,7 @@ class Interpreter:
                     except _BreakSignal:
                         break
             finally:
+                self._loop_iter_stack.pop()
                 self._loop_depth -= 1
             return
         if isinstance(stmt, ast.BreakStmt):

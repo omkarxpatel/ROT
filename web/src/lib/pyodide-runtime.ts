@@ -81,6 +81,12 @@ export interface RotSnapshot {
   env: RotEnvFrame[];
   output_since_last: string;
   error: string | null;
+  // Loop context (v2.26.21). `loop_iter` is the 1-indexed iteration
+  // this snapshot belongs to, or null if not inside a loop body.
+  // `loop_total` is the iterable's length for `for` loops, null for
+  // `while` loops where the count isn't known ahead of time.
+  loop_iter: number | null;
+  loop_total: number | null;
 }
 
 export interface RotStepResult {

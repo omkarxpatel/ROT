@@ -2,6 +2,39 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.21 — Iteration counter for loops
+
+### Premise
+- With deep stepping, snapshots inside a loop body looked nearly
+  identical except for the loop variable's value. Hard to tell at a
+  glance whether you were on iteration 1 of 3 or iteration 17 of 3.
+
+### Added
+- `Snapshot.loop_iter` (1-indexed iteration number) and
+  `Snapshot.loop_total` (iterable length for `for` loops; null for
+  `while` loops where total isn't known) in
+  [`rot/interpreter.py`](rot/interpreter.py).
+- `Interpreter._loop_iter_stack`: pushed when entering a loop body,
+  popped on exit. For nested loops, the **innermost** loop's count
+  wins (top-of-stack) because that's the most relevant context for
+  the just-executed statement.
+- `to_dict()` serializes the two new fields; `RotSnapshot` TS type
+  carries them through.
+- `LoopIterBadge` component in
+  [`web/src/components/step-panel.tsx`](web/src/components/step-panel.tsx)
+  — a cyan pill next to the call breadcrumb with a "repeat" icon
+  showing `iter 2/3` (for-loop) or `iter 5` (while-loop, no total).
+  Re-keyed per iteration so it animates on each step.
+
+### Notes
+- The outer loop statement's own snapshot (recorded after the loop
+  completes) has `loop_iter = null` — the stack has been popped by
+  then. So you see iterations 1, 2, 3 inside the body, then a final
+  snapshot for the `WhileStmt`/`ForStmt` with no badge.
+- 3 new tests: for-loop iter+total tracking, while-loop iter with
+  null total, nested loops reporting the innermost count.
+- Tests: 666 → 669 passing. Type-check clean.
+
 ## v2.26.20 — AST node → env binding pulse: closes the parse → execute chain
 
 ### Premise
