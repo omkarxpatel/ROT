@@ -88,12 +88,19 @@ def _builtin_append(lst: list, item: Any) -> None:
 def _builtin_pop(lst: list, *rest: Any) -> Any:
     if not isinstance(lst, list):
         raise InterpreterError(f"pop: expected list, got {type(lst).__name__}")
-    try:
-        if rest:
-            return lst.pop(int(rest[0]))
+    if not rest:
+        if not lst:
+            raise InterpreterError("pop: cannot pop from empty list")
         return lst.pop()
-    except IndexError:
+    # Indexed pop: distinguish "list is empty" from "index out of range".
+    if not lst:
         raise InterpreterError("pop: cannot pop from empty list")
+    idx = int(rest[0])
+    if idx < -len(lst) or idx >= len(lst):
+        raise InterpreterError(
+            f"pop: index {idx} out of range for list of length {len(lst)}"
+        )
+    return lst.pop(idx)
 
 
 # ==== Math ==================================================================

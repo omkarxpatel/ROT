@@ -1212,3 +1212,29 @@ def test_unbounded_recursion_is_catchable():
         '}'
     )
     assert _run(src) == "ok\n"
+
+
+# ==== v2.14.3: pop distinguishes empty-list vs out-of-range ================
+
+def test_pop_out_of_range_says_so():
+    # B41: previously pop([1] | 5) said "cannot pop from empty list" even
+    # though the list isn't empty. The message should now mention "out of
+    # range" or the bad index.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("pop([1] | 5)")
+    msg = str(exc_info.value)
+    assert "out of range" in msg
+    assert "empty" not in msg
+
+
+def test_pop_negative_out_of_range_says_so():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("pop([1 | 2] | -5)")
+    assert "out of range" in str(exc_info.value)
+
+
+def test_pop_empty_still_says_empty():
+    # Make sure we didn't regress the empty case.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("pop([])")
+    assert "empty" in str(exc_info.value)

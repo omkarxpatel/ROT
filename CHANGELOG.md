@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.3 — pop reports "out of range" when index, not the list, is the problem
+
+### Fixed
+- **B41**: `pop([1] | 5)` used to say "cannot pop from empty list" even though the list wasn't empty. Now indexed pops with a bad index report "pop: index N out of range for list of length M". The bare `pop([])` empty case keeps its existing message.
+
 ## v2.14.2 — clean message for runaway recursion
 
 ### Fixed
