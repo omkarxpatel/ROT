@@ -85,11 +85,18 @@ class Environment:
     deliberately shadow an outer variable by re-using its name. Use a
     different name to shadow, or a function parameter (params are
     bound directly via `set_local`, bypassing the chain walk).
+
+    A `frozen=True` env rejects every write — used for the builtin
+    layer at the root of the env chain. The user's global scope is a
+    fresh child of that layer, so user `Assign` can still create new
+    globals; only writes that would target a builtin (via the chain
+    walk hitting the frozen layer) are rejected.
     """
 
-    def __init__(self, parent: "Environment | None" = None) -> None:
+    def __init__(self, parent: "Environment | None" = None, frozen: bool = False) -> None:
         self.values: dict[str, Any] = {}
         self.parent = parent
+        self.frozen = frozen
 
     def get(self, name: str) -> Any:
         if name in self.values:
@@ -102,16 +109,35 @@ class Environment:
         env: "Environment | None" = self
         while env is not None:
             if name in env.values:
+                if env.frozen:
+                    raise InterpreterError(
+                        f"cannot reassign builtin {name!r}"
+                    )
                 env.values[name] = value
                 return
             env = env.parent
-        # Not found anywhere — declare in current scope.
+        # Not found anywhere — declare in current scope. (The current scope
+        # is never the frozen builtins layer in practice: the interpreter
+        # constructs a fresh child env as the user global.)
+        if self.frozen:
+            raise InterpreterError(
+                f"cannot define {name!r} in the builtins layer"
+            )
         self.values[name] = value
 
     def set_local(self, name: str, value: Any) -> None:
         """Bind in THIS scope, never walking the chain. Used for function
         parameters and for `this` in methods — these must always be local
         even if the same name exists in an outer scope."""
+        if self.frozen:
+            raise InterpreterError(
+                f"cannot reassign builtin {name!r}"
+            )
+        self.values[name] = value
+
+    def _populate_frozen(self, name: str, value: Any) -> None:
+        """Bypass the frozen check — only the interpreter's own
+        initialization code populates the builtins layer."""
         self.values[name] = value
 
 
@@ -245,14 +271,21 @@ class BoundMethod:
 
 class Interpreter:
     def __init__(self) -> None:
-        self.env = Environment()
+        # Two-layer env: an immutable builtins layer at the root, and a
+        # fresh user global as its child. Writes that walk the chain into
+        # the builtins layer (e.g. `pi = 3.0`, `cout = "x"`) are rejected;
+        # writes that don't (e.g. `x = 1` where `x` isn't a builtin) land
+        # in the user global as usual.
+        builtins_env = Environment(frozen=True)
         # `cout` / `coutln` stay defined locally because they use the
         # interpreter-internal _stringify (matters for rot-style null/true/false).
-        self.env.set("cout", _builtin_cout)
-        self.env.set("coutln", _builtin_coutln)
+        builtins_env._populate_frozen("cout", _builtin_cout)
+        builtins_env._populate_frozen("coutln", _builtin_coutln)
         # Everything else lives in rot/builtins.py.
         for name, fn in BUILTINS.items():
-            self.env.set(name, fn)
+            builtins_env._populate_frozen(name, fn)
+        self._builtins_env = builtins_env
+        self.env = Environment(parent=builtins_env)
         # Module-system state.
         self._loaded_modules: set[str] = set()
         self._source_dir: "str | None" = None

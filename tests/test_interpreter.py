@@ -441,12 +441,14 @@ def test_class_method_call_uses_this():
 
 
 def test_class_with_no_init_takes_no_args():
+    # NOTE: variable name was `e` pre-v2.16.5, which clashed with the math
+    # constant `e` builtin (now frozen and unreassignable). Renamed to `inst`.
     src = (
         'class Empty {\n'
         '    greet() { coutln("hello") }\n'
         '}\n'
-        'e = Empty()\n'
-        'e.greet()'
+        'inst = Empty()\n'
+        'inst.greet()'
     )
     assert _run(src) == "hello\n"
 
@@ -777,6 +779,53 @@ def test_nested_funct_does_not_clobber_outer_funct():
         'coutln(f())\n'
     )
     assert _run(src) == "inner\nouter\n"
+
+
+def test_reassigning_builtin_pi_is_rejected():
+    # I17, B59: builtins used to be silently overwritable via `pi = 3.0`
+    # because the global env held them and chain-walking `set` would just
+    # rebind. Builtins now live in a frozen layer at the root of the env
+    # chain; writes that walk into it raise InterpreterError.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("pi = 3.0")
+    assert "cannot reassign builtin 'pi'" in str(exc_info.value)
+
+
+def test_reassigning_builtin_cout_is_rejected():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('cout = "x"')
+    assert "cannot reassign builtin 'cout'" in str(exc_info.value)
+
+
+def test_reassigning_builtin_len_is_rejected():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("len = 99")
+    assert "cannot reassign builtin 'len'" in str(exc_info.value)
+
+
+def test_compound_assign_to_builtin_is_rejected():
+    # `pi += 1` chains to the same `set` call after `_evaluate(stmt.value)`.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("pi += 1")
+    assert "cannot reassign builtin 'pi'" in str(exc_info.value)
+
+
+def test_non_builtin_assignment_still_works():
+    # The frozen layer must not break regular user-global assignment.
+    assert _run("not_a_builtin = 5\ncoutln(not_a_builtin)") == "5\n"
+
+
+def test_assignment_in_function_still_mutates_global():
+    # Pin v2.10.0 closure-mutation semantics: a function-local `x = ...`
+    # that chain-walks to a same-named global still mutates that global.
+    # The builtins layer sits ABOVE the user global, so this is unaffected.
+    src = (
+        'x = 10\n'
+        'funct change() { x = 99 }\n'
+        'change()\n'
+        'coutln(x)\n'
+    )
+    assert _run(src) == "99\n"
 
 
 def test_reassigning_this_in_method_is_rejected():

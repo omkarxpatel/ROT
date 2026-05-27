@@ -2,6 +2,14 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.16.5 — builtins live in a frozen env layer
+
+### Fixed
+- **I17, B59**: `pi = 3.0`, `cout = "x"`, `len = 99` used to silently succeed — builtins were bound in the same env as user globals, and the chain-walking `set` happily rebound them. Builtins now live in a separate `Environment(frozen=True)` at the root of the env chain. The user's global scope is a fresh child env. Writes that walk up into the frozen layer (whether the name is found there or not) raise `InterpreterError("cannot reassign builtin 'pi'")`. `Environment` gains a `frozen` flag and a `_populate_frozen` escape hatch used only by interpreter init. User-scope `Assign` and `set_local` (params, `this`, for-loop var, declarations from v2.16.1/v2.16.2) work exactly as before. The v2.10.0 closure-mutation feature is unchanged for user-defined names. Tests: `test_reassigning_builtin_pi_is_rejected`, `test_reassigning_builtin_cout_is_rejected`, `test_reassigning_builtin_len_is_rejected`, `test_compound_assign_to_builtin_is_rejected`, `test_non_builtin_assignment_still_works`, `test_assignment_in_function_still_mutates_global` (pins v2.10.0 semantics).
+
+### Changed
+- `tests/test_interpreter.py::test_class_with_no_init_takes_no_args` used `e = Empty()` as scaffolding — the variable name `e` clashed with the math constant builtin under the new frozen layer. Renamed to `inst` (incidental rename, not pinning of buggy behavior; the test is about class-with-no-init arity, not name shadowing).
+
 ## v2.16.4 — reject reassigning `this` inside a method
 
 ### Fixed
