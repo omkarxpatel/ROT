@@ -2,6 +2,41 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.15 — Scope dive-in / dive-out + call breadcrumb
+
+### Added
+- **Call breadcrumb** in the Step Detail panel header
+  ([`web/src/components/step-panel.tsx`](web/src/components/step-panel.tsx)).
+  Renders the current call stack as a sequence of pills with `›`
+  separators: `global › funct greet`. Pills slide in from the right
+  when control enters a new scope, slide back out when it returns.
+  The deepest (active) pill carries an amber outline so the eye
+  follows it.
+- **Active-frame visual emphasis** in the Env stage
+  ([`web/src/components/env-view.tsx`](web/src/components/env-view.tsx)).
+  When the env chain has more than one frame (i.e. you're inside a
+  function), the innermost one gets an amber border + faint shadow
+  ring and an "active" label, so the user reads "this is where the
+  just-executed statement was."
+- **Slide-in / slide-out animation for env frames**. Wrapped the
+  frame list in `<AnimatePresence mode="popLayout">` and added
+  `initial` / `animate` / `exit` so:
+  - Entering a function: the new local frame slides in from the
+    right with a small scale-up.
+  - Returning from a function: the local frame slides out to the
+    right, global expands back into view.
+  Combined with the call breadcrumb, stepping into and out of a
+  function reads as a clear descent / ascent.
+
+### Notes
+- Recursive calls (multiple frames with the same `scope_label`,
+  e.g. several `funct fac` levels) animate correctly because keys
+  include the frame index.
+- The "active" marker is only painted when `env.length > 1` —
+  showing it on the lone "global" frame would be noise.
+- Build clean. Type-check clean. No Python changes; 666 tests still
+  passing.
+
 ## v2.26.14 — Editor syntax highlighting matched to the token chip palette
 
 ### Added

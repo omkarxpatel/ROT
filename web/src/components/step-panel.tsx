@@ -1,8 +1,15 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowDown, Code2, ListTree, Sparkles, Terminal } from "lucide-react";
+import {
+  ArrowDown,
+  ChevronRight,
+  Code2,
+  ListTree,
+  Sparkles,
+  Terminal,
+} from "lucide-react";
 
 import { AstView } from "@/components/ast-view";
 import { EnvView } from "@/components/env-view";
@@ -53,10 +60,13 @@ export function StepPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-3 border-b border-border/60 px-3 py-2">
-        <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
-          <Sparkles className="h-3.5 w-3.5 text-amber-400" />
-          <span>Step Detail</span>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border/60 px-3 py-2">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+            <Sparkles className="h-3.5 w-3.5 text-amber-400" />
+            <span>Step Detail</span>
+          </div>
+          {snapshot && <CallBreadcrumb snapshot={snapshot} />}
         </div>
         {hasSteps && stepIndex >= 0 && (
           <div className="flex items-center gap-2">
@@ -331,6 +341,53 @@ function ExecBlock({
         previousSnapshot={previousSnapshot}
         stepKey={stepIndex}
       />
+    </div>
+  );
+}
+
+// Renders the call stack as a sequence of pills: `global › funct
+// greet › ...`. Pills are AnimatePresence children so entering a new
+// scope slides a pill in from the right; leaving slides it back out.
+// At top level there's exactly one pill ("global"), so it just sits
+// quietly.
+function CallBreadcrumb({ snapshot }: { snapshot: RotSnapshot }) {
+  if (snapshot.env.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1 overflow-hidden">
+      <AnimatePresence mode="popLayout" initial={false}>
+        {snapshot.env.map((frame, i) => (
+          <Fragment key={`${frame.scope_label}-${i}`}>
+            {i > 0 && (
+              <motion.span
+                key={`sep-${frame.scope_label}-${i}`}
+                initial={{ opacity: 0, x: -4 }}
+                animate={{ opacity: 0.5, x: 0 }}
+                exit={{ opacity: 0, x: -4 }}
+                transition={{ duration: 0.25 }}
+                className="text-muted-foreground"
+                aria-hidden
+              >
+                <ChevronRight className="h-3 w-3" />
+              </motion.span>
+            )}
+            <motion.span
+              layout
+              initial={{ opacity: 0, x: 12, scale: 0.94 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 12, scale: 0.94 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className={cn(
+                "rounded-full border px-2 py-0.5 font-mono text-[10.5px]",
+                i === snapshot.env.length - 1
+                  ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
+                  : "border-border/60 bg-background/40 text-muted-foreground",
+              )}
+            >
+              {frame.scope_label}
+            </motion.span>
+          </Fragment>
+        ))}
+      </AnimatePresence>
     </div>
   );
 }

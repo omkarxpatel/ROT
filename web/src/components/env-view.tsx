@@ -35,29 +35,53 @@ export function EnvView({ snapshot, previousSnapshot, stepKey }: EnvViewProps) {
         isError={isError}
       />
       <div className="space-y-2">
-        {snapshot.env.map((frame, i) => {
-          const prevFrame = matchingFrame(previousSnapshot, frame);
-          const changes = computeBindingChanges(
-            frame.bindings,
-            prevFrame?.bindings,
-          );
-          return (
-            <motion.div
-              key={`${frame.scope_label}-${i}`}
-              layout
-              transition={{ layout: { duration: 0.5, ease: "easeOut" } }}
-              className="rounded-md border border-border/60 bg-background/40 p-2"
-            >
-              <div className="mb-1.5 flex items-center gap-2 text-[10.5px] uppercase tracking-wider text-muted-foreground">
-                <span>{frame.scope_kind}</span>
-                <span className="font-mono normal-case text-foreground/80">
-                  {frame.scope_label}
-                </span>
-              </div>
-              <Bindings bindings={frame.bindings} changes={changes} />
-            </motion.div>
-          );
-        })}
+        <AnimatePresence mode="popLayout" initial={false}>
+          {snapshot.env.map((frame, i) => {
+            const prevFrame = matchingFrame(previousSnapshot, frame);
+            const changes = computeBindingChanges(
+              frame.bindings,
+              prevFrame?.bindings,
+            );
+            const isInnermost = i === snapshot.env.length - 1;
+            return (
+              <motion.div
+                key={`${frame.scope_label}-${i}`}
+                layout
+                // Slide in from the right when a new scope is entered
+                // (e.g. function call). Slide back out the same way
+                // when control returns. The deepest frame is the one
+                // that just "appeared" so the user reads the motion
+                // as "we dove into this scope."
+                initial={{ opacity: 0, x: 32, scale: 0.94 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 32, scale: 0.94 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                className={cn(
+                  "rounded-md border bg-background/40 p-2",
+                  // Amber ring on the innermost frame so the user's eye
+                  // is drawn to the currently-active scope. Outer
+                  // frames stay subdued.
+                  isInnermost && snapshot.env.length > 1
+                    ? "border-amber-500/40 shadow-[0_0_0_1px_rgba(245,158,11,0.18)]"
+                    : "border-border/60",
+                )}
+              >
+                <div className="mb-1.5 flex items-center gap-2 text-[10.5px] uppercase tracking-wider text-muted-foreground">
+                  <span>{frame.scope_kind}</span>
+                  <span className="font-mono normal-case text-foreground/80">
+                    {frame.scope_label}
+                  </span>
+                  {isInnermost && snapshot.env.length > 1 && (
+                    <span className="ml-auto text-[9px] font-semibold text-amber-400">
+                      active
+                    </span>
+                  )}
+                </div>
+                <Bindings bindings={frame.bindings} changes={changes} />
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
       </div>
       {isError && (
         <motion.div
