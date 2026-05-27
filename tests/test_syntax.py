@@ -714,3 +714,46 @@ def test_format_aligns_caret_when_line_number_has_multiple_digits():
     assert "12 | abcd error" in out
     # Caret line uses two-space gutter so it aligns.
     assert "   |      ^" in out
+
+
+# ---------- v2.25.7: `super` reserved with clear error (I23, I26) -----------
+
+
+def test_super_in_expression_position_errors_with_clear_message():
+    with pytest.raises(ParserError) as exc_info:
+        _parse("coutln(super)")
+    msg = str(exc_info.value)
+    assert "super" in msg
+    assert "not supported" in msg
+    assert "inheritance" in msg
+
+
+def test_super_as_top_level_statement_errors():
+    with pytest.raises(ParserError) as exc_info:
+        _parse("super")
+    msg = str(exc_info.value)
+    assert "super" in msg
+    assert "not supported" in msg
+
+
+def test_super_in_assignment_target_errors():
+    # `super = 5` would parse `super` as the LHS expression, hit the
+    # SUPER guard, and raise. The exact LHS that fails is irrelevant
+    # — what matters is the user sees the helpful message.
+    with pytest.raises(ParserError) as exc_info:
+        _parse("super = 5")
+    assert "super" in str(exc_info.value)
+
+
+def test_super_in_member_call_errors():
+    with pytest.raises(ParserError) as exc_info:
+        _parse("super.foo()")
+    assert "super" in str(exc_info.value)
+
+
+def test_super_as_function_name_errors():
+    # `funct super() { }` fails when the parser expects an IDENT after
+    # FUNCTION but gets SUPER. Different code path (the func-def parser),
+    # but same user-facing concept: `super` is no longer a usable name.
+    with pytest.raises(ParserError):
+        _parse("funct super() { }")

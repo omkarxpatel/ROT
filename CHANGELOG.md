@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.7 — parser: `super` reserved with a helpful error (I23, I26)
+
+### Added
+- `super` is now a reserved keyword. Using it anywhere (`coutln(super)`, `super = 5`, `super.foo()`, `funct super() { }`) raises a clean `ParserError: super is not supported (rot has no inheritance yet)` rather than producing a generic "expected expression" message or letting the user think `super` works as an identifier. Reserving the name now keeps the door open for a future inheritance feature without breaking valid programs. Tests: 5 new in `tests/test_syntax.py`.
+
 ## v2.25.6 — deferred: floor-division operator (I28)
 
 ### Deferred (no code change)

@@ -135,6 +135,7 @@ _TOKEN_DISPLAY: dict[str, str] = {
     "CONTINUE":      "'continue'",
     "CLASS":         "'class'",
     "THIS":          "'this'",
+    "SUPER":         "'super'",
     "TRY":           "'try'",
     "CATCH":         "'catch'",
     "FINALLY":       "'finally'",
@@ -605,6 +606,15 @@ class Parser:
         if tok.kind == "THIS":
             self._advance()
             return ast.Identifier(name="this", line=tok.line, col=tok.col)
+        if tok.kind == "SUPER":
+            # I23/I26 (v2.25.7): `super` is reserved for the future
+            # inheritance feature. Emit a clear message now so users
+            # don't see a generic "expected expression" or get the
+            # wrong idea that `super` works as an identifier today.
+            raise ParserError(
+                "super is not supported (rot has no inheritance yet)",
+                tok.line, tok.col,
+            )
         if tok.kind == "L_PAREN":
             self._advance()
             expr = self._parse_expression()
