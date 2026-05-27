@@ -394,6 +394,23 @@ class EnvFrame:
     scope_label: str           # e.g. "global", "funct foo", "method Counter.tick"
     bindings: dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> dict:
+        """JSON-safe representation for the playground bridge.
+
+        Binding values are rendered as ROT-flavored strings via
+        `_stringify` (same path used by `cout` / `coutln`), so the UI
+        sees `null`, `true`/`false`, `[a | b | c]`, `<function foo>`,
+        `<instance of Counter>` consistently — no native Python types
+        leak across the bridge.
+        """
+        return {
+            "scope_kind": self.scope_kind,
+            "scope_label": self.scope_label,
+            "bindings": {
+                name: _stringify(value) for name, value in self.bindings.items()
+            },
+        }
+
 
 @dataclass
 class Snapshot:
@@ -414,6 +431,18 @@ class Snapshot:
     env: list[EnvFrame] = field(default_factory=list)
     output_since_last: str = ""
     error: "str | None" = None
+
+    def to_dict(self) -> dict:
+        """JSON-safe representation. The playground bridge calls this
+        for each snapshot and JSON-encodes the resulting list."""
+        return {
+            "statement_line": self.statement_line,
+            "statement_col": self.statement_col,
+            "statement_kind": self.statement_kind,
+            "env": [frame.to_dict() for frame in self.env],
+            "output_since_last": self.output_since_last,
+            "error": self.error,
+        }
 
 
 class Interpreter:

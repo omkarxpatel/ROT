@@ -4297,3 +4297,65 @@ def test_iter_execute_for_loop_aggregates_output_across_iterations():
     assert len(snaps) == 1
     assert snaps[0].statement_kind == "ForStmt"
     assert snaps[0].output_since_last == "123"
+
+
+# --- v2.26.4: JSON-safe serialization for the Pyodide bridge ---
+
+
+def test_snapshot_to_dict_contains_every_field():
+    snap = _iter('x = 1')[0]
+    d = snap.to_dict()
+    assert set(d.keys()) == {
+        "statement_line",
+        "statement_col",
+        "statement_kind",
+        "env",
+        "output_since_last",
+        "error",
+    }
+    assert d["statement_kind"] == "Assign"
+
+
+def test_env_frame_to_dict_stringifies_binding_values():
+    # The bridge wants `dict[str, str]` so the JS UI never has to deal
+    # with native Python types. _stringify gives ROT-flavored output.
+    source = 'a = 1\nb = null\nc = true\nd = [1 | 2 | 3]\n'
+    snaps = _iter(source)
+    d = snaps[-1].env[0].to_dict()
+    assert d["bindings"]["a"] == "1"
+    assert d["bindings"]["b"] == "null"
+    assert d["bindings"]["c"] == "true"
+    assert d["bindings"]["d"] == "[1 | 2 | 3]"
+
+
+def test_snapshot_to_dict_serializes_function_value_via_stringify():
+    snap = _iter('funct foo() { return 1 }')[0]
+    d = snap.to_dict()
+    # Function values render as "<funct foo>" through _stringify
+    # (matches the ROT keyword spelling, not Python's "function").
+    assert d["env"][0]["bindings"]["foo"] == "<funct foo>"
+
+
+def test_snapshot_to_dict_includes_error_message_on_failure():
+    snaps = _iter('bogus_name')
+    assert snaps[-1].error is not None
+    d = snaps[-1].to_dict()
+    assert d["error"] is not None
+    assert "bogus_name" in d["error"]
+
+
+def test_snapshot_to_dict_is_json_dumpable_end_to_end():
+    # Mimic the pyodide bridge: drive iter_execute, serialize each
+    # snapshot, dump to JSON. Should never raise on any normal program.
+    import json as _json
+    source = (
+        'funct add(a | b) { return a + b }\n'   # ROT uses `|`, not `,`
+        'coutln(add(2 | 3))\n'
+        'xs = [1 | 2 | 3]\n'
+        'd = {"k": 42}\n'
+    )
+    snaps = _iter(source)
+    payload = [s.to_dict() for s in snaps]
+    blob = _json.dumps(payload)
+    assert "<funct add>" in blob
+    assert '"output_since_last": "5\\n"' in blob

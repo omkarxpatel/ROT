@@ -2,6 +2,47 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.4 — M1 Pyodide bridge: `rot_step(source)` exposes step mode to the browser
+
+### Added
+- `Snapshot.to_dict()` and `EnvFrame.to_dict()` in
+  [`rot/interpreter.py`](rot/interpreter.py) — JSON-safe serialization
+  for the playground bridge. Binding values are stringified via
+  `_stringify` (the same path `cout` / `coutln` use), so the bridge
+  hands the UI plain `dict[str, str]` rather than native Python types.
+  Examples: `null`, `true` / `false`, `[1 | 2 | 3]`, `<funct foo>`,
+  `<instance of Counter>`.
+- `rot_step(source)` Python function in the Pyodide bridge
+  ([`web/src/lib/pyodide-runtime.ts`](web/src/lib/pyodide-runtime.ts)).
+  Lexes, parses, then drives `Interpreter.iter_execute(program)`,
+  collecting `snapshot.to_dict()` for every yield. Returns a JSON
+  string with `tokens` / `ast` / `snapshots` / `error` / `timings`,
+  matching the shape of the existing `rot_compile_and_run` for
+  symmetry.
+- `compileAndStep(source)` TypeScript entry-point alongside the
+  existing `compileAndRun`. Same Pyodide singleton, same loading
+  semantics; just a different bridge call.
+- TypeScript types `RotEnvFrame`, `RotSnapshot`, `RotStepResult`.
+
+### Notes
+- User-level runtime errors land in `snapshots[-1].error`, not the
+  top-level `error` field — that field is reserved for lex/parse
+  failures and interpreter bugs.
+- Eager collection (not a streaming generator across the
+  pyodide↔JS boundary) is deliberate: M1 programs are small, the
+  interpreter is fast, and a single JSON.parse keeps the UI plumbing
+  trivial. Streaming becomes relevant only in M4 if time-travel UX
+  demands incremental updates.
+- 5 new tests in
+  [`tests/test_interpreter.py`](tests/test_interpreter.py) cover the
+  serialization contract end-to-end: schema completeness, ROT-style
+  stringification of literals / functions / null, error capture, and
+  JSON-dumpability of a representative multi-statement program.
+- Re-ran [`web/scripts/copy-rot.mjs`](web/scripts/copy-rot.mjs) so the
+  bundled `public/rot_package/*.py` files used by Pyodide contain the
+  new `to_dict` methods. `rot-version.ts` now reflects `2.26.4`.
+- Tests: 657 → 662 passing.
+
 ## v2.26.3 — M1 finish-out: errors as snapshots + control-flow integration sweep
 
 ### Changed

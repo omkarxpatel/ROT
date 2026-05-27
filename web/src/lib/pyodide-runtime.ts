@@ -63,6 +63,40 @@ export interface RotRunResult {
   };
 }
 
+// --- Step-mode (v2.26.x — Milestone 1) ---
+
+export interface RotEnvFrame {
+  scope_kind: string;
+  scope_label: string;
+  // Values are rendered via ROT's _stringify on the Python side so the
+  // UI only ever has to display strings (null, true/false, list/dict
+  // ROT-syntax, <function foo>, <instance of X>, etc.).
+  bindings: Record<string, string>;
+}
+
+export interface RotSnapshot {
+  statement_line: number;
+  statement_col: number;
+  statement_kind: string;
+  env: RotEnvFrame[];
+  output_since_last: string;
+  error: string | null;
+}
+
+export interface RotStepResult {
+  tokens: RotToken[];
+  ast: AstNode | null;
+  snapshots: RotSnapshot[];
+  // Only set for lex/parse failures or interpreter bugs — user-level
+  // runtime errors land in the final snapshot's `error` field instead.
+  error: RotError | null;
+  timings: {
+    lexMs: number;
+    parseMs: number;
+    interpretMs: number;
+  };
+}
+
 export interface RotRuntimeStatus {
   state: "idle" | "loading" | "ready" | "error";
   message?: string;
@@ -210,6 +244,67 @@ def _error_dict(exc, source):
         "formatted": exc.format(source, "<playground>") if isinstance(exc, RotError) else f"error: {exc}",
         "stage": _stage_from_exc(exc),
     }
+
+
+def rot_step(source):
+    """Lex / parse / step-execute \`source\`. Returns a JSON string with:
+        - tokens:    list of {lexeme, kind, line, col}
+        - ast:       a typed tree (or null on lex/parse failure)
+        - snapshots: list of Snapshot.to_dict() — one per top-level
+                     statement; the last entry may carry \`error\`.
+        - error:     null EXCEPT on lex/parse failures or interpreter
+                     bugs. User-level runtime errors surface as
+                     \`snapshots[-1].error\`, not here.
+        - timings:   {lexMs, parseMs, interpretMs}
+    """
+    result = {
+        "tokens": [],
+        "ast": None,
+        "snapshots": [],
+        "error": None,
+        "timings": {"lexMs": 0.0, "parseMs": 0.0, "interpretMs": 0.0},
+    }
+    # --- lex ---
+    t0 = time.perf_counter()
+    try:
+        tokens = Lexer().tokenize(source)
+    except Exception as e:
+        result["timings"]["lexMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["lexMs"] = (time.perf_counter() - t0) * 1000
+    result["tokens"] = [
+        {"lexeme": t.lexeme, "kind": t.kind, "line": t.line, "col": t.col}
+        for t in tokens
+    ]
+    # --- parse ---
+    t0 = time.perf_counter()
+    try:
+        program = Parser(tokens).parse()
+    except Exception as e:
+        result["timings"]["parseMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["parseMs"] = (time.perf_counter() - t0) * 1000
+    try:
+        result["ast"] = _ast_to_dict(program)
+    except Exception:
+        result["ast"] = None
+    # --- step-mode interpret ---
+    # iter_execute is designed not to raise for user errors (those
+    # become snapshot.error). Wrapping in try/except catches genuine
+    # interpreter bugs so they reach the UI cleanly.
+    t0 = time.perf_counter()
+    try:
+        interp = Interpreter()
+        for snap in interp.iter_execute(program):
+            result["snapshots"].append(snap.to_dict())
+    except Exception as e:
+        result["timings"]["interpretMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["interpretMs"] = (time.perf_counter() - t0) * 1000
+    return _json.dumps(result)
 
 
 def rot_compile_and_run(source):
@@ -377,6 +472,48 @@ export async function compileAndRun(source: string): Promise<RotRunResult> {
   } catch (e) {
     return {
       ...EMPTY_RESULT,
+      error: {
+        message: `json decode failed: ${e instanceof Error ? e.message : String(e)}`,
+        line: 0,
+        col: 0,
+        formatted: `error: json decode failed`,
+        stage: "internal",
+      },
+    };
+  }
+}
+
+const EMPTY_STEP_RESULT: RotStepResult = {
+  tokens: [],
+  ast: null,
+  snapshots: [],
+  error: null,
+  timings: { lexMs: 0, parseMs: 0, interpretMs: 0 },
+};
+
+export async function compileAndStep(source: string): Promise<RotStepResult> {
+  let pyodide: PyodideInterface;
+  try {
+    pyodide = await loadRotRuntime();
+  } catch (e) {
+    return {
+      ...EMPTY_STEP_RESULT,
+      error: {
+        message: e instanceof Error ? e.message : String(e),
+        line: 0,
+        col: 0,
+        formatted: `error: ${e instanceof Error ? e.message : String(e)}`,
+        stage: "internal",
+      },
+    };
+  }
+  pyodide.globals.set("__rot_source__", source);
+  const jsonStr = pyodide.runPython(`rot_step(__rot_source__)`) as string;
+  try {
+    return JSON.parse(jsonStr) as RotStepResult;
+  } catch (e) {
+    return {
+      ...EMPTY_STEP_RESULT,
       error: {
         message: `json decode failed: ${e instanceof Error ? e.message : String(e)}`,
         line: 0,
