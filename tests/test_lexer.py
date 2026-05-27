@@ -396,3 +396,27 @@ def test_tokenize_with_bytes_raises_clean_typeerror():
         Lexer().tokenize(b"cout")
     assert "Lexer.tokenize requires str" in str(exc_info.value)
     assert "bytes" in str(exc_info.value)
+
+
+# v2.20.9 — L57: keywords.py docstring must not claim "lowercase letters".
+def test_keywords_docstring_does_not_claim_lowercase_only():
+    import rot.keywords as kw
+    doc = kw.__doc__ or ""
+    # Stale text from the pre-v2.6.0 docstring.
+    assert "scans a run of lowercase letters" not in doc
+    # And the corrected message should mention the actual identifier rule.
+    assert "A-Za-z_" in doc or "uppercase" in doc.lower()
+
+
+def test_keywords_docstring_mentions_double_slash_comments():
+    import rot.keywords as kw
+    doc = kw.__doc__ or ""
+    # The user has affirmed `//` is the comment syntax (not `#`).
+    assert "//" in doc
+
+
+def test_mixed_case_identifier_is_classified_as_ident():
+    # Regression: ensure the docstring's claim about mixed case is correct.
+    tokens = Lexer().tokenize("If")
+    assert tokens[0].kind == "IDENT"
+    assert tokens[0].lexeme == "If"

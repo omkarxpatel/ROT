@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.9 — `keywords.py` docstring matches actual identifier rule
+
+### Fixed
+- **L57**: the module docstring claimed the lexer "scans a run of lowercase letters", which has been false since v2.6.0 — uppercase was admitted when class names landed (identifier rule `[A-Za-z_][A-Za-z_0-9]*`). Updated to describe the real rule and to note that mixed-case lexemes like `If` correctly classify as `IDENT` since the keyword table is all-lowercase. Also added a one-liner that comments use `//` (C-style), confirming the user's choice to keep `//` over `#`. Tests: `test_keywords_docstring_does_not_claim_lowercase_only`, `test_keywords_docstring_mentions_double_slash_comments`, `test_mixed_case_identifier_is_classified_as_ident` (behavioral regression).
+
 ## v2.20.8 — Lexer: type-check `tokenize` input
 
 ### Fixed

@@ -1,8 +1,15 @@
 """Reserved-word lookup consulted by the lexer.
 
-Only one table left: KEYWORDS. The lexer scans a run of lowercase
-letters, looks the lexeme up here, and tags the token as the kind
-returned (or `IDENT` if not present).
+Only one table left: KEYWORDS. The lexer scans a run of identifier
+characters and looks the lexeme up here, tagging the token as the kind
+returned (or ``IDENT`` if not present). The identifier rule has been
+``[A-Za-z_][A-Za-z_0-9]*`` since v2.6.0 — uppercase was admitted when
+class names landed; the docstring previously claimed "lowercase
+letters" only, which is no longer accurate. All current keywords are
+themselves lowercase, so a mixed-case lexeme like ``If`` is correctly
+classified as ``IDENT`` (since v2.6.0).
+
+Comments in rot use ``//`` (C-style), not ``#``.
 
 PY_EQUIVALENT was retired in v1.9.0 along with the token-to-string
 transpiler. The AST emitter (rot/emitter.py) now owns the
