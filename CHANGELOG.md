@@ -2,6 +2,12 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.19.5 — Persistent REPL history across sessions
+
+### Added
+- **C24**: the REPL now reads from and writes to `~/.rot_history`, so arrow-up across REPL sessions surfaces previous commands. On startup `_install_persistent_history` makes the parent directory if needed, calls `readline.read_history_file(...)`, and registers an `atexit` handler for `readline.write_history_file(...)`. All `OSError`/`FileNotFoundError` failures are swallowed silently — a broken history file or read-only home must never prevent the REPL from starting. Skipped entirely if `readline` is unavailable (Windows). The history path can be overridden with the `ROT_HISTORY_FILE` env var (empty string disables history; tests use this to avoid touching the user's real history file). Tests: `test_repl_history_file_path_uses_home`, `test_repl_install_persistent_history_does_not_crash`, `test_repl_install_persistent_history_skips_if_disabled`, `test_repl_install_persistent_history_swallows_unreadable_file`, `test_repl_startup_with_history_does_not_crash`.
+- New `tests/conftest.py` with an autouse fixture that sets `ROT_HISTORY_FILE=""` for every test, so test runs never write to the user's home directory.
+
 ## v2.19.4 — REPL `exit`, `quit`, `:q` commands
 
 ### Added

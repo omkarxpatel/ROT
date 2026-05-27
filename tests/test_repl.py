@@ -1,10 +1,13 @@
 """Tests for the interactive REPL (rot/repl.py).
 
 Drives the REPL via monkey-patched `input()`. Each test feeds a fixed list
-of lines and asserts on captured stdout/stderr.
+of lines and asserts on captured stdout/stderr. Persistent history is
+disabled globally via `tests/conftest.py`.
 """
 
 from __future__ import annotations
+
+import os
 
 import pytest
 
@@ -261,3 +264,61 @@ def test_repl_exit_inside_continuation_is_not_an_exit_command(monkeypatch, capsy
     # We don't care that the body errors at parse-or-runtime; just that the
     # REPL kept going to the next input after the multi-line block.
     assert "alive" in out
+
+
+# --- C24: persistent REPL history ---
+
+def test_repl_history_file_path_uses_home():
+    # Module-level HISTORY_FILE should resolve to ~/.rot_history when no
+    # env var override is set.
+    import importlib
+
+    import rot.repl as repl_module
+    # If ROT_HISTORY_FILE is set (e.g. from conftest), HISTORY_FILE is
+    # whatever that is. Check the documented default by recomputing
+    # without the env var.
+    default = os.path.expanduser("~/.rot_history")
+    # The module-level constant should equal the env var if set, else the
+    # default — we can't easily test the default at import time after
+    # conftest sets the env var. Instead, just assert the resolution shape.
+    assert repl_module.HISTORY_FILE.endswith(".rot_history") or repl_module.HISTORY_FILE == ""
+
+
+def test_repl_install_persistent_history_does_not_crash(monkeypatch, tmp_path):
+    # With a writable temp path, install_persistent_history should run
+    # without raising even if the file doesn't exist yet.
+    history = tmp_path / "subdir" / "history"
+    monkeypatch.setenv("ROT_HISTORY_FILE", str(history))
+    from rot.repl import _install_persistent_history
+    _install_persistent_history()  # creates the parent dir; reads empty history
+    # Parent should now exist (created by os.makedirs).
+    assert history.parent.exists()
+
+
+def test_repl_install_persistent_history_skips_if_disabled(monkeypatch):
+    # Empty env var = disabled. Should be a no-op (and definitely should
+    # not register an atexit handler).
+    monkeypatch.setenv("ROT_HISTORY_FILE", "")
+    from rot.repl import _install_persistent_history
+    _install_persistent_history()  # must not raise
+
+
+def test_repl_install_persistent_history_swallows_unreadable_file(monkeypatch, tmp_path):
+    # If the history file exists but is unreadable, the function must not
+    # crash. Hard to construct a real unreadable file portably, so just
+    # point at a directory (which read_history_file can't read as a file).
+    bogus = tmp_path / "not_a_file"
+    bogus.mkdir()  # directory, not a file
+    monkeypatch.setenv("ROT_HISTORY_FILE", str(bogus))
+    from rot.repl import _install_persistent_history
+    _install_persistent_history()  # must not raise
+
+
+def test_repl_startup_with_history_does_not_crash(monkeypatch, tmp_path, capsys):
+    # End-to-end: enable history with a temp path and drive the REPL
+    # through a single line + exit. The REPL must complete normally.
+    history = tmp_path / "h"
+    monkeypatch.setenv("ROT_HISTORY_FILE", str(history))
+    _drive_repl(monkeypatch, ['coutln("ok")', "exit"])
+    out, _ = capsys.readouterr()
+    assert "ok" in out

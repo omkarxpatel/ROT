@@ -8,12 +8,16 @@ don't kill the session.
 
 from __future__ import annotations
 
+import atexit
+import os
 import sys
 
 try:
-    import readline  # noqa: F401 — enables arrow keys + history on Unix
+    import readline  # enables arrow keys + history on Unix
+    _HAS_READLINE = True
 except ImportError:
-    pass
+    readline = None  # type: ignore[assignment]
+    _HAS_READLINE = False
 
 from . import __version__, ast
 from .builtins import _stringify
@@ -31,8 +35,53 @@ CONT_PROMPT = "...  "
 # multi-line expression or string literal).
 EXIT_COMMANDS = frozenset({"exit", "quit", ":q"})
 
+# Path to the persistent REPL history file. Lines typed at the prompt are
+# saved here at exit and re-loaded on the next session, so arrow-up across
+# sessions surfaces previous commands. Skipped on platforms without
+# `readline` (Windows out of the box). Override with the env var
+# `ROT_HISTORY_FILE` (e.g. tests set this to a temp path) — set it to the
+# empty string to disable history entirely.
+HISTORY_FILE = os.environ.get(
+    "ROT_HISTORY_FILE", os.path.expanduser("~/.rot_history")
+)
+
+
+def _install_persistent_history() -> None:
+    """Load any existing history file and register an atexit save handler.
+
+    Failures are silently swallowed — a broken history file or a read-only
+    home directory must not prevent the REPL from starting. Skipped entirely
+    if `readline` is unavailable on this platform (Windows), or if the
+    `ROT_HISTORY_FILE` env var is set to an empty string."""
+    if not _HAS_READLINE:
+        return
+    # Re-read the env var on each call so tests can toggle history at runtime.
+    path = os.environ.get("ROT_HISTORY_FILE", HISTORY_FILE)
+    if not path:
+        return  # Empty string = disabled.
+    try:
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+    except OSError:
+        return  # Can't create parent — give up silently.
+    try:
+        readline.read_history_file(path)
+    except (OSError, FileNotFoundError):
+        # No history yet, or unreadable file — fine, we'll write a new one.
+        pass
+
+    def _save_history() -> None:
+        try:
+            readline.write_history_file(path)
+        except OSError:
+            pass
+
+    atexit.register(_save_history)
+
 
 def start_repl() -> None:
+    _install_persistent_history()
     print(f"rot {__version__} REPL")
     print("type any expression or statement; `exit`, `quit`, `:q`, or ctrl-D to exit")
     interp = Interpreter()
