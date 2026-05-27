@@ -1183,3 +1183,32 @@ def test_wrapped_call_error_is_catchable_in_rot():
         '}'
     )
     assert _run(src) == "recovered\n"
+
+
+# ==== v2.14.2: RecursionError -> "call stack too deep" =====================
+
+def test_unbounded_recursion_wraps_to_interpreter_error():
+    # An unbounded rot recursion used to leak a raw Python RecursionError
+    # with the Python phrase "while calling a Python object" attached.
+    # Now it must come out as a clean InterpreterError("call stack too deep").
+    src = 'funct r() { r() }\nr()'
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    msg = str(exc_info.value)
+    assert "call stack too deep" in msg
+    # And it must not include Python's recursion phrasing.
+    assert "Python" not in msg
+    assert "maximum recursion" not in msg
+
+
+def test_unbounded_recursion_is_catchable():
+    # Now that it's an InterpreterError, rot's try/catch can recover.
+    src = (
+        'funct r() { r() }\n'
+        'try {\n'
+        '    r()\n'
+        '} catch (e) {\n'
+        '    coutln("ok")\n'
+        '}'
+    )
+    assert _run(src) == "ok\n"

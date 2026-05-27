@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.2 — clean message for runaway recursion
+
+### Fixed
+- **I10**: deep recursion in rot user code used to leak a raw Python `RecursionError("maximum recursion depth exceeded while calling a Python object")`. Now `Interpreter._evaluate_call` catches `RecursionError` and re-raises `InterpreterError("call stack too deep")`. Catchable in rot's own `try`/`catch`.
+
 ## v2.14.1 — wrap Python exceptions from builtin calls
 
 ### Fixed

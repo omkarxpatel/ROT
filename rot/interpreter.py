@@ -478,7 +478,14 @@ class Interpreter:
         callee = self._evaluate(expr.callee)
         args = [self._evaluate(a) for a in expr.args]
         if isinstance(callee, (RotFunction, RotClass, BoundMethod)):
-            return callee.call(args, self)
+            try:
+                return callee.call(args, self)
+            except RecursionError:
+                # Convert Python's recursion-depth-exceeded into a clean
+                # rot-side error. Caught here (the outermost rot frame on
+                # the Python stack) so it doesn't unwind further as a raw
+                # Python exception.
+                raise InterpreterError("call stack too deep")
         if not callable(callee):
             raise InterpreterError(f"not callable: {callee!r}")
         try:
@@ -486,6 +493,8 @@ class Interpreter:
         except InterpreterError:
             # already in rot form — leave it alone
             raise
+        except RecursionError:
+            raise InterpreterError("call stack too deep")
         except (
             TypeError,
             ValueError,
