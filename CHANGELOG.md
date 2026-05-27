@@ -2,6 +2,28 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.18 — hotfix: CallBreadcrumb crashed with "Invalid prop `ref` on React.Fragment"
+
+### Fixed
+- The `CallBreadcrumb` component in v2.26.15 wrapped each
+  (separator, pill) pair in a `<Fragment>` inside an
+  `<AnimatePresence>`. `framer-motion` attaches refs to its direct
+  children for exit-tracking; `React.Fragment` doesn't accept refs,
+  so the console flagged `Invalid prop `ref` supplied to
+  `React.Fragment`` whenever the breadcrumb rendered.
+- Replaced the `map(... <Fragment>...)` with `flatMap(... [items])`
+  that returns flat `motion.span` siblings. Each item has its own
+  key, so `AnimatePresence` can still track entrance/exit per frame
+  individually.
+- Dropped the now-unused `Fragment` import.
+
+### Notes
+- No behavior change beyond the missing error. The breadcrumb still
+  renders the call stack as `global › funct greet › ...` with slide
+  animations on scope entry/exit.
+- Build clean. Type-check clean. No Python changes; 666 tests still
+  passing.
+
 ## v2.26.17 — AST-leaf → token-chip pulse highlight
 
 ### Added

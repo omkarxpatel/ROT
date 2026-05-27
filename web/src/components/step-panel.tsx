@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDown,
@@ -452,14 +452,22 @@ function ExecBlock({
 // quietly.
 function CallBreadcrumb({ snapshot }: { snapshot: RotSnapshot }) {
   if (snapshot.env.length === 0) return null;
+  // AnimatePresence requires motion components as DIRECT children —
+  // wrapping pairs of (separator, pill) in a Fragment crashed because
+  // Fragments don't accept the ref framer-motion attaches for exit
+  // tracking. So flatMap to a flat list of motion.span siblings,
+  // each with its own key.
+  const isLast = (i: number) => i === snapshot.env.length - 1;
   return (
     <div className="flex items-center gap-1 overflow-hidden">
       <AnimatePresence mode="popLayout" initial={false}>
-        {snapshot.env.map((frame, i) => (
-          <Fragment key={`${frame.scope_label}-${i}`}>
-            {i > 0 && (
+        {snapshot.env.flatMap((frame, i) => {
+          const key = `${frame.scope_label}-${i}`;
+          const items: React.ReactNode[] = [];
+          if (i > 0) {
+            items.push(
               <motion.span
-                key={`sep-${frame.scope_label}-${i}`}
+                key={`sep-${key}`}
                 initial={{ opacity: 0, x: -4 }}
                 animate={{ opacity: 0.5, x: 0 }}
                 exit={{ opacity: 0, x: -4 }}
@@ -468,9 +476,12 @@ function CallBreadcrumb({ snapshot }: { snapshot: RotSnapshot }) {
                 aria-hidden
               >
                 <ChevronRight className="h-3 w-3" />
-              </motion.span>
-            )}
+              </motion.span>,
+            );
+          }
+          items.push(
             <motion.span
+              key={`pill-${key}`}
               layout
               initial={{ opacity: 0, x: 12, scale: 0.94 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
@@ -478,15 +489,16 @@ function CallBreadcrumb({ snapshot }: { snapshot: RotSnapshot }) {
               transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               className={cn(
                 "rounded-full border px-2 py-0.5 font-mono text-[10.5px]",
-                i === snapshot.env.length - 1
+                isLast(i)
                   ? "border-amber-500/40 bg-amber-500/10 text-amber-300"
                   : "border-border/60 bg-background/40 text-muted-foreground",
               )}
             >
               {frame.scope_label}
-            </motion.span>
-          </Fragment>
-        ))}
+            </motion.span>,
+          );
+          return items;
+        })}
       </AnimatePresence>
     </div>
   );
