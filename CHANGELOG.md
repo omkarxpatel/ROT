@@ -2,6 +2,31 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.29 — Keyboard shortcuts for step navigation
+
+### Added
+- **`→`** advances one step (animate mode).
+- **`←`** steps backward one snapshot (animate mode); pauses Play if
+  active. Going below 0 is clamped.
+- **`Space`** toggles Play / Pause (animate mode).
+- Existing **`⌘↵` / `Ctrl+↵`** still runs (run mode) or steps
+  (animate mode); unchanged.
+- Toolbar Step button now shows `→` as its hint (in place of the
+  `⌘↵` glyph, which is mentioned in the tooltip instead). Play
+  button shows `␣`. Reset's tooltip mentions `←`.
+
+### Notes
+- Arrow / Space are gated on the editor NOT being the active
+  element (`target.closest(".cm-editor")` check) so they don't
+  fight CodeMirror's own cursor / space-insert bindings while
+  typing. Cmd/Ctrl+Enter is intercepted regardless of focus.
+- Stepping backward shows the previous snapshot's env, AST, and
+  output. The slot-machine animations on value changes still play
+  in the "forward direction" (visually they slide up) — that's
+  acceptable: each step is its own snapshot, the direction of
+  travel just dictates which snapshot you land on.
+- Type-check clean. No Python changes; 669 tests still passing.
+
 ## v2.26.28 — Pause Play on error + "halted" badge
 
 ### Added

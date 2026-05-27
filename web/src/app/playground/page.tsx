@@ -275,19 +275,40 @@ export default function PlaygroundPage() {
     (mode === "run" && running) ||
     (mode === "animate" && stepping);
 
-  // Keyboard shortcut: Cmd/Ctrl+Enter triggers Run or Step depending
-  // on mode.
+  // Keyboard shortcuts:
+  //   Cmd/Ctrl+Enter — Run (run mode) or Step (animate mode). Works
+  //                    even when the editor is focused.
+  //   →             — Step forward (animate mode).
+  //   ←             — Step backward (animate mode).
+  //   Space         — Play / Pause (animate mode).
+  // Arrow + Space are gated on the editor NOT being focused so they
+  // don't fight CodeMirror's own bindings.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
         if (mode === "run") void handleRun();
         else void handleStep();
+        return;
+      }
+      const target = e.target as HTMLElement | null;
+      if (target?.closest(".cm-editor")) return;
+      if (mode !== "animate") return;
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        void handleStep();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setPlaying(false);
+        setStepIndex((i) => Math.max(0, i - 1));
+      } else if (e.key === " " || e.code === "Space") {
+        e.preventDefault();
+        void togglePlay();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [mode, handleRun, handleStep]);
+  }, [mode, handleRun, handleStep, togglePlay]);
 
   const loadingMessage =
     runtimeStatus.state === "loading"
@@ -555,7 +576,7 @@ function AnimateControls({
         onClick={onReset}
         disabled={stepping || !hasSnapshots}
         className="gap-1.5"
-        title="Reset to before first step"
+        title="Reset to before first step (use ← to step back one)"
       >
         <RotateCcw className="h-3.5 w-3.5" />
         <span className="hidden sm:inline">Reset</span>
@@ -566,7 +587,7 @@ function AnimateControls({
         onClick={onStep}
         disabled={stepping || (hasSnapshots && atEnd && !playing)}
         className="gap-1.5"
-        title="Advance one statement"
+        title="Advance one statement (⌘↵ or →)"
       >
         {stepping ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -575,7 +596,7 @@ function AnimateControls({
         )}
         Step
         <span className="ml-1 hidden text-[10px] opacity-70 sm:inline">
-          {"⌘↵"}
+          →
         </span>
       </Button>
       <Button
@@ -583,7 +604,7 @@ function AnimateControls({
         onClick={onTogglePlay}
         disabled={stepping}
         className="gap-1.5"
-        title={playing ? "Pause auto-step" : "Auto-step to end"}
+        title={playing ? "Pause auto-step (space)" : "Auto-step to end (space)"}
       >
         {playing ? (
           <Pause className="h-3.5 w-3.5" />
@@ -591,6 +612,9 @@ function AnimateControls({
           <Play className="h-3.5 w-3.5" />
         )}
         {playing ? "Pause" : "Play"}
+        <span className="ml-1 hidden text-[10px] opacity-70 sm:inline">
+          ␣
+        </span>
       </Button>
       <SpeedSlider value={speedMs} onChange={onSpeedChange} />
     </div>
