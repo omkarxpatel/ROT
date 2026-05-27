@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.1 — parser: `return f"..."` now works (P91)
+
+### Fixed
+- `FSTRING` was missing from `_EXPR_STARTS` in `rot/syntax.py`, so `return f"hello"` parsed as a bare `return` (with `None` value) followed by an orphan f-string expression statement. The function returned `null` and the f-string was a no-op. Added `FSTRING` to the set; `return f"..."` now correctly returns the interpolated string. Tests: `tests/test_interpreter.py::test_return_fstring_works`, `test_return_fstring_with_interpolation`.
+
 ## v2.24.8 — test backfill: imports + edge cases (T77-T81, T102-T105)
 
 ### Added

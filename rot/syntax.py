@@ -61,8 +61,11 @@ _INFIX_PRECEDENCE: dict[str, int] = {
 
 
 # Token kinds that can start an expression (used to detect bare `return`).
+# Note: FSTRING must be present so `return f"..."` is recognized — its
+# omission (P91) caused `return f"..."` to be parsed as a bare `return`
+# followed by an orphan f-string expression statement.
 _EXPR_STARTS = {
-    "IDENT", "PRINT", "PRINTLN", "NUMBER", "STRING_LIT",
+    "IDENT", "PRINT", "PRINTLN", "NUMBER", "STRING_LIT", "FSTRING",
     "TRUE", "FALSE", "NULL", "THIS",
     "L_PAREN", "L_BRACKET", "L_CURLY",
     "SUBTRACTION", "NOT",

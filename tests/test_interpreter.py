@@ -2686,6 +2686,25 @@ def test_fstring_with_bound_method_uses_method_rendering():
     assert _run(src) == "got: <method A.f>\n"
 
 
+def test_return_fstring_works():
+    # P91: `FSTRING` was missing from `_EXPR_STARTS`, so `return f"..."`
+    # parsed as a bare `return` followed by an orphan f-string statement.
+    # The function then returned null and the f-string was a no-op.
+    src = (
+        'funct g() { return f"hi" }\n'
+        'coutln(g())'
+    )
+    assert _run(src) == "hi\n"
+
+
+def test_return_fstring_with_interpolation():
+    src = (
+        'funct hello(name) { return f"hello, {name}" }\n'
+        'coutln(hello("alice"))'
+    )
+    assert _run(src) == "hello, alice\n"
+
+
 def test_list_of_functions_renders_each_as_funct():
     # _stringify recurses into lists, so each element should render in the
     # new style.
