@@ -14,6 +14,12 @@ interface AstViewProps {
   // Multiplier on depth for the per-node stagger.
   depthStaggerSec?: number;
   empty?: string;
+  // Optional callback fired after a node with a "primary" field
+  // (NumberLit, StringLit, Identifier, BinaryOp, ...) finishes its
+  // entrance animation. The Step panel uses this to pulse the
+  // matching token chip so the user reads parse as a real lex→AST
+  // connection.
+  onLeafReveal?: (line: number, col: number) => void;
 }
 
 export function AstView({
@@ -21,6 +27,7 @@ export function AstView({
   baseDelaySec = 0,
   depthStaggerSec = 0.08,
   empty,
+  onLeafReveal,
 }: AstViewProps) {
   if (!ast) {
     return (
@@ -36,6 +43,7 @@ export function AstView({
         depth={0}
         baseDelaySec={baseDelaySec}
         depthStaggerSec={depthStaggerSec}
+        onLeafReveal={onLeafReveal}
       />
     </div>
   );
@@ -46,6 +54,7 @@ interface AstNodeProps {
   depth: number;
   baseDelaySec: number;
   depthStaggerSec: number;
+  onLeafReveal?: (line: number, col: number) => void;
 }
 
 function AstNodeView({
@@ -53,6 +62,7 @@ function AstNodeView({
   depth,
   baseDelaySec,
   depthStaggerSec,
+  onLeafReveal,
 }: AstNodeProps) {
   const [open, setOpen] = useState(true);
   const type = node.__type__;
@@ -86,11 +96,24 @@ function AstNodeView({
   const indent = `${depth * 12}px`;
   const delay = baseDelaySec + depth * depthStaggerSec;
 
+  // After this node's entrance animation completes, if it has a
+  // primary field (i.e. it's a leaf-ish node with one inline value),
+  // signal to the Step panel to pulse the matching source token. We
+  // only fire for primary-field nodes — Block / IfStmt / etc. have no
+  // "key thing" to point back at, so they'd just create noise.
+  const handleAnimationComplete = () => {
+    if (!onLeafReveal || !primary) return;
+    const line = typeof node.line === "number" ? node.line : 0;
+    const col = typeof node.col === "number" ? node.col : 0;
+    if (line > 0 && col > 0) onLeafReveal(line, col);
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay, duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      onAnimationComplete={handleAnimationComplete}
       style={{ paddingLeft: indent }}
     >
       <button
@@ -138,6 +161,7 @@ function AstNodeView({
                 depth={depth + 1}
                 baseDelaySec={baseDelaySec}
                 depthStaggerSec={depthStaggerSec}
+                onLeafReveal={onLeafReveal}
               />
             </div>
           ))}
@@ -152,11 +176,13 @@ function AstValueView({
   depth,
   baseDelaySec,
   depthStaggerSec,
+  onLeafReveal,
 }: {
   value: AstValue;
   depth: number;
   baseDelaySec: number;
   depthStaggerSec: number;
+  onLeafReveal?: (line: number, col: number) => void;
 }) {
   if (value === null || value === undefined) {
     return (
@@ -182,6 +208,7 @@ function AstValueView({
             depth={depth}
             baseDelaySec={baseDelaySec}
             depthStaggerSec={depthStaggerSec}
+            onLeafReveal={onLeafReveal}
           />
         ))}
       </div>
@@ -203,6 +230,7 @@ function AstValueView({
       depth={depth}
       baseDelaySec={baseDelaySec}
       depthStaggerSec={depthStaggerSec}
+      onLeafReveal={onLeafReveal}
     />
   );
 }

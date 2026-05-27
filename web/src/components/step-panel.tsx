@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowDown,
@@ -140,6 +140,31 @@ function StagedView({
     return statementAst(ast, stepIndex);
   }, [ast, stepIndex]);
 
+  // Pulse coordination: when an AST leaf (a node with a primary
+  // field) finishes its entrance animation, fire a pulse on the
+  // matching source token chip. `pulses` is a record mapping the
+  // token's index in stmtTokens → an ever-incrementing pulse counter,
+  // so the same chip can flash multiple times across a step.
+  const [pulses, setPulses] = useState<Record<number, number>>({});
+  const pulseCounter = useRef(0);
+  // Reset on each step.
+  useEffect(() => {
+    setPulses({});
+    pulseCounter.current = 0;
+  }, [stepIndex]);
+  const handleLeafReveal = useCallback(
+    (line: number, col: number) => {
+      const idx = stmtTokens.findIndex(
+        (t) => t.line === line && t.col === col,
+      );
+      if (idx < 0) return;
+      pulseCounter.current += 1;
+      const counter = pulseCounter.current;
+      setPulses((prev) => ({ ...prev, [idx]: counter }));
+    },
+    [stmtTokens],
+  );
+
   return (
     <div className="space-y-3">
       <StageBlock
@@ -172,6 +197,7 @@ function StagedView({
           baseDelaySec={STAGE_DELAYS.tokens + 0.05}
           staggerSec={0.05}
           flyFrom="above"
+          pulses={pulses}
           empty="(no tokens on this line)"
         />
       </StageBlock>
@@ -190,6 +216,7 @@ function StagedView({
           baseDelaySec={STAGE_DELAYS.ast + 0.08}
           depthStaggerSec={0.08}
           empty="(no AST subtree available)"
+          onLeafReveal={handleLeafReveal}
         />
       </StageBlock>
 

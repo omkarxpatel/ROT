@@ -26,6 +26,12 @@ interface TokensViewProps {
   // panel so the chips read as falling out of the Source line above
   // them.
   flyFrom?: "below" | "above";
+  // Optional pulse signals: when `pulses[i]` changes value, chip `i`
+  // fires a one-shot pulse animation (amber ring expanding outward).
+  // Used by the Step panel so that when an AST leaf reveals, its
+  // source token gets a visible nudge — completing the lex → parse
+  // visual link.
+  pulses?: Record<number, number>;
 }
 
 export function TokensView({
@@ -36,6 +42,7 @@ export function TokensView({
   staggerCap = 60,
   empty,
   flyFrom = "below",
+  pulses,
 }: TokensViewProps) {
   if (tokens.length === 0) {
     return (
@@ -47,28 +54,41 @@ export function TokensView({
   const yStart = flyFrom === "above" ? -28 : 10;
   return (
     <div className="flex flex-wrap gap-1">
-      {tokens.map((t, i) => (
-        <motion.span
-          key={`${runKey}-${i}-${t.line}-${t.col}`}
-          initial={{ opacity: 0, y: yStart, scale: 0.85 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{
-            delay: baseDelaySec + Math.min(i, staggerCap) * staggerSec,
-            duration: 0.32,
-            ease: [0.16, 1, 0.3, 1],
-          }}
-          // Plain-language tooltip — devs without compiler background
-          // see a category word and the source position; the raw
-          // lexer kind is included parenthetically for the curious.
-          title={`${categoryLabel(t.kind)} (${t.kind.toLowerCase()}) — line ${t.line}:${t.col}`}
-          className={cn(
-            "inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[12px] leading-tight",
-            tokenClass(t.kind),
-          )}
-        >
-          {escapeLexeme(t.lexeme)}
-        </motion.span>
-      ))}
+      {tokens.map((t, i) => {
+        const pulseKey = pulses?.[i];
+        return (
+          <motion.span
+            key={`${runKey}-${i}-${t.line}-${t.col}`}
+            initial={{ opacity: 0, y: yStart, scale: 0.85 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{
+              delay: baseDelaySec + Math.min(i, staggerCap) * staggerSec,
+              duration: 0.32,
+              ease: [0.16, 1, 0.3, 1],
+            }}
+            title={`${categoryLabel(t.kind)} (${t.kind.toLowerCase()}) — line ${t.line}:${t.col}`}
+            className={cn(
+              "relative inline-flex items-center rounded border px-1.5 py-0.5 font-mono text-[12px] leading-tight",
+              tokenClass(t.kind),
+            )}
+          >
+            {escapeLexeme(t.lexeme)}
+            {pulseKey != null && (
+              // Overlay ring that scales up and fades on each pulseKey
+              // change. Re-keyed by the pulse counter so the same chip
+              // can pulse multiple times within one step.
+              <motion.span
+                key={`pulse-${pulseKey}`}
+                initial={{ opacity: 0.9, scale: 0.95 }}
+                animate={{ opacity: 0, scale: 1.7 }}
+                transition={{ duration: 0.65, ease: "easeOut" }}
+                className="pointer-events-none absolute inset-0 rounded ring-2 ring-amber-400"
+                aria-hidden
+              />
+            )}
+          </motion.span>
+        );
+      })}
     </div>
   );
 }

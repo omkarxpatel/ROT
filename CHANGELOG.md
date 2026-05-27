@@ -2,6 +2,41 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.17 — AST-leaf → token-chip pulse highlight
+
+### Added
+- When an AST leaf node (any node with a "primary" field —
+  `NumberLit`, `StringLit`, `Identifier`, `BoolLit`, `BinaryOp`,
+  `UnaryOp`, `Assign`, `LetStmt`, `FuncDef`, `ClassDef`,
+  `MemberAccess`, `MemberAssign`, `ImportStmt`) finishes its
+  entrance animation in the AST stage, an amber ring pulses on the
+  matching token chip in the Tokens stage. Completes the
+  source → tokens → AST visual chain: the user sees the chip *and*
+  knows which AST node it became part of.
+- Pulse coordination handled in
+  [`web/src/components/step-panel.tsx`](web/src/components/step-panel.tsx):
+  - `AstView` accepts `onLeafReveal(line, col)` — fired from
+    `AstNodeView`'s `onAnimationComplete` for primary-field nodes.
+  - `StepPanel` matches `(line, col)` against the step's token
+    list and bumps an entry in a `pulses: Record<tokenIdx, counter>`
+    record. The counter increments per pulse so the same chip can
+    fire multiple times within one step (e.g. a recursive AST that
+    references the same name).
+  - `TokensView` accepts `pulses` and renders a one-shot
+    scale-and-fade ring overlay on each chip whose entry changed.
+  - `useEffect` clears the pulses map on each `stepIndex` change so
+    state doesn't leak across steps.
+
+### Notes
+- Only primary-field AST nodes pulse. Structural nodes (Block,
+  IfStmt, WhileStmt, Call, ExprStmt, ...) don't have a "key thing"
+  to point back at, so they don't fire — keeps the pulse signal
+  meaningful rather than noisy.
+- The chip overlay is absolutely positioned and `pointer-events:
+  none` so it doesn't interfere with tooltips.
+- Build clean. Type-check clean. No Python changes; 666 tests still
+  passing.
+
 ## v2.26.16 — Colored source-line preview + token chips fall from above
 
 ### Added
