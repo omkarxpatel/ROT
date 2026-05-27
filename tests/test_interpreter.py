@@ -3862,3 +3862,93 @@ def test_chained_slice_on_call_result():
         'coutln(xs()[1:3])'
     )
     assert _run(src) == "[20 | 30]\n"
+
+
+# ==== v2.25.10: f-string format specs =======================================
+
+
+def test_fstring_format_spec_precision_float():
+    assert _run('coutln(f"{3.14159:.2f}")') == "3.14\n"
+
+
+def test_fstring_format_spec_width_right_align():
+    assert _run('coutln(f"<{42:>5}>")') == "<   42>\n"
+
+
+def test_fstring_format_spec_width_left_align():
+    assert _run('coutln(f"<{42:<5}>")') == "<42   >\n"
+
+
+def test_fstring_format_spec_width_center():
+    assert _run('coutln(f"<{42:^5}>")') == "< 42  >\n"
+
+
+def test_fstring_format_spec_hex():
+    assert _run('coutln(f"{255:x}")') == "ff\n"
+
+
+def test_fstring_format_spec_binary():
+    assert _run('coutln(f"{10:b}")') == "1010\n"
+
+
+def test_fstring_format_spec_padded_zero():
+    assert _run('coutln(f"{5:03d}")') == "005\n"
+
+
+def test_fstring_format_spec_with_expression():
+    # Spec applies to the value of the inner expression.
+    assert _run('coutln(f"{1 + 2:.3f}")') == "3.000\n"
+
+
+def test_fstring_without_spec_still_works():
+    # Backwards compat: a plain interpolation without `:` still uses
+    # rot's str() (so `true` -> `"true"`).
+    assert _run('coutln(f"{true}")') == "true\n"
+
+
+def test_fstring_format_spec_bool_with_alignment_uses_rot_style():
+    # Plain alignment spec (no type letter) -> pre-stringify with rot
+    # style: `f"{true:>5}"` -> `" true"` (5-char right-aligned), not
+    # `" True"`.
+    assert _run('coutln(f"<{true:>5}>")') == "< true>\n"
+
+
+def test_fstring_format_spec_bool_with_d_uses_python_int():
+    # When a type letter is in the spec, defer to Python's format
+    # semantics so the `d` (decimal) coercion of bool works.
+    assert _run('coutln(f"{true:d}")') == "1\n"
+
+
+def test_fstring_format_spec_null_with_alignment_uses_rot_style():
+    # Same logic as bool: rot-style for plain alignment.
+    assert _run('coutln(f"<{null:>6}>")') == "<  null>\n"
+
+
+def test_fstring_format_spec_bad_spec_errors_cleanly():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln(f"{42:Z}")')
+    assert "f-string format:" in str(exc_info.value)
+
+
+def test_fstring_with_slicing_does_not_split_on_inner_colon():
+    # The colon inside the slice `[1:3]` must NOT be treated as a spec
+    # separator. Slice is inside `[]`, so depth_bracket > 0.
+    assert _run('xs = [1 | 2 | 3 | 4]\ncoutln(f"{xs[1:3]}")') == "[2 | 3]\n"
+
+
+def test_fstring_with_slicing_and_spec():
+    # Slice plus format spec at the outer level.
+    src = 'xs = [10 | 20 | 30 | 40]\ncoutln(f"<{xs[1:3]:>15}>")'
+    out = _run(src)
+    # `[20 | 30]` is 9 chars; padded to 15 right-aligned = 6 spaces + value.
+    assert out == "<      [20 | 30]>\n"
+
+
+def test_fstring_multiple_specced_interpolations():
+    src = 'x = 3.14159\ny = 2.71828\ncoutln(f"pi={x:.2f} e={y:.2f}")'
+    assert _run(src) == "pi=3.14 e=2.72\n"
+
+
+def test_fstring_format_spec_string_truncate():
+    # Width with precision on a string truncates.
+    assert _run('coutln(f"{\"abcdef\":.3}")') == "abc\n"

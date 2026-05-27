@@ -171,6 +171,44 @@ _ESCAPE_SEQUENCES: dict[str, str] = {
 }
 
 
+def _find_fstring_spec_colon(inner: str) -> "int | None":
+    """Return the index of the first top-level `:` inside an f-string
+    interpolation's contents, or None if there isn't one. "Top level"
+    means: not nested inside `[]` / `()` and not inside a string literal.
+    Used by v2.25.10's f-string format-spec parsing to split `{expr:spec}`
+    on the spec separator without tripping on a slice colon (`{xs[1:3]}`)
+    or a colon inside a string. Nested `{...}` are not currently supported
+    inside f-string interpolations (greedy close-brace search)."""
+    depth_bracket = 0
+    depth_paren = 0
+    in_string = False
+    i = 0
+    while i < len(inner):
+        ch = inner[i]
+        if in_string:
+            if ch == "\\" and i + 1 < len(inner):
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "[":
+            depth_bracket += 1
+        elif ch == "]":
+            depth_bracket -= 1
+        elif ch == "(":
+            depth_paren += 1
+        elif ch == ")":
+            depth_paren -= 1
+        elif ch == ":" and depth_bracket == 0 and depth_paren == 0:
+            return i
+        i += 1
+    return None
+
+
 def _decode_string_escapes(raw: str) -> str:
     """Decode backslash escapes inside a string literal's content
     (with surrounding quotes already stripped)."""
@@ -726,61 +764,84 @@ class Parser:
         return (tok.line, tok.col + max(1, len(tok.lexeme)))
 
     def _parse_fstring_content(self, content: str, line: int, col: int) -> ast.Expression:
-        """Split f-string content into static text and `{expr}` interpolations,
-        then desugar to a chain of `+` operations (with `str(...)` wrapping the
-        expressions). No new AST node — uses existing StringLit / Call / BinaryOp.
+        """Split f-string content into static text and `{expr}` (optionally
+        `{expr:spec}`) interpolations, then desugar to a chain of `+`
+        operations. Plain interpolations wrap with `str(...)`; specced
+        interpolations wrap with `_format_fstring_value(value | spec)`.
+        No new AST node — uses existing StringLit / Call / BinaryOp.
+
+        v2.25.10 added the optional `:spec` form. The spec is delimited
+        by the first top-level colon inside `{...}` — colons inside
+        `[]`/`()` and inside string literals are skipped so slicing
+        (`{xs[1:3]}`) and string contents don't accidentally split.
+        Nested dict literals inside the interpolation are still not
+        supported (the old close-brace search remains greedy).
         """
         from .lexer import Lexer  # local import to avoid load-time cycle
 
-        parts: list[tuple[str, "object"]] = []
+        parts: list[tuple[str, "object", "str | None"]] = []
         i = 0
         while i < len(content):
             next_brace = content.find("{", i)
             if next_brace == -1:
                 if i < len(content):
-                    parts.append(("static", content[i:]))
+                    parts.append(("static", content[i:], None))
                 break
             if next_brace > i:
-                parts.append(("static", content[i:next_brace]))
+                parts.append(("static", content[i:next_brace], None))
             end_brace = content.find("}", next_brace + 1)
             if end_brace == -1:
                 raise ParserError("unterminated `{` in f-string", line, col)
-            expr_text = content[next_brace + 1 : end_brace].strip()
+            inner = content[next_brace + 1 : end_brace]
+            split_idx = _find_fstring_spec_colon(inner)
+            if split_idx is None:
+                expr_text = inner.strip()
+                spec_text: "str | None" = None
+            else:
+                expr_text = inner[:split_idx].strip()
+                spec_text = inner[split_idx + 1 :]
             if not expr_text:
                 raise ParserError("empty `{}` in f-string", line, col)
             inner_tokens = Lexer().tokenize(expr_text)
             inner_parser = Parser(inner_tokens)
             expr = inner_parser._parse_expression()
-            # Inner parser must consume every token — otherwise the f-string
-            # has garbage like `{1 2}` and we'd silently drop it.
             if not inner_parser._at_end():
                 leftover = inner_parser._peek()
                 raise ParserError(
                     f"unexpected token {leftover.lexeme!r} in f-string expression",
                     line, col,
                 )
-            parts.append(("expr", expr))
+            parts.append(("expr", expr, spec_text))
             i = end_brace + 1
 
-        # Decode escapes in static segments.
-        decoded: list[tuple[str, "object"]] = []
-        for kind, value in parts:
+        decoded: list[tuple[str, "object", "str | None"]] = []
+        for kind, value, spec in parts:
             if kind == "static":
-                decoded.append((kind, _decode_string_escapes(value)))  # type: ignore[arg-type]
+                decoded.append((kind, _decode_string_escapes(value), spec))  # type: ignore[arg-type]
             else:
-                decoded.append((kind, value))
+                decoded.append((kind, value, spec))
 
         if not decoded:
             return ast.StringLit(value="", line=line, col=col)
 
         result: ast.Expression | None = None
-        for kind, value in decoded:
+        for kind, value, spec in decoded:
             if kind == "static":
                 node: ast.Expression = ast.StringLit(value=value, line=line, col=col)  # type: ignore[arg-type]
-            else:
+            elif spec is None:
                 node = ast.Call(
                     callee=ast.Identifier(name="str", line=line, col=col),
                     args=[value],  # type: ignore[list-item]
+                    line=line, col=col,
+                )
+            else:
+                node = ast.Call(
+                    callee=ast.Identifier(name="_format_fstring_value",
+                                          line=line, col=col),
+                    args=[
+                        value,  # type: ignore[list-item]
+                        ast.StringLit(value=spec, line=line, col=col),
+                    ],
                     line=line, col=col,
                 )
             result = node if result is None else ast.BinaryOp(

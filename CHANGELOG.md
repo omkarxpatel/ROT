@@ -2,6 +2,14 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.10 — f-string format specs (I38)
+
+### Added
+- f-strings now support Python-style format specs: `f"{x:.2f}"`, `f"{n:>5}"`, `f"{n:<10}"`, `f"{n:^8}"`, `f"{255:x}"` (hex), `f"{10:b}"` (binary), `f"{5:03d}"` (zero-padded), etc. The full Python format-spec mini-language is available because the desugaring routes through Python's built-in `format()`. Bad specs raise a clean `InterpreterError: f-string format: ...`.
+- Special handling for rot-specific types: when the spec has no type letter (`b`/`c`/`d`/`o`/`x`/`X`/`n`/`e`/`E`/`f`/`F`/`g`/`G`/`s`/`%`), bool/null/list/dict/instance values are pre-stringified using rot's `_stringify` first, so `f"{true:>5}"` produces `" true"` (rot style) instead of `" True"` (Python style). When the spec DOES have a type letter (`f"{true:d}"` → `"1"`), Python's format semantics apply directly — the user explicitly opted in.
+- Implementation: in `_parse_fstring_content`, the inner contents between `{` and `}` are split at the first top-level colon (a new `_find_fstring_spec_colon` helper skips colons inside `[]`/`()` and string literals, so slicing like `{xs[1:3]}` doesn't accidentally split). Specced interpolations desugar to `_format_fstring_value(value | spec)`; plain interpolations stay on `str(value)` as before. `_format_fstring_value` is registered in BUILTINS under an underscore-prefixed name. Backwards compatible — every existing f-string test still passes.
+- 18 new tests covering precision, alignment, hex/binary/octal, zero-padding, bool/null with and without type letters, expressions inside the interpolation, slicing inside the interpolation, multiple specced interpolations in one string, and clean errors on bad specs.
+
 ## v2.25.9 — language: slicing for strings and lists (I33)
 
 ### Added

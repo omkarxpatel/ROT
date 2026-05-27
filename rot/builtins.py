@@ -584,6 +584,57 @@ def _builtin_exit(*args: Any) -> None:
     sys.exit(0)
 
 
+# ==== v2.25.10: f-string format spec helper =================================
+
+def _format_fstring_value(*args: Any) -> str:
+    """Internal helper used by f-string desugaring when the interpolation
+    carries a format spec (`f"{x:.2f}"`). Routes through Python's built-in
+    `format()` so the same spec mini-language is available (alignment,
+    width, precision, type — `>5`, `<10`, `^8`, `.2f`, `d`, `b`, `x`,
+    etc.). On a bad spec, raise a clean rot-side error rather than
+    leaking Python's ValueError message verbatim.
+
+    Bools are stringified using rot's `true`/`false` BEFORE formatting if
+    the spec is a width/alignment-only string (no type letter), so that
+    `f"{true:>5}"` produces `" true"` instead of `"True"`. Same idea for
+    `None` -> `null`. For specs that include a type letter (`d`, `f`,
+    `e`, `g`, `b`, `o`, `x`, `X`, `s`, `c`), defer to Python's format
+    semantics (e.g. `f"{true:d}"` -> `"1"`, mirroring Python).
+
+    Registered under `_format_fstring_value` in BUILTINS — only the
+    f-string desugar machinery in syntax.py is expected to call it. The
+    underscore prefix discourages direct user code from invoking it."""
+    _arity("_format_fstring_value", args, 2)
+    value, spec = args[0], args[1]
+    if not isinstance(spec, str):
+        raise InterpreterError(
+            f"f-string format: spec must be a string, got {type(spec).__name__}"
+        )
+    # Pre-stringify rot-specific or non-base types so the same `>5` /
+    # `.10` alignment-and-width specs work uniformly. Without this,
+    # `f"{xs:>15}"` on a list raises Python's "list.__format__" error
+    # because Python's `format()` doesn't natively support format specs
+    # on lists/dicts/None/bool. Only pre-stringify when the spec has no
+    # type letter — if the user wrote `f"{true:d}"` they explicitly want
+    # the Python `d` semantics (`1`/`0`), not `"true"`.
+    has_type_letter = bool(spec) and spec[-1] in "bcdoxXneEfFgGs%"
+    if not has_type_letter:
+        if isinstance(value, bool) or value is None:
+            value = _stringify(value)
+        elif isinstance(value, (list, dict)):
+            value = _stringify(value)
+        else:
+            # Check rot-internal types (RotInstance, etc.) — these also
+            # don't support Python's format() natively.
+            from .interpreter import RotInstance, RotFunction, RotClass, BoundMethod
+            if isinstance(value, (RotInstance, RotFunction, RotClass, BoundMethod)):
+                value = _stringify(value)
+    try:
+        return format(value, spec)
+    except (ValueError, TypeError) as e:
+        raise InterpreterError(f"f-string format: {e}")
+
+
 # ==== Registry ==============================================================
 
 BUILTINS: dict[str, Any] = {
@@ -634,4 +685,9 @@ BUILTINS: dict[str, Any] = {
     "seed": _builtin_seed,
     # Assertions
     "assert": _assert,
+    # Internal: f-string format-spec helper (v2.25.10). Underscore-prefixed
+    # to discourage direct user use; the desugaring in syntax.py is the
+    # only intended caller. Lives in the frozen builtins layer so the
+    # _PYTHON_HINTS path can't override it.
+    "_format_fstring_value": _format_fstring_value,
 }
