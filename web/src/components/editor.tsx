@@ -32,6 +32,11 @@ interface EditorProps {
   // an AST node in the Step panel. Painted as a subtle sky-blue tint
   // distinct from the amber active-step highlight. null clears it.
   hoverRange?: { startLine: number; endLine: number } | null;
+  // Fires with the cursor's 1-indexed (line, col) whenever the
+  // editor's selection changes. Used by the playground to highlight
+  // the matching AST node in the Step Detail panel — closes the
+  // source ↔ AST link in the editor → panel direction.
+  onCursorChange?: (line: number, col: number) => void;
 }
 
 const setHighlightLine = StateEffect.define<number | null>();
@@ -176,8 +181,16 @@ export function Editor({
   highlightLine,
   jumpTo,
   hoverRange,
+  onCursorChange,
 }: EditorProps) {
   const viewRef = useRef<EditorView | null>(null);
+  // Stash the callback in a ref so the CodeMirror updateListener
+  // captures a stable reference and doesn't tear down the extension
+  // tree when the parent's `onCursorChange` identity changes.
+  const onCursorChangeRef = useRef(onCursorChange);
+  useEffect(() => {
+    onCursorChangeRef.current = onCursorChange;
+  }, [onCursorChange]);
 
   const extensions = useMemo(
     () => [
@@ -187,6 +200,14 @@ export function Editor({
       rotLanguage,
       // Listed AFTER oneDark so this style wins on overlapping tags.
       syntaxHighlighting(rotHighlight),
+      EditorView.updateListener.of((update) => {
+        if (!update.selectionSet) return;
+        const cb = onCursorChangeRef.current;
+        if (!cb) return;
+        const head = update.state.selection.main.head;
+        const line = update.state.doc.lineAt(head);
+        cb(line.number, head - line.from + 1);
+      }),
       EditorView.theme({
         "&": { backgroundColor: "transparent" },
         ".cm-gutters": { backgroundColor: "transparent", borderRight: "none" },

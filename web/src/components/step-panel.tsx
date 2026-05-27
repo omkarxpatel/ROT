@@ -48,6 +48,11 @@ interface StepPanelProps {
   // appearing). Manual Step gets the full ~1.4s sequence.
   playing?: boolean;
   speedMs?: number;
+  // Editor cursor position (1-indexed). When the user moves the
+  // cursor in the editor, the AST stage highlights the matching
+  // node (deepest node on the cursor's line, or exact (line,col)
+  // match if one exists).
+  editorCursor?: { line: number; col: number } | null;
 }
 
 // Stage timing (seconds, manual-step pacing). The four reveals
@@ -82,6 +87,7 @@ export function StepPanel({
   onAstHover,
   playing = false,
   speedMs,
+  editorCursor,
 }: StepPanelProps) {
   const hasSteps = totalSteps > 0;
   const progressPct = hasSteps
@@ -159,6 +165,7 @@ export function StepPanel({
               onJumpToSource={onJumpToSource}
               onAstHover={onAstHover}
               animScale={animScale}
+              editorCursor={editorCursor}
             />
           ) : (
             <OnboardingMessage />
@@ -179,6 +186,7 @@ function StagedView({
   onJumpToSource,
   onAstHover,
   animScale,
+  editorCursor,
 }: {
   source: string;
   tokens: RotToken[];
@@ -191,6 +199,7 @@ function StagedView({
     range: { startLine: number; endLine: number } | null,
   ) => void;
   animScale: number;
+  editorCursor?: { line: number; col: number } | null;
 }) {
   // Scaled stage delays — when playing fast, the four reveals
   // compress proportionally so they all land inside the step
@@ -232,6 +241,15 @@ function StagedView({
   const stmtAst = useMemo<AstNode | null>(() => {
     return findStatementAst(ast, stmtLine, stmtCol, snapshot.statement_kind);
   }, [ast, stmtLine, stmtCol, snapshot.statement_kind]);
+
+  // 4) AST node matching the editor cursor. Walks `stmtAst` looking
+  // for the deepest node on the cursor's line; falls back to any
+  // node on the line if no nested match. Null if the cursor isn't
+  // on a line touched by this statement's subtree.
+  const cursorTarget = useMemo(() => {
+    if (!editorCursor || !stmtAst) return null;
+    return findCursorNode(stmtAst, editorCursor.line, editorCursor.col);
+  }, [editorCursor, stmtAst]);
 
   // Token pulses: an AST leaf's entrance animation triggers a pulse
   // on the matching source token chip — closing the lex → parse
@@ -347,6 +365,7 @@ function StagedView({
           onLeafReveal={handleLeafReveal}
           nodePulses={astPulses}
           onNodeHover={onAstHover}
+          cursorTarget={cursorTarget}
         />
       </StageBlock>
 
@@ -755,6 +774,52 @@ function findStatementAst(
   }
   visit(ast);
   return result;
+}
+
+// Find the deepest AST node whose position best matches the editor
+// cursor. Preference order:
+//   1. Exact (line, col) match — leaf at the cursor.
+//   2. Deepest node ON the cursor line with col ≤ cursor col.
+//   3. Deepest node ON the cursor line (any col).
+//   4. null if nothing on the cursor's line.
+// Returns `{ line, col, type }` for AstView.cursorTarget.
+function findCursorNode(
+  ast: AstNode,
+  cursorLine: number,
+  cursorCol: number,
+): { line: number; col: number; type: string } | null {
+  let exact: { line: number; col: number; type: string } | null = null;
+  let bestBefore: { line: number; col: number; type: string } | null = null;
+  let anyOnLine: { line: number; col: number; type: string } | null = null;
+
+  function visit(v: AstValue): void {
+    if (v === null || v === undefined) return;
+    if (typeof v !== "object") return;
+    if (Array.isArray(v)) {
+      for (const x of v) visit(x);
+      return;
+    }
+    const n = v as AstNode;
+    const nl = typeof n.line === "number" ? n.line : 0;
+    const nc = typeof n.col === "number" ? n.col : 0;
+    if (nl === cursorLine) {
+      const ident = { line: nl, col: nc, type: n.__type__ };
+      if (nc === cursorCol) {
+        exact = ident;
+      } else if (nc <= cursorCol) {
+        // Pick the rightmost node at or before the cursor (the leaf
+        // that contains the cursor's position).
+        if (!bestBefore || nc > bestBefore.col) bestBefore = ident;
+      }
+      anyOnLine = anyOnLine ?? ident;
+    }
+    for (const [k, child] of Object.entries(n)) {
+      if (k === "__type__" || k === "line" || k === "col") continue;
+      visit(child as AstValue);
+    }
+  }
+  visit(ast);
+  return exact ?? bestBefore ?? anyOnLine;
 }
 
 // Returns a Map of binding-name → "new" | "changed" based on the env

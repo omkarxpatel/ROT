@@ -253,6 +253,15 @@ export default function PlaygroundPage() {
     endLine: number;
   } | null>(null);
 
+  // Editor cursor — drives the inverse hover: when the user moves
+  // the cursor, the Step panel's AST stage highlights the matching
+  // node. Stored as a plain {line, col} so React batches updates
+  // on selection-set events.
+  const [editorCursor, setEditorCursor] = useState<{
+    line: number;
+    col: number;
+  } | null>(null);
+
   const displayOutput = mode === "animate" ? animateOutput : pipeline.output;
   const displayError = mode === "animate" ? animateError : pipeline.error;
   const displayRunning =
@@ -320,6 +329,9 @@ export default function PlaygroundPage() {
               highlightLine={highlightLine}
               jumpTo={editorJumpTo}
               hoverRange={editorHoverRange}
+              onCursorChange={(line, col) =>
+                setEditorCursor({ line, col })
+              }
             />
           </div>
         </section>
@@ -354,6 +366,7 @@ export default function PlaygroundPage() {
                 onAstHover={setEditorHoverRange}
                 playing={playing}
                 speedMs={speedMs}
+                editorCursor={editorCursor}
               />
             </div>
           )}

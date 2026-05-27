@@ -2,6 +2,37 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.27 — Editor → AST highlight (inverse hover)
+
+### Added
+- `Editor` accepts `onCursorChange: (line, col) => void`. Internally
+  uses a CodeMirror `EditorView.updateListener` and a ref to the
+  callback so the extension tree stays stable even when the parent's
+  callback identity changes.
+- The playground page maintains `editorCursor: { line, col } | null`
+  and threads it into the Step Detail panel.
+- `AstView` accepts `cursorTarget: { line, col, type } | null`.
+  Matching `AstNodeView`s render a steady sky-blue background with
+  a 1px ring (transition over 200ms), and `scrollIntoView` is called
+  on a ref to bring them on-screen — so even a deep AST scrolls to
+  show the matching node.
+- `StepPanel.findCursorNode` resolves the cursor's `(line, col)`
+  against the statement's subtree via a depth-first walk:
+  exact match wins → otherwise the rightmost node at or before the
+  cursor on that line → otherwise any node on that line. Most
+  source cursors land at or near a node's start col, so the leaf
+  containing the cursor is the typical pick.
+
+### Notes
+- This closes the source ↔ AST loop in the editor → panel direction.
+  Combined with v2.26.24's panel → editor hover, the user can now
+  navigate either way.
+- Hover on AST nodes still fires `onMouseEnter` / `onMouseLeave` so
+  the editor's hover-range tint and the AST node's cursor-target
+  tint coexist without conflict — they have distinct meanings
+  (range vs node).
+- Type-check clean. No Python changes; 669 tests still passing.
+
 ## v2.26.26 — Animate-mode Pipeline: drop redundant Tokens, add snapshot timeline
 
 ### Premise

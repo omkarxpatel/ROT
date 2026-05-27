@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 
@@ -39,6 +39,12 @@ interface AstViewProps {
   // The playground uses this to paint the editor's source range
   // matching the hovered node.
   onNodeHover?: (range: { startLine: number; endLine: number } | null) => void;
+  // Identity of the node to highlight as the "editor cursor target".
+  // When the user moves the cursor in the editor, the page resolves
+  // the matching AST node and passes its `(line, col, type)` triple
+  // here; that node renders with a steady sky-blue highlight and
+  // scrolls into view. Closes the editor → AST link.
+  cursorTarget?: { line: number; col: number; type: string } | null;
 }
 
 export function AstView({
@@ -49,6 +55,7 @@ export function AstView({
   onLeafReveal,
   nodePulses,
   onNodeHover,
+  cursorTarget,
 }: AstViewProps) {
   if (!ast) {
     return (
@@ -67,6 +74,7 @@ export function AstView({
         onLeafReveal={onLeafReveal}
         nodePulses={nodePulses}
         onNodeHover={onNodeHover}
+        cursorTarget={cursorTarget}
       />
     </div>
   );
@@ -80,6 +88,7 @@ interface AstNodeProps {
   onLeafReveal?: (line: number, col: number) => void;
   nodePulses?: Record<string, AstPulse>;
   onNodeHover?: (range: { startLine: number; endLine: number } | null) => void;
+  cursorTarget?: { line: number; col: number; type: string } | null;
 }
 
 function AstNodeView({
@@ -90,6 +99,7 @@ function AstNodeView({
   onLeafReveal,
   nodePulses,
   onNodeHover,
+  cursorTarget,
 }: AstNodeProps) {
   const [open, setOpen] = useState(true);
   const type = node.__type__;
@@ -142,6 +152,25 @@ function AstNodeView({
   const nodeCol = typeof node.col === "number" ? node.col : 0;
   const pulse = nodePulses?.[`${nodeLine}:${nodeCol}`];
 
+  // Editor-cursor target: when the editor's cursor matches THIS
+  // node's identity, render a steady sky-blue highlight + scroll
+  // into view.
+  const isCursorTarget =
+    cursorTarget !== undefined &&
+    cursorTarget !== null &&
+    cursorTarget.line === nodeLine &&
+    cursorTarget.col === nodeCol &&
+    cursorTarget.type === type;
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (isCursorTarget) {
+      headerRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    }
+  }, [isCursorTarget]);
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }}
@@ -151,7 +180,11 @@ function AstNodeView({
       style={{ paddingLeft: indent }}
     >
       <div
-        className="relative inline-block w-full"
+        ref={headerRef}
+        className={cn(
+          "relative inline-block w-full rounded transition-colors duration-200",
+          isCursorTarget && "bg-sky-500/20 ring-1 ring-sky-400/50",
+        )}
         onMouseEnter={() => {
           if (!onNodeHover) return;
           const range = nodeLineRange(node);
@@ -225,6 +258,7 @@ function AstNodeView({
                 onLeafReveal={onLeafReveal}
                 nodePulses={nodePulses}
                 onNodeHover={onNodeHover}
+                cursorTarget={cursorTarget}
               />
             </div>
           ))}
@@ -242,6 +276,7 @@ function AstValueView({
   onLeafReveal,
   nodePulses,
   onNodeHover,
+  cursorTarget,
 }: {
   value: AstValue;
   depth: number;
@@ -250,6 +285,7 @@ function AstValueView({
   onLeafReveal?: (line: number, col: number) => void;
   nodePulses?: Record<string, AstPulse>;
   onNodeHover?: (range: { startLine: number; endLine: number } | null) => void;
+  cursorTarget?: { line: number; col: number; type: string } | null;
 }) {
   if (value === null || value === undefined) {
     return (
@@ -278,6 +314,7 @@ function AstValueView({
             onLeafReveal={onLeafReveal}
             nodePulses={nodePulses}
             onNodeHover={onNodeHover}
+            cursorTarget={cursorTarget}
           />
         ))}
       </div>
@@ -302,6 +339,7 @@ function AstValueView({
       onLeafReveal={onLeafReveal}
       nodePulses={nodePulses}
       onNodeHover={onNodeHover}
+      cursorTarget={cursorTarget}
     />
   );
 }
