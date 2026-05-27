@@ -1,0 +1,391 @@
+// Pyodide runtime loader for the ROT playground.
+//
+// Lifecycle:
+//   1. `loadRotRuntime()` is called on the first "Run" click.
+//   2. It injects the Pyodide loader script from the CDN, calls
+//      `loadPyodide()`, fetches the rot/*.py sources from /rot_package/,
+//      writes them into Pyodide's virtual filesystem under /rot/, and
+//      defines a Python function `rot_compile_and_run(source)` that
+//      returns a JSON-serializable dict.
+//   3. Subsequent calls re-use the cached runtime.
+//
+// The runtime is intentionally a singleton — Pyodide is ~10MB to load
+// and re-initializing per Run would defeat the cache.
+//
+// All errors are caught and surfaced via the return shape so the UI
+// never sees a raw exception.
+
+import { ROT_VERSION } from "@/lib/rot-version";
+
+const PYODIDE_VERSION = "0.27.0";
+const PYODIDE_CDN = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full`;
+
+export interface RotToken {
+  lexeme: string;
+  kind: string;
+  line: number;
+  col: number;
+}
+
+// AST nodes from `dataclasses.asdict` look like
+//   { __type__: "FuncDef", name: "...", params: [...], body: { __type__: "Block", ... }, line, col }
+// Recursive — children are AstNode | AstNode[] | primitives.
+export type AstValue =
+  | string
+  | number
+  | boolean
+  | null
+  | AstNode
+  | AstValue[];
+
+export interface AstNode {
+  __type__: string;
+  [key: string]: AstValue;
+}
+
+export interface RotError {
+  message: string;
+  line: number;
+  col: number;
+  formatted: string; // rustc-style block
+  stage: "lex" | "parse" | "interpret" | "internal";
+}
+
+export interface RotRunResult {
+  tokens: RotToken[];
+  ast: AstNode | null;
+  output: string;
+  error: RotError | null;
+  timings: {
+    lexMs: number;
+    parseMs: number;
+    interpretMs: number;
+  };
+}
+
+export interface RotRuntimeStatus {
+  state: "idle" | "loading" | "ready" | "error";
+  message?: string;
+}
+
+// Minimal subset of the Pyodide JS API we use. We don't depend on the
+// upstream types package so the Next.js build doesn't need to resolve a
+// .d.ts module that doesn't exist at the version we pin to.
+interface PyProxy {
+  toJs: (opts?: { dict_converter?: (entries: Iterable<[unknown, unknown]>) => unknown }) => unknown;
+  destroy: () => void;
+}
+
+interface PyodideInterface {
+  FS: {
+    mkdirTree: (path: string) => void;
+    writeFile: (path: string, data: string | Uint8Array, opts?: { encoding?: string }) => void;
+  };
+  runPython: (code: string) => unknown;
+  runPythonAsync: (code: string) => Promise<unknown>;
+  globals: {
+    get: (name: string) => unknown;
+    set: (name: string, value: unknown) => void;
+  };
+}
+
+interface PyodideLoader {
+  loadPyodide: (opts: { indexURL: string }) => Promise<PyodideInterface>;
+}
+
+// Declare the global injected by the Pyodide loader script.
+declare global {
+  interface Window {
+    loadPyodide?: PyodideLoader["loadPyodide"];
+  }
+}
+
+// Singleton state.
+let runtimePromise: Promise<PyodideInterface> | null = null;
+let runtimeStatus: RotRuntimeStatus = { state: "idle" };
+const statusListeners = new Set<(s: RotRuntimeStatus) => void>();
+
+function setStatus(s: RotRuntimeStatus) {
+  runtimeStatus = s;
+  for (const l of statusListeners) l(s);
+}
+
+export function getRuntimeStatus(): RotRuntimeStatus {
+  return runtimeStatus;
+}
+
+export function onRuntimeStatus(
+  cb: (s: RotRuntimeStatus) => void,
+): () => void {
+  statusListeners.add(cb);
+  return () => statusListeners.delete(cb);
+}
+
+function injectScript(src: string): Promise<void> {
+  // If already present, resolve immediately.
+  if (typeof document === "undefined") {
+    return Promise.reject(new Error("not in a browser environment"));
+  }
+  const existing = document.querySelector<HTMLScriptElement>(
+    `script[src="${src}"]`,
+  );
+  if (existing && window.loadPyodide) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error(`failed to load ${src}`));
+    document.head.appendChild(s);
+  });
+}
+
+async function fetchText(url: string): Promise<string> {
+  const r = await fetch(url, { cache: "force-cache" });
+  if (!r.ok) {
+    throw new Error(`fetch ${url} failed: ${r.status} ${r.statusText}`);
+  }
+  return r.text();
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const r = await fetch(url, { cache: "force-cache" });
+  if (!r.ok) {
+    throw new Error(`fetch ${url} failed: ${r.status} ${r.statusText}`);
+  }
+  return r.json() as Promise<T>;
+}
+
+// Python glue. Defines `rot_compile_and_run(source)` once on startup;
+// subsequent calls just invoke it.
+const ROT_BRIDGE_PY = `
+import sys, io, contextlib, time, dataclasses
+import json as _json
+
+# Import the rot package we just wrote to the virtual filesystem.
+# /rot is on sys.path via Pyodide's default cwd; add explicitly to be safe.
+if "/" not in sys.path:
+    sys.path.insert(0, "/")
+
+from rot.lexer import Lexer
+from rot.syntax import Parser
+from rot.interpreter import Interpreter
+from rot.errors import RotError, LexerError, ParserError, InterpreterError
+
+
+def _ast_to_dict(node):
+    """Recursive dataclass -> plain-dict serialization, tagged with
+    the node's class name under __type__ so the UI can render a typed
+    tree."""
+    if dataclasses.is_dataclass(node) and not isinstance(node, type):
+        out = {"__type__": type(node).__name__}
+        for f in dataclasses.fields(node):
+            out[f.name] = _ast_to_dict(getattr(node, f.name))
+        return out
+    if isinstance(node, list):
+        return [_ast_to_dict(x) for x in node]
+    if isinstance(node, tuple):
+        return [_ast_to_dict(x) for x in node]
+    # Primitives (str, int, float, bool, None) pass through.
+    return node
+
+
+def _stage_from_exc(exc):
+    if isinstance(exc, LexerError):
+        return "lex"
+    if isinstance(exc, ParserError):
+        return "parse"
+    if isinstance(exc, InterpreterError):
+        return "interpret"
+    return "internal"
+
+
+def _error_dict(exc, source):
+    return {
+        "message": getattr(exc, "message", str(exc)),
+        "line": int(getattr(exc, "line", 0) or 0),
+        "col": int(getattr(exc, "col", 0) or 0),
+        "formatted": exc.format(source, "<playground>") if isinstance(exc, RotError) else f"error: {exc}",
+        "stage": _stage_from_exc(exc),
+    }
+
+
+def rot_compile_and_run(source):
+    """Lex / parse / interpret \`source\`. Returns a JSON string with:
+        - tokens: list of {lexeme, kind, line, col}
+        - ast:    a typed tree (or null on lex/parse failure)
+        - output: captured stdout
+        - error:  null or {message, line, col, formatted, stage}
+        - timings: {lexMs, parseMs, interpretMs}
+    """
+    result = {
+        "tokens": [],
+        "ast": None,
+        "output": "",
+        "error": None,
+        "timings": {"lexMs": 0.0, "parseMs": 0.0, "interpretMs": 0.0},
+    }
+    # --- lex ---
+    t0 = time.perf_counter()
+    try:
+        tokens = Lexer().tokenize(source)
+    except Exception as e:
+        result["timings"]["lexMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["lexMs"] = (time.perf_counter() - t0) * 1000
+    result["tokens"] = [
+        {"lexeme": t.lexeme, "kind": t.kind, "line": t.line, "col": t.col}
+        for t in tokens
+    ]
+    # --- parse ---
+    t0 = time.perf_counter()
+    try:
+        program = Parser(tokens).parse()
+    except Exception as e:
+        result["timings"]["parseMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["parseMs"] = (time.perf_counter() - t0) * 1000
+    try:
+        result["ast"] = _ast_to_dict(program)
+    except Exception as e:
+        # If serialization fails (shouldn't, but defensive), keep going
+        # and report the error in the trace slot.
+        result["ast"] = None
+        result["error"] = {
+            "message": f"ast serialization failed: {e}",
+            "line": 0,
+            "col": 0,
+            "formatted": f"error: ast serialization failed: {e}",
+            "stage": "internal",
+        }
+    # --- interpret ---
+    t0 = time.perf_counter()
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            Interpreter().execute(program)
+    except Exception as e:
+        result["timings"]["interpretMs"] = (time.perf_counter() - t0) * 1000
+        result["output"] = buf.getvalue()
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["interpretMs"] = (time.perf_counter() - t0) * 1000
+    result["output"] = buf.getvalue()
+    return _json.dumps(result)
+`;
+
+async function initRuntime(): Promise<PyodideInterface> {
+  if (typeof window === "undefined") {
+    throw new Error("pyodide can only run in the browser");
+  }
+  setStatus({ state: "loading", message: "fetching pyodide..." });
+  await injectScript(`${PYODIDE_CDN}/pyodide.js`);
+  if (!window.loadPyodide) {
+    throw new Error("pyodide loader missing after script load");
+  }
+  const pyodide = await window.loadPyodide({ indexURL: PYODIDE_CDN });
+
+  setStatus({ state: "loading", message: "loading rot..." });
+  // Fetch the manifest of rot/*.py we copied at build time.
+  const manifest = await fetchJson<{ files: string[] }>(
+    "/rot_package/manifest.json",
+  );
+  pyodide.FS.mkdirTree("/rot");
+  // Fetch every .py in parallel and write into /rot/.
+  await Promise.all(
+    manifest.files.map(async (name) => {
+      const text = await fetchText(`/rot_package/${name}`);
+      pyodide.FS.writeFile(`/rot/${name}`, text, { encoding: "utf8" });
+    }),
+  );
+
+  // Strip the colorama import from compiler.py — Pyodide doesn't have
+  // colorama by default and `trace=False` is all we use anyway.
+  // Easier than `micropip.install("colorama")` which adds ~100ms.
+  pyodide.runPython(`
+import sys
+# Provide a stub colorama so \`from colorama import Fore, init\` succeeds.
+import types as _types
+_mod = _types.ModuleType("colorama")
+class _Fore:
+    RED = ""
+    RESET = ""
+def _init(*a, **kw):
+    return None
+_mod.Fore = _Fore
+_mod.init = _init
+sys.modules["colorama"] = _mod
+`);
+
+  // Install the bridge.
+  pyodide.runPython(ROT_BRIDGE_PY);
+
+  setStatus({ state: "ready" });
+  return pyodide;
+}
+
+export function loadRotRuntime(): Promise<PyodideInterface> {
+  if (!runtimePromise) {
+    runtimePromise = initRuntime().catch((err) => {
+      setStatus({
+        state: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+      // Reset so a retry can be attempted.
+      runtimePromise = null;
+      throw err;
+    });
+  }
+  return runtimePromise;
+}
+
+const EMPTY_RESULT: RotRunResult = {
+  tokens: [],
+  ast: null,
+  output: "",
+  error: null,
+  timings: { lexMs: 0, parseMs: 0, interpretMs: 0 },
+};
+
+export async function compileAndRun(source: string): Promise<RotRunResult> {
+  let pyodide: PyodideInterface;
+  try {
+    pyodide = await loadRotRuntime();
+  } catch (e) {
+    return {
+      ...EMPTY_RESULT,
+      error: {
+        message: e instanceof Error ? e.message : String(e),
+        line: 0,
+        col: 0,
+        formatted: `error: ${e instanceof Error ? e.message : String(e)}`,
+        stage: "internal",
+      },
+    };
+  }
+  // Pass the source via globals to avoid string-escaping headaches.
+  pyodide.globals.set("__rot_source__", source);
+  const jsonStr = pyodide.runPython(
+    `rot_compile_and_run(__rot_source__)`,
+  ) as string;
+  try {
+    return JSON.parse(jsonStr) as RotRunResult;
+  } catch (e) {
+    return {
+      ...EMPTY_RESULT,
+      error: {
+        message: `json decode failed: ${e instanceof Error ? e.message : String(e)}`,
+        line: 0,
+        col: 0,
+        formatted: `error: json decode failed`,
+        stage: "internal",
+      },
+    };
+  }
+}
+
+export { ROT_VERSION };

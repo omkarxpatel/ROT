@@ -2,6 +2,35 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.14 — web playground (Next.js + Pyodide)
+
+### Added
+- [`web/`](web/) — a Next.js 15 + React 19 + TypeScript playground that
+  runs ROT entirely in the browser via Pyodide (Python compiled to WASM).
+  No backend. Vercel-deployable as a static site.
+- Three-pane MVP layout: CodeMirror 6 editor (left), output panel (top
+  right), pipeline visualization (bottom right) with animated token chips,
+  collapsible AST tree, and execution trace.
+- Examples dropdown wired to the 7 `examples/*.rot` programs. Cmd/Ctrl+Enter
+  runs the current source.
+- Pyodide lazy-loaded on first Run (~10 MB, cached after). Build script
+  (`scripts/copy-rot.mjs`) syncs `../rot/*.py` and `../examples/*.rot` into
+  `web/public/` and writes a generated `src/lib/rot-version.ts` from
+  `rot/__init__.py`, run automatically via `predev`/`prebuild` hooks.
+- 26 source files (config, scripts, library, components, app).
+- Tested: `npm install` succeeds, `npm run build` passes (313 KB First
+  Load JS), `npm run dev` boots in ~1.4s.
+
+### Known limits in the MVP
+- Pyodide cold start is ~3–6s — surfaced via a loading badge.
+- CodeMirror has no ROT language mode yet (generic text + line numbers).
+- Trace pane is a static dump, not step-through.
+
+### Suggested next features
+ROT syntax mode for CodeMirror; shareable URL hash with source state;
+step-through execution; click-token-to-highlight in the editor;
+LocalStorage persistence; a `--trace`-equivalent verbose pipeline view.
+
 ## v2.25.13 — design-retrospective paper
 
 ### Added
