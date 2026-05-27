@@ -2,6 +2,43 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.26 — Animate-mode Pipeline: drop redundant Tokens, add snapshot timeline
+
+### Premise
+- The bottom-right Pipeline card was carrying a "Tokens" accordion
+  item that showed every token in the program. In animate mode that
+  was dead weight: the Step Detail panel already shows the tokens
+  for the current statement (lex stage), and the global list was
+  noise — especially for long programs.
+
+### Added
+- `web/src/components/snapshot-timeline.tsx` — a horizontal strip
+  of 6px-wide dots, one per snapshot. Past steps are faded amber,
+  the current step is bright amber with a ring, future steps are
+  neutral, errors are red. Hover for a tooltip with the step's
+  `statement_kind` + line:col. Click any dot to jump to that step.
+  Auto-scrolls the current dot into view so long programs don't
+  lose it off the right edge.
+
+### Changed
+- `PipelinePanel` accepts `mode: "run" | "animate"` plus optional
+  `snapshots`, `stepIndex`, `onStepChange`. In animate mode it
+  renders the snapshot timeline at the top of the scroll area and
+  drops the Tokens accordion item. The AST and Trace sections
+  remain — they show the **whole program**, complementing the per-
+  statement views in Step Detail.
+- Playground page wires `onStepChange` to pause Play and jump
+  `stepIndex`, so clicking the timeline mid-Play is a "jump and
+  pause" gesture.
+
+### Notes
+- Run mode is unchanged — Tokens / AST / Trace as before, no
+  timeline (no snapshots to render).
+- The timeline doesn't render fancier visuals per snapshot kind
+  (e.g. colored by Assign / IfStmt) by design — it's a thin
+  scrubber, not a separate analytical surface.
+- Type-check clean. No Python changes; 669 tests still passing.
+
 ## v2.26.25 — Scale stage animations to Play speed
 
 ### Premise

@@ -363,6 +363,13 @@ export default function PlaygroundPage() {
               ast={pipeline.ast}
               trace={pipeline.trace}
               runKey={pipeline.runKey}
+              mode={mode}
+              snapshots={snapshots}
+              stepIndex={stepIndex}
+              onStepChange={(next) => {
+                setPlaying(false);
+                setStepIndex(next);
+              }}
             />
           </div>
         </section>
