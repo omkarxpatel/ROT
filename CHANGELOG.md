@@ -2,6 +2,12 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.6 — Lexer: friendly hints for common typos
+
+### Added
+- **L18, L20, L25**: a new `_TYPO_HINTS` table maps unexpected-but-common characters to a helpful message body appended to `unexpected character '...'`. Covered: `&` ("ROT does not support bitwise AND; use 'and' for logical AND"), `;` ("ROT does not use ';' to terminate statements; newlines or '}' end statements"), `'` ("ROT only supports double-quoted strings; use \"...\" not '...'"), plus `^`, `~`. Characters not in the table still produce the bare error so the change doesn't mask genuinely unknown input.
+- **L21**: `a === b` (and `a !== b`) used to lex as `a == = b` and surface as a downstream parser error. After consuming `==` or `!=`, the lexer now peeks for a trailing `=` and raises `ROT uses '==' for equality, not '==='` (similar for `!==`). Tests: `test_semicolon_gives_friendly_hint`, `test_single_quote_gives_friendly_hint`, `test_ampersand_gives_friendly_hint`, `test_tilde_gives_friendly_hint`, `test_caret_gives_friendly_hint`, `test_triple_equals_gives_friendly_hint`, `test_triple_bang_equals_gives_friendly_hint`, `test_unknown_character_without_hint_still_errors`.
+
 ## v2.20.5 — Lexer: silently strip leading UTF-8 BOM
 
 ### Fixed

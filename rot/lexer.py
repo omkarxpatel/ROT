@@ -55,6 +55,19 @@ _SOLO_FALLBACK: dict[str, str] = {
 }
 
 
+# Friendlier diagnostics for characters that aren't valid in rot but are
+# common in other languages. Keyed by the offending character; value is the
+# hint appended (after a colon) to the "unexpected character '...'" prefix.
+# See L18, L20, L25.
+_TYPO_HINTS: dict[str, str] = {
+    "&": "ROT does not support bitwise AND; use 'and' for logical AND",
+    "^": "ROT does not support bitwise XOR",
+    "~": "ROT does not support the bitwise NOT operator '~'",
+    ";": "ROT does not use ';' to terminate statements; newlines or '}' end statements",
+    "'": "ROT only supports double-quoted strings; use \"...\" not '...'",
+}
+
+
 def _is_identifier_start(ch: str) -> bool:
     # Identifiers start with a letter (upper or lower) or underscore.
     # Uppercase added in v2.6.0 — class names conventionally start capitalized.
@@ -134,6 +147,16 @@ class Lexer:
             lexeme, kind = _TWO_CHAR_TOKENS[(ch, self._peek(1))]
             self._advance()
             self._advance()
+            # Friendlier message for `===` / `!==` — catch a trailing `=`
+            # after `==` / `!=` so users coming from JS get a hint instead
+            # of a downstream parser error (L21).
+            if lexeme in ("==", "!=") and self._peek() == "=":
+                self._advance()  # consume the trailing `=` so we don't loop
+                want = "==" if lexeme == "==" else "!="
+                raise LexerError(
+                    f"ROT uses '{want}' for equality, not '{lexeme}='",
+                    start_line, start_col,
+                )
             self._add(lexeme, kind, start_line, start_col)
         elif ch in _SOLO_FALLBACK:
             self._advance()
@@ -142,6 +165,15 @@ class Lexer:
             self._advance()
             self._add(ch, _SINGLE_CHAR_TOKENS[ch], start_line, start_col)
         else:
+            # Surface a helpful hint for common typos (semicolons, single
+            # quotes, bitwise operators, etc. — L18, L20, L25). Falls back
+            # to the bare message for unknown characters.
+            hint = _TYPO_HINTS.get(ch)
+            if hint is not None:
+                raise LexerError(
+                    f"unexpected character {ch!r}: {hint}",
+                    start_line, start_col,
+                )
             raise LexerError(f"unexpected character {ch!r}", start_line, start_col)
 
     def _scan_comment(self, line: int, col: int) -> None:

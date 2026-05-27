@@ -287,3 +287,64 @@ def test_bom_only_at_start_is_stripped_not_in_middle():
     # stray BOM mid-file would silently disappear.
     with pytest.raises(LexerError):
         Lexer().tokenize("cout﻿")
+
+
+# v2.20.6 — friendly typo hints (L18, L20, L21, L25).
+def test_semicolon_gives_friendly_hint():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize("x = 1;")
+    msg = str(exc_info.value)
+    assert "';'" in msg
+    assert "newlines or '}' end statements" in msg
+
+
+def test_single_quote_gives_friendly_hint():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize("'abc'")
+    msg = str(exc_info.value)
+    assert "double-quoted" in msg
+
+
+def test_ampersand_gives_friendly_hint():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize("a & b")
+    msg = str(exc_info.value)
+    assert "bitwise AND" in msg
+    assert "'and'" in msg
+
+
+def test_tilde_gives_friendly_hint():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize("~x")
+    assert "bitwise NOT" in str(exc_info.value)
+
+
+def test_caret_gives_friendly_hint():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize("a ^ b")
+    assert "bitwise XOR" in str(exc_info.value)
+
+
+def test_triple_equals_gives_friendly_hint():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize("a === b")
+    msg = str(exc_info.value)
+    assert "ROT uses '==' for equality" in msg
+    assert "not '==='" in msg
+
+
+def test_triple_bang_equals_gives_friendly_hint():
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize("a !== b")
+    msg = str(exc_info.value)
+    assert "ROT uses '!=' for equality" in msg
+    assert "not '!=='" in msg
+
+
+def test_unknown_character_without_hint_still_errors():
+    # Defensive: chars not in the hint table still produce the bare message.
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize("@")
+    msg = str(exc_info.value)
+    assert "unexpected character" in msg
+    assert "'@'" in msg
