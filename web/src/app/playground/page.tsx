@@ -352,6 +352,8 @@ export default function PlaygroundPage() {
                 totalSteps={snapshots.length}
                 onJumpToSource={handleJumpToSource}
                 onAstHover={setEditorHoverRange}
+                playing={playing}
+                speedMs={speedMs}
               />
             </div>
           )}

@@ -42,18 +42,33 @@ interface StepPanelProps {
   onAstHover?: (
     range: { startLine: number; endLine: number } | null,
   ) => void;
+  // Play mode + speed. When playing, animations compress so the four
+  // staged reveals all fit inside the user's chosen step interval
+  // (otherwise the next step kicks in while stages are still
+  // appearing). Manual Step gets the full ~1.4s sequence.
+  playing?: boolean;
+  speedMs?: number;
 }
 
-// Stage timing (seconds). The four reveals stagger so the user reads
-// the pipeline left-to-right per step: source line → tokens → AST →
-// execution effects. Each stage's `key` is the stepIndex so Step or
-// Play re-fires the whole sequence on every advance.
-const STAGE_DELAYS = {
+// Stage timing (seconds, manual-step pacing). The four reveals
+// stagger so the user reads the pipeline left-to-right per step:
+// source line → tokens → AST → execution effects. Each stage's `key`
+// is the stepIndex so Step or Play re-fires the whole sequence on
+// every advance.
+//
+// During Play, these are scaled by `animScale` so the full reveal
+// fits inside `speedMs`. See `StagedView` below.
+const STAGE_DELAYS_BASE = {
   source: 0,
   tokens: 0.15,
   ast: 0.45,
   exec: 0.9,
 };
+// The "natural" total time the full sequence takes, ms. When Play
+// uses a `speedMs` shorter than this, all timings scale down so they
+// fit. (Approximately: source 0 + tokens 0.15 + ast 0.45 + exec 0.9
+// + ~0.45s for exec's own internal animation = ~1.35–1.40s.)
+const NATURAL_TOTAL_MS = 1400;
 
 export function StepPanel({
   source,
@@ -65,12 +80,22 @@ export function StepPanel({
   totalSteps,
   onJumpToSource,
   onAstHover,
+  playing = false,
+  speedMs,
 }: StepPanelProps) {
   const hasSteps = totalSteps > 0;
   const progressPct = hasSteps
     ? Math.round(((stepIndex + 1) / totalSteps) * 100)
     : 0;
   const isAtEnd = hasSteps && stepIndex === totalSteps - 1;
+  // Scale stage delays + staggers when playing so they fit inside
+  // the user's chosen step interval. Cap at 1 (manual step / slow
+  // play just uses the natural pacing) and at 0.2 (never compress
+  // so far that the reveal becomes invisible).
+  const animScale =
+    playing && typeof speedMs === "number"
+      ? Math.max(0.2, Math.min(1, speedMs / NATURAL_TOTAL_MS))
+      : 1;
 
   return (
     <div className="flex h-full flex-col">
@@ -133,6 +158,7 @@ export function StepPanel({
               stepIndex={stepIndex}
               onJumpToSource={onJumpToSource}
               onAstHover={onAstHover}
+              animScale={animScale}
             />
           ) : (
             <OnboardingMessage />
@@ -152,6 +178,7 @@ function StagedView({
   stepIndex,
   onJumpToSource,
   onAstHover,
+  animScale,
 }: {
   source: string;
   tokens: RotToken[];
@@ -163,7 +190,17 @@ function StagedView({
   onAstHover?: (
     range: { startLine: number; endLine: number } | null,
   ) => void;
+  animScale: number;
 }) {
+  // Scaled stage delays — when playing fast, the four reveals
+  // compress proportionally so they all land inside the step
+  // interval. animScale=1 is the natural pacing (manual stepping).
+  const STAGE_DELAYS = {
+    source: STAGE_DELAYS_BASE.source * animScale,
+    tokens: STAGE_DELAYS_BASE.tokens * animScale,
+    ast: STAGE_DELAYS_BASE.ast * animScale,
+    exec: STAGE_DELAYS_BASE.exec * animScale,
+  };
   const stmtLine = snapshot.statement_line;
   const stmtCol = snapshot.statement_col;
 
@@ -284,8 +321,8 @@ function StagedView({
         <TokensView
           tokens={stmtTokens}
           runKey={stepIndex}
-          baseDelaySec={STAGE_DELAYS.tokens + 0.05}
-          staggerSec={0.05}
+          baseDelaySec={STAGE_DELAYS.tokens + 0.05 * animScale}
+          staggerSec={0.05 * animScale}
           flyFrom="above"
           pulses={tokenPulses}
           onChipClick={onJumpToSource}
@@ -304,8 +341,8 @@ function StagedView({
       >
         <AstView
           ast={stmtAst}
-          baseDelaySec={STAGE_DELAYS.ast + 0.08}
-          depthStaggerSec={0.08}
+          baseDelaySec={STAGE_DELAYS.ast + 0.08 * animScale}
+          depthStaggerSec={0.08 * animScale}
           empty="(no AST subtree available)"
           onLeafReveal={handleLeafReveal}
           nodePulses={astPulses}
@@ -327,6 +364,7 @@ function StagedView({
           snapshot={snapshot}
           previousSnapshot={previousSnapshot}
           stepIndex={stepIndex}
+          execDelaySec={STAGE_DELAYS.exec}
         />
       </StageBlock>
     </div>
@@ -502,10 +540,12 @@ function ExecBlock({
   snapshot,
   previousSnapshot,
   stepIndex,
+  execDelaySec,
 }: {
   snapshot: RotSnapshot;
   previousSnapshot: RotSnapshot | null;
   stepIndex: number;
+  execDelaySec: number;
 }) {
   return (
     <div className="space-y-2">
@@ -515,7 +555,7 @@ function ExecBlock({
           initial={{ opacity: 0, y: 6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{
-            delay: STAGE_DELAYS.exec + 0.1,
+            delay: execDelaySec + 0.1,
             duration: 0.4,
             ease: "easeOut",
           }}

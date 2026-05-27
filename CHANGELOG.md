@@ -2,6 +2,42 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.25 — Scale stage animations to Play speed
+
+### Premise
+- The Step Detail panel's four staged reveals (source → tokens →
+  AST → execution) together take ~1.4s under the natural pacing.
+  Play's default cadence is 400ms/step. Result: the next step kicks
+  in long before the current step's stages finish appearing, so the
+  user never sees most of them.
+
+### Changed
+- `StepPanel` accepts `playing: boolean` and `speedMs: number` and
+  computes an `animScale`:
+  - Not playing → `animScale = 1` (full natural pacing for manual
+    Step clicks).
+  - Playing → `animScale = clamp(speedMs / 1400, 0.2, 1)` so the
+    full reveal fits inside the step interval; floor of 0.2 keeps
+    the animation perceptible even at the minimum 50ms/step.
+- All four `STAGE_DELAYS` (source / tokens / ast / exec), the
+  token-chip stagger increment, and the AST depth-stagger
+  multiplier are now scaled by `animScale`.
+- Refactored the inline `STAGE_DELAYS` constant inside `StagedView`
+  so it's computed per-render against `animScale`, while the
+  natural baseline lives in `STAGE_DELAYS_BASE`. `ExecBlock` takes
+  the scaled `execDelaySec` as a prop so its "printed" block
+  animates in time with the rest of the exec stage.
+
+### Notes
+- The animScale is recomputed each render based on the latest
+  `(playing, speedMs)` so dragging the speed slider mid-Play takes
+  effect immediately.
+- Durations of individual element animations (motion `transition:
+  { duration: ... }`) are left unscaled — they're 0.3–0.7s already
+  and shortening them further makes individual transitions feel
+  glitchy rather than fast. Only delays / staggers compress.
+- Type-check clean. No Python changes; 669 tests still passing.
+
 ## v2.26.24 — Hover an AST node → highlight source range in editor
 
 ### Added
