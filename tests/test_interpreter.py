@@ -1289,3 +1289,36 @@ def test_range_string_arg_rejected_with_clean_message():
 def test_range_single_int_still_works():
     # Don't break the happy path.
     assert _run("for i in range(3) { coutln(i) }") == "0\n1\n2\n"
+
+
+# ==== v2.14.6: read_file / write_file use explicit UTF-8 ====================
+
+def test_read_file_non_utf8_raises_interpreter_error(tmp_path):
+    # B33: previously leaked a raw UnicodeDecodeError. Now wrapped.
+    bad = tmp_path / "bad.bin"
+    bad.write_bytes(b"\xff\xfe\xfdgarbage")
+    src = f'coutln(read_file("{bad}"))'
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    msg = str(exc_info.value)
+    assert "read_file" in msg
+    assert "UTF-8" in msg or "utf-8" in msg.lower()
+
+
+def test_read_file_utf8_roundtrip(tmp_path):
+    # Confirm the UTF-8 happy path still works (and writes are also UTF-8).
+    target = tmp_path / "u.txt"
+    src = (
+        f'write_file("{target}" | "héllo")\n'
+        f'coutln(read_file("{target}"))\n'
+    )
+    assert _run(src) == "héllo\n"
+
+
+def test_write_file_default_encoding_is_utf8(tmp_path):
+    # B34/B35: explicit UTF-8 means the written file should bytewise be UTF-8
+    # regardless of platform locale.
+    target = tmp_path / "u.txt"
+    _run(f'write_file("{target}" | "café")')
+    raw = target.read_bytes()
+    assert raw == "café".encode("utf-8")

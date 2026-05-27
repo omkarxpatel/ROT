@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.6 — read_file/write_file use explicit UTF-8
+
+### Fixed
+- **B33, B34, B35**: `read_file` / `write_file` now open with `encoding="utf-8"` explicitly instead of using the platform-default locale. Non-UTF-8 input raises `InterpreterError("read_file: ... is not valid UTF-8: ...")` instead of leaking a raw `UnicodeDecodeError`; encode failures on write are wrapped likewise. Output files are now portable across platforms.
+
 ## v2.14.5 — range validates every arg before int() coercion
 
 ### Fixed

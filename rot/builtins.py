@@ -50,16 +50,24 @@ def _builtin_input(prompt: Any = "") -> str:
 
 def _read_file(path: Any) -> str:
     try:
-        with open(str(path)) as f:
+        with open(str(path), encoding="utf-8") as f:
             return f.read()
+    except UnicodeDecodeError as e:
+        raise InterpreterError(
+            f"read_file: {path!r} is not valid UTF-8: {e.reason}"
+        )
     except OSError as e:
         raise InterpreterError(f"read_file: {e}")
 
 
 def _write_file(path: Any, content: Any) -> None:
     try:
-        with open(str(path), "w") as f:
+        with open(str(path), "w", encoding="utf-8") as f:
             f.write(str(content))
+    except UnicodeEncodeError as e:
+        raise InterpreterError(
+            f"write_file: cannot encode content as UTF-8: {e.reason}"
+        )
     except OSError as e:
         raise InterpreterError(f"write_file: {e}")
 
