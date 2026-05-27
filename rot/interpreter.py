@@ -479,9 +479,26 @@ class Interpreter:
         args = [self._evaluate(a) for a in expr.args]
         if isinstance(callee, (RotFunction, RotClass, BoundMethod)):
             return callee.call(args, self)
-        if callable(callee):
+        if not callable(callee):
+            raise InterpreterError(f"not callable: {callee!r}")
+        try:
             return callee(*args)
-        raise InterpreterError(f"not callable: {callee!r}")
+        except InterpreterError:
+            # already in rot form — leave it alone
+            raise
+        except (
+            TypeError,
+            ValueError,
+            ZeroDivisionError,
+            UnicodeDecodeError,
+            UnicodeEncodeError,
+            OSError,
+        ) as e:
+            name = getattr(callee, "__name__", repr(callee))
+            # strip the leading underscore from internal builtin names
+            # (`_builtin_input`, `_num`, `_stringify`, ...).
+            display = name.lstrip("_")
+            raise InterpreterError(f"{display}: {e}")
 
 
 def _builtin_cout(*args: Any) -> None:

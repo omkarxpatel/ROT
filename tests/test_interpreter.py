@@ -1108,3 +1108,78 @@ def test_closure_captures_lexical_scope():
         'outer()'
     )
     assert _run(src) == "inside\n"
+
+
+# ==== v2.14.1: Python exceptions from builtin calls wrap as InterpreterError ====
+
+def test_len_of_null_wraps_typeerror():
+    # `len(null)` used to leak Python's `TypeError` to the user.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("coutln(len(null))")
+    assert "TypeError" not in type(exc_info.value).__name__
+    msg = str(exc_info.value)
+    assert "len" in msg.lower() or "NoneType" in msg
+
+
+def test_len_of_int_wraps_typeerror():
+    with pytest.raises(InterpreterError):
+        _run("coutln(len(5))")
+
+
+def test_num_of_garbage_string_wraps_valueerror():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln(num("abc"))')
+    assert "num" in str(exc_info.value)
+
+
+def test_min_of_empty_list_wraps_valueerror():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("coutln(min([]))")
+    # The wrapped error message should NOT be a raw Python ValueError reaching
+    # the user — it must be an InterpreterError.
+    assert isinstance(exc_info.value, InterpreterError)
+
+
+def test_max_of_empty_list_wraps_valueerror():
+    with pytest.raises(InterpreterError):
+        _run("coutln(max([]))")
+
+
+def test_abs_of_string_wraps_typeerror():
+    with pytest.raises(InterpreterError):
+        _run('coutln(abs("x"))')
+
+
+def test_floor_of_string_wraps_typeerror():
+    with pytest.raises(InterpreterError):
+        _run('coutln(floor("x"))')
+
+
+def test_pow_neg_one_half_returns_or_wraps():
+    # pow(-1, 0.5) returns a complex in Python — that complex then fails
+    # downstream. Either way, a try/catch in ROT must not see a Python
+    # traceback escape.
+    src = (
+        'try {\n'
+        '    x = pow(-1 | 0.5)\n'
+        '    coutln(x)\n'
+        '} catch (e) {\n'
+        '    coutln("ok")\n'
+        '}'
+    )
+    out = _run(src)
+    # Either it computes a complex (Python lets it through) or raises —
+    # either way the user shouldn't see a Python crash.
+    assert "ok" in out or "j" in out
+
+
+def test_wrapped_call_error_is_catchable_in_rot():
+    # The whole point of wrapping is that try/catch in ROT works on them.
+    src = (
+        'try {\n'
+        '    coutln(len(null))\n'
+        '} catch (e) {\n'
+        '    coutln("recovered")\n'
+        '}'
+    )
+    assert _run(src) == "recovered\n"

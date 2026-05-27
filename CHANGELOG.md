@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.1 — wrap Python exceptions from builtin calls
+
+### Fixed
+- **I7, I9, I10, B4-B9, B14-B16, B21-B22, B26, B29** (and many of the related "Python error leaks to the user" findings): `Interpreter._evaluate_call` now wraps `TypeError` / `ValueError` / `ZeroDivisionError` / `UnicodeDecodeError` / `UnicodeEncodeError` / `OSError` raised by any callable (every builtin) into a clean `InterpreterError`. The error name is stripped of its internal leading underscore (e.g. `_num` -> `num`). `InterpreterError`s raised by builtins are not double-wrapped. As a side effect, `len(null)`, `min([])`, `num("abc")`, `abs("x")`, etc. are now catchable in rot's own `try`/`catch`.
+
 ## [2.13.0] - 2026-05-26
 
 Bug-fix sweep driven by a code review. Every fix has a regression test.
