@@ -205,6 +205,32 @@ class RotClass:
             )
         return instance
 
+    def get_member(self, name: str) -> Any:
+        """I20: lock down member access on a class.
+
+        Without this, the `MemberAccess` getattr fallback in the interpreter
+        leaked Python attributes of the `RotClass` object itself — `A.methods`
+        returned the underlying dict of FuncDef ASTs, `A.name` / `A.closure` /
+        `A.call` exposed internals. Even with v2.18.1's `_`-prefix filter,
+        `A.methods` / `A.name` / `A.closure` / `A.call` would still slip through.
+
+        Policy: methods are only callable via an instance (because they need
+        a `this` to bind). `MyClass.method` doesn't work today and
+        previously failed with a cryptic Python-getattr message — we now
+        give it a clear "call it on an instance" error. Everything else
+        (any non-method name) gets the same generic "cannot access"
+        message; no Python attribute is ever exposed.
+        """
+        if name in self.methods:
+            raise InterpreterError(
+                f"cannot access method {name!r} directly on class {self.name}; "
+                f"call it on an instance"
+            )
+        raise InterpreterError(
+            f"cannot access {name!r} directly on class {self.name}; "
+            f"call it on an instance"
+        )
+
 
 class RotInstance:
     """An instance of a RotClass — fields stored in a dict, methods looked
@@ -624,6 +650,11 @@ class Interpreter:
             # rot instances have their own member lookup; everything else
             # falls back to Python's getattr (strings, lists, dicts, etc.).
             if isinstance(target, RotInstance):
+                return target.get_member(expr.member)
+            # I20: a `RotClass` is a Python object whose attributes (`methods`,
+            # `name`, `closure`, `call`) would otherwise leak through getattr.
+            # Route to a dedicated get_member that exposes nothing.
+            if isinstance(target, RotClass):
                 return target.get_member(expr.member)
             # I47: filter `_`-prefixed names (dunder + private) from the
             # Python-getattr fallback. Without this, `"abc".__class__`,

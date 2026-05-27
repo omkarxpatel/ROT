@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.18.2 — RotClass attribute access locked down
+
+### Fixed
+- **I20 (RotClass)**: `A.methods`, `A.name`, `A.closure`, `A.call` used to leak the underlying Python attributes of the `RotClass` Python object — exposing the FuncDef-AST dict, the closure `Environment`, etc. Even v2.18.1's `_`-prefix filter didn't help: these aren't dunder names. `RotClass` now has its own `get_member` that exposes nothing; the `MemberAccess` branch special-cases `isinstance(target, RotClass)` and routes there. Calls to `MyClass.method` (where `method` is a user-defined method) now give a clear "cannot access method 'method' directly on class A; call it on an instance" error instead of the prior cryptic Python-getattr leak. Unknown names get the same shape of error. Instance method calls (`a.f()`) still work unchanged. Tests: `test_rotclass_methods_attribute_not_exposed`, `test_rotclass_name_attribute_not_exposed`, `test_rotclass_closure_attribute_not_exposed`, `test_rotclass_call_attribute_not_exposed`, `test_rotclass_user_method_via_class_gives_clear_error`, `test_rotclass_instance_method_call_still_works`.
+
 ## v2.18.1 — block `_`-prefixed member access on Python passthrough
 
 ### Fixed

@@ -2100,3 +2100,75 @@ def test_single_underscore_private_also_blocked():
     with pytest.raises(InterpreterError) as exc_info:
         _run('coutln("abc"._private)')
     assert "_private" in str(exc_info.value)
+
+
+# ==== v2.18.2: RotClass info-leak blocked (I20) ==============================
+
+def test_rotclass_methods_attribute_not_exposed():
+    # I20: `A.methods` used to return the underlying FuncDef-AST dict.
+    src = (
+        'class A { f() { return 1 } }\n'
+        'coutln(A.methods)'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    msg = str(exc_info.value)
+    assert "methods" in msg
+    assert "cannot access" in msg
+
+
+def test_rotclass_name_attribute_not_exposed():
+    # I20: `A.name` used to return the Python `str` "A".
+    src = (
+        'class A {}\n'
+        'coutln(A.name)'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "name" in str(exc_info.value)
+
+
+def test_rotclass_closure_attribute_not_exposed():
+    # I20: `A.closure` used to return the Python `Environment`.
+    src = (
+        'class A {}\n'
+        'coutln(A.closure)'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "closure" in str(exc_info.value)
+
+
+def test_rotclass_call_attribute_not_exposed():
+    # I20: `A.call` used to return the bound Python `RotClass.call` method.
+    src = (
+        'class A {}\n'
+        'coutln(A.call)'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    assert "call" in str(exc_info.value)
+
+
+def test_rotclass_user_method_via_class_gives_clear_error():
+    # `A.f` (where f is a user method) gives a clearer error than the prior
+    # cryptic Python-getattr failure — "call it on an instance".
+    src = (
+        'class A { f() { return 1 } }\n'
+        'coutln(A.f)'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    msg = str(exc_info.value)
+    assert "f" in msg
+    assert "instance" in msg
+
+
+def test_rotclass_instance_method_call_still_works():
+    # Regression: instance.method() still works.
+    src = (
+        'class A { f() { return 42 } }\n'
+        'a = A()\n'
+        'coutln(a.f())'
+    )
+    assert _run(src) == "42\n"
