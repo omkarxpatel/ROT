@@ -125,13 +125,16 @@ def start_repl() -> None:
             tokens = Lexer().tokenize(full)
             program = Parser(tokens).parse()
         except RotError as err:
-            print(f"rot error: {err}", file=sys.stderr)
+            # v2.22.7: rustc-style rendering with the current REPL buffer
+            # as the source. The "filename" is `<repl>` so the user can
+            # tell it's not coming from a file.
+            print(err.format(full, "<repl>"), file=sys.stderr)
             continue
 
         try:
             _execute_with_echo(interp, program)
         except RotError as err:
-            print(f"rot error: {err}", file=sys.stderr)
+            print(err.format(full, "<repl>"), file=sys.stderr)
         except Exception as err:
             # Catch only `Exception`, NOT `BaseException` — KeyboardInterrupt
             # and SystemExit are BaseException subclasses and must propagate

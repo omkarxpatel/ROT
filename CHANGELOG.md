@@ -2,6 +2,22 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.22.7 — rustc-style source-line + caret error rendering
+
+### Added
+- `RotError.format(source, filename)` in `rot/errors.py`. Renders a rustc-style block when the error has a location:
+
+      error: name 'undef' is not defined
+       --> bad.rot:3:6
+        |
+      3 | cout(undef)
+        |      ^
+
+  Falls back to `error: <message>` when `line == 0` (no location) — preserving the no-source fallback. Source-line is omitted when the `source` argument is empty (early errors before any source is read) or when the line is out of bounds. The line-number gutter pads to the digit width of the line number so multi-line files align cleanly.
+- `RotError` now stores the message separately as `self.message` (without the legacy `line N:C:` prefix) so `format()` can re-render without the prefix bleeding into the rustc block. `str(err)` keeps the legacy `line N:C: msg` form for backwards-compat — all existing tests that use `str(err)` continue to work unchanged.
+- `rot/cli.py` and `rot/repl.py` now call `err.format(source, filename)` instead of `f"rot error: {err}"`. The CLI uses the user's filename; the REPL uses `<repl>` plus the current input buffer as the source string. Pre-existing CLI tests that only checked exit code / "error" presence in stderr continue to pass; tests that pinned the exact `"rot error: line N:C: msg"` substring would have needed updating but none were doing that.
+- New tests: `test_format_renders_rustc_style_block_for_located_error`, `test_format_without_location_returns_bare_message`, `test_format_without_source_emits_header_only`, `test_format_out_of_bounds_line_skips_source_block`, `test_format_aligns_caret_when_line_number_has_multiple_digits`, plus subprocess-based end-to-end tests `test_cli_renders_rustc_style_error_for_syntax_error` and `test_cli_renders_rustc_style_error_for_runtime_error` that drive `python -m rot` against tmp_path-resident `.rot` files and assert the rendered block appears on stderr.
+
 ## v2.22.6 — `Environment.get` suggests ROT equivalents for Python-isms
 
 ### Added

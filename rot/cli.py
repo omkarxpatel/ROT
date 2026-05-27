@@ -80,5 +80,9 @@ def main() -> None:
             return
         compiler.run(source, source_path=str(source_path))
     except RotError as err:
-        print(f"rot error: {err}", file=sys.stderr)
+        # v2.22.7: render in rustc-style — header + source line + caret.
+        # When the error has no location, ``format`` returns the bare
+        # ``error: <msg>`` form. Source and filename are threaded so the
+        # block can pull the right line.
+        print(err.format(source, args.file), file=sys.stderr)
         sys.exit(1)

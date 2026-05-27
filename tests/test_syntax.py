@@ -605,3 +605,66 @@ def test_member_after_dot_uses_friendly_display():
     # The bad token after `.` is `+` (ADDITION); rendered as `'+'`.
     assert "ADDITION" not in msg
     assert "'+'" in msg
+
+
+# ---------- v2.22.7: rustc-style source-line + caret rendering -----------
+
+
+def test_format_renders_rustc_style_block_for_located_error():
+    """v2.22.7: ``RotError.format(source, filename)`` returns a rustc-style
+    block when the error has a location. Header lists `error:` + the
+    message, then the file:line:col anchor, then the source line with
+    a `^` caret under the column."""
+    source = (
+        "x = 1\n"
+        "y = 2\n"
+        "z = undefined\n"
+    )
+    err = ParserError("name 'undefined' is not defined", 3, 5)
+    rendered = err.format(source, "test.rot")
+    assert "error: name 'undefined' is not defined" in rendered
+    assert "--> test.rot:3:5" in rendered
+    # Source line is included with the line-number gutter.
+    assert "3 | z = undefined" in rendered
+    # Caret line: `_ | ` prefix, then spaces, then `^`. Column 5 → 4
+    # spaces before the caret.
+    assert "  |     ^" in rendered
+
+
+def test_format_without_location_returns_bare_message():
+    err = ParserError("something happened")  # line=0, col=0
+    out = err.format("doesn't matter", "x.rot")
+    # No `-->`, no source line, no caret.
+    assert out == "error: something happened"
+
+
+def test_format_without_source_emits_header_only():
+    err = ParserError("oops", 2, 3)
+    out = err.format("", "x.rot")
+    # Header only — no source-line block when source is empty.
+    assert "error: oops" in out
+    assert "--> x.rot:2:3" in out
+    assert "|" not in out
+
+
+def test_format_out_of_bounds_line_skips_source_block():
+    """Defensive: if the recorded line is past the end of the source string,
+    the source-line block is omitted rather than indexing into nothing."""
+    err = ParserError("oops", 99, 1)
+    out = err.format("only one line", "x.rot")
+    assert "error: oops" in out
+    assert "--> x.rot:99:1" in out
+    # No source block — there's no line 99.
+    assert " | only one line" not in out
+
+
+def test_format_aligns_caret_when_line_number_has_multiple_digits():
+    """The line-number gutter pads so the body and caret line up even
+    when the line number has more digits."""
+    source = "\n" * 11 + "abcd error"  # error on line 12
+    err = ParserError("bad", 12, 6)
+    out = err.format(source, "x.rot")
+    # Numbered line has gutter width 2.
+    assert "12 | abcd error" in out
+    # Caret line uses two-space gutter so it aligns.
+    assert "   |      ^" in out
