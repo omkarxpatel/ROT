@@ -7,6 +7,14 @@ import { ChevronRight } from "lucide-react";
 import type { AstNode, AstValue } from "@/lib/pyodide-runtime";
 import { cn } from "@/lib/utils";
 
+// One-shot pulse signal for an AST node, keyed by `${line}:${col}`.
+// `variant` controls the color so the pulse matches the env dot:
+// emerald for a new binding, amber for a changed value.
+export interface AstPulse {
+  key: number;
+  variant: "new" | "changed";
+}
+
 interface AstViewProps {
   ast: AstNode | null;
   // Per-Step / per-Run delay for the root entrance.
@@ -20,6 +28,11 @@ interface AstViewProps {
   // matching token chip so the user reads parse as a real lex→AST
   // connection.
   onLeafReveal?: (line: number, col: number) => void;
+  // Pulses keyed by node position. When an entry's `key` increments,
+  // the matching node fires a one-shot ring overlay. Used by the
+  // Step panel to highlight the AST node responsible for a newly-
+  // bound or changed env entry — closes the parse → execute chain.
+  nodePulses?: Record<string, AstPulse>;
 }
 
 export function AstView({
@@ -28,6 +41,7 @@ export function AstView({
   depthStaggerSec = 0.08,
   empty,
   onLeafReveal,
+  nodePulses,
 }: AstViewProps) {
   if (!ast) {
     return (
@@ -44,6 +58,7 @@ export function AstView({
         baseDelaySec={baseDelaySec}
         depthStaggerSec={depthStaggerSec}
         onLeafReveal={onLeafReveal}
+        nodePulses={nodePulses}
       />
     </div>
   );
@@ -55,6 +70,7 @@ interface AstNodeProps {
   baseDelaySec: number;
   depthStaggerSec: number;
   onLeafReveal?: (line: number, col: number) => void;
+  nodePulses?: Record<string, AstPulse>;
 }
 
 function AstNodeView({
@@ -63,6 +79,7 @@ function AstNodeView({
   baseDelaySec,
   depthStaggerSec,
   onLeafReveal,
+  nodePulses,
 }: AstNodeProps) {
   const [open, setOpen] = useState(true);
   const type = node.__type__;
@@ -108,6 +125,13 @@ function AstNodeView({
     if (line > 0 && col > 0) onLeafReveal(line, col);
   };
 
+  // Look up a pulse signal for this node by `${line}:${col}`. When
+  // `pulse.key` changes (new pulse counter), the overlay re-keys and
+  // fires its one-shot ring animation.
+  const nodeLine = typeof node.line === "number" ? node.line : 0;
+  const nodeCol = typeof node.col === "number" ? node.col : 0;
+  const pulse = nodePulses?.[`${nodeLine}:${nodeCol}`];
+
   return (
     <motion.div
       initial={{ opacity: 0, x: -6 }}
@@ -116,36 +140,53 @@ function AstNodeView({
       onAnimationComplete={handleAnimationComplete}
       style={{ paddingLeft: indent }}
     >
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="group flex w-full items-center gap-1.5 text-left hover:text-foreground"
-        title={type}
-      >
-        <ChevronRight
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-90",
+      <div className="relative inline-block w-full">
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="group flex w-full items-center gap-1.5 text-left hover:text-foreground"
+          title={type}
+        >
+          <ChevronRight
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-90",
+            )}
+          />
+          <span className="font-semibold text-purple-300">{label}</span>
+          {primary && (
+            <span className={cn("font-mono", primary.colorClass)}>
+              {primary.display}
+            </span>
           )}
-        />
-        <span className="font-semibold text-purple-300">{label}</span>
-        {primary && (
-          <span className={cn("font-mono", primary.colorClass)}>
-            {primary.display}
-          </span>
+          {entries.inline.length > 0 && (
+            <span className="text-muted-foreground">
+              {entries.inline.map(([k, v], i) => (
+                <span key={k}>
+                  {i === 0 ? " " : "  "}
+                  <span className="text-sky-400">{k}</span>
+                  <span className="text-zinc-500">=</span>
+                  <span className="text-emerald-400">{formatPrimitive(v)}</span>
+                </span>
+              ))}
+            </span>
+          )}
+        </button>
+        {pulse && (
+          <motion.span
+            key={`pulse-${pulse.key}`}
+            initial={{ opacity: 0.85, scale: 0.96 }}
+            animate={{ opacity: 0, scale: 1.5 }}
+            transition={{ duration: 0.7, ease: "easeOut" }}
+            className={cn(
+              "pointer-events-none absolute inset-0 rounded ring-2",
+              pulse.variant === "new"
+                ? "ring-emerald-400"
+                : "ring-amber-400",
+            )}
+            aria-hidden
+          />
         )}
-        {entries.inline.length > 0 && (
-          <span className="text-muted-foreground">
-            {entries.inline.map(([k, v], i) => (
-              <span key={k}>
-                {i === 0 ? " " : "  "}
-                <span className="text-sky-400">{k}</span>
-                <span className="text-zinc-500">=</span>
-                <span className="text-emerald-400">{formatPrimitive(v)}</span>
-              </span>
-            ))}
-          </span>
-        )}
-      </button>
+      </div>
       {open && entries.nested.length > 0 && (
         <div className="mt-0.5 space-y-0.5 border-l border-border/40 pl-2 ml-1.5">
           {entries.nested.map(([k, v]) => (
@@ -162,6 +203,7 @@ function AstNodeView({
                 baseDelaySec={baseDelaySec}
                 depthStaggerSec={depthStaggerSec}
                 onLeafReveal={onLeafReveal}
+                nodePulses={nodePulses}
               />
             </div>
           ))}
@@ -177,12 +219,14 @@ function AstValueView({
   baseDelaySec,
   depthStaggerSec,
   onLeafReveal,
+  nodePulses,
 }: {
   value: AstValue;
   depth: number;
   baseDelaySec: number;
   depthStaggerSec: number;
   onLeafReveal?: (line: number, col: number) => void;
+  nodePulses?: Record<string, AstPulse>;
 }) {
   if (value === null || value === undefined) {
     return (
@@ -209,6 +253,7 @@ function AstValueView({
             baseDelaySec={baseDelaySec}
             depthStaggerSec={depthStaggerSec}
             onLeafReveal={onLeafReveal}
+            nodePulses={nodePulses}
           />
         ))}
       </div>
@@ -231,6 +276,7 @@ function AstValueView({
       baseDelaySec={baseDelaySec}
       depthStaggerSec={depthStaggerSec}
       onLeafReveal={onLeafReveal}
+      nodePulses={nodePulses}
     />
   );
 }

@@ -11,7 +11,7 @@ import {
   Terminal,
 } from "lucide-react";
 
-import { AstView } from "@/components/ast-view";
+import { AstView, type AstPulse } from "@/components/ast-view";
 import { EnvView } from "@/components/env-view";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TokensView, tokenTextColor } from "@/components/tokens-view";
@@ -149,30 +149,64 @@ function StagedView({
     return findStatementAst(ast, stmtLine, stmtCol, snapshot.statement_kind);
   }, [ast, stmtLine, stmtCol, snapshot.statement_kind]);
 
-  // Pulse coordination: when an AST leaf (a node with a primary
-  // field) finishes its entrance animation, fire a pulse on the
-  // matching source token chip. `pulses` is a record mapping the
-  // token's index in stmtTokens → an ever-incrementing pulse counter,
-  // so the same chip can flash multiple times across a step.
-  const [pulses, setPulses] = useState<Record<number, number>>({});
-  const pulseCounter = useRef(0);
-  // Reset on each step.
+  // Token pulses: an AST leaf's entrance animation triggers a pulse
+  // on the matching source token chip — closing the lex → parse
+  // visual link.
+  const [tokenPulses, setTokenPulses] = useState<Record<number, number>>({});
+  const tokenPulseCounter = useRef(0);
+  // AST pulses: when env adds a new/changed binding, the AST node
+  // that produced it pulses — closing the parse → execute visual
+  // link. Keyed by `${line}:${col}`.
+  const [astPulses, setAstPulses] = useState<Record<string, AstPulse>>({});
+  const astPulseCounter = useRef(0);
+  // Reset both maps on each step.
   useEffect(() => {
-    setPulses({});
-    pulseCounter.current = 0;
+    setTokenPulses({});
+    setAstPulses({});
+    tokenPulseCounter.current = 0;
+    astPulseCounter.current = 0;
   }, [stepIndex]);
+
   const handleLeafReveal = useCallback(
     (line: number, col: number) => {
       const idx = stmtTokens.findIndex(
         (t) => t.line === line && t.col === col,
       );
       if (idx < 0) return;
-      pulseCounter.current += 1;
-      const counter = pulseCounter.current;
-      setPulses((prev) => ({ ...prev, [idx]: counter }));
+      tokenPulseCounter.current += 1;
+      const counter = tokenPulseCounter.current;
+      setTokenPulses((prev) => ({ ...prev, [idx]: counter }));
     },
     [stmtTokens],
   );
+
+  // Schedule AST-node pulses to fire when the Execution stage opens
+  // (so the pulse animation is roughly synchronous with the env
+  // binding appearing). Match new/changed bindings against
+  // assigning-kind AST nodes (Assign, LetStmt, FuncDef, ClassDef)
+  // whose `name` field equals the binding name.
+  useEffect(() => {
+    if (!stmtAst || !snapshot) return;
+    const diff = bindingDiff(snapshot, previousSnapshot);
+    if (diff.size === 0) return;
+    const targets = findAssigningTargets(stmtAst, diff);
+    if (targets.length === 0) return;
+    const id = window.setTimeout(() => {
+      const next: Record<string, AstPulse> = {};
+      for (const tgt of targets) {
+        astPulseCounter.current += 1;
+        next[`${tgt.line}:${tgt.col}`] = {
+          key: astPulseCounter.current,
+          variant: tgt.variant,
+        };
+      }
+      setAstPulses(next);
+    }, STAGE_DELAYS.exec * 1000);
+    return () => window.clearTimeout(id);
+    // Re-run for each new snapshot. previousSnapshot is captured in
+    // the diff; stmtAst is the matching subtree.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepIndex, stmtAst]);
 
   return (
     <div className="space-y-3">
@@ -206,7 +240,7 @@ function StagedView({
           baseDelaySec={STAGE_DELAYS.tokens + 0.05}
           staggerSec={0.05}
           flyFrom="above"
-          pulses={pulses}
+          pulses={tokenPulses}
           empty="(no tokens on this line)"
         />
       </StageBlock>
@@ -226,6 +260,7 @@ function StagedView({
           depthStaggerSec={0.08}
           empty="(no AST subtree available)"
           onLeafReveal={handleLeafReveal}
+          nodePulses={astPulses}
         />
       </StageBlock>
 
@@ -600,6 +635,82 @@ function findStatementAst(
   }
   visit(ast);
   return result;
+}
+
+// Returns a Map of binding-name → "new" | "changed" based on the env
+// diff between two snapshots. Matches frames by (scope_kind,
+// scope_label) — so a binding promoted from "new" in one snapshot
+// to "still present" in the next won't keep firing as new.
+function bindingDiff(
+  snap: RotSnapshot,
+  prev: RotSnapshot | null,
+): Map<string, "new" | "changed"> {
+  const out = new Map<string, "new" | "changed">();
+  for (const frame of snap.env) {
+    const prevFrame = prev
+      ? prev.env.find(
+          (f) =>
+            f.scope_kind === frame.scope_kind &&
+            f.scope_label === frame.scope_label,
+        ) ?? null
+      : null;
+    for (const [name, value] of Object.entries(frame.bindings)) {
+      if (!prevFrame || !(name in prevFrame.bindings)) {
+        out.set(name, "new");
+      } else if (prevFrame.bindings[name] !== value) {
+        out.set(name, "changed");
+      }
+    }
+  }
+  return out;
+}
+
+// Walk the statement AST looking for nodes that assign a binding —
+// `Assign`, `LetStmt`, `FuncDef`, `ClassDef`, `IndexAssign`,
+// `MemberAssign`. For each such node whose `name` is in `diff`,
+// record its position + the pulse variant (new vs changed). The
+// Step panel uses this to highlight the *cause* of an env change.
+function findAssigningTargets(
+  ast: AstNode,
+  diff: Map<string, "new" | "changed">,
+): Array<{ line: number; col: number; variant: "new" | "changed" }> {
+  const ASSIGNING_KINDS = new Set([
+    "Assign",
+    "LetStmt",
+    "FuncDef",
+    "ClassDef",
+  ]);
+  const out: Array<{
+    line: number;
+    col: number;
+    variant: "new" | "changed";
+  }> = [];
+  function visit(v: AstValue): void {
+    if (v === null || v === undefined) return;
+    if (typeof v !== "object") return;
+    if (Array.isArray(v)) {
+      for (const x of v) visit(x);
+      return;
+    }
+    const n = v as AstNode;
+    if (ASSIGNING_KINDS.has(n.__type__)) {
+      const name = typeof n.name === "string" ? n.name : null;
+      const variant = name ? diff.get(name) : undefined;
+      if (name && variant) {
+        const line = typeof n.line === "number" ? n.line : 0;
+        const col = typeof n.col === "number" ? n.col : 0;
+        if (line > 0 && col > 0) {
+          out.push({ line, col, variant });
+        }
+      }
+    }
+    for (const [k, child] of Object.entries(n)) {
+      if (k === "__type__" || k === "line" || k === "col") continue;
+      visit(child as AstValue);
+    }
+  }
+  visit(ast);
+  return out;
 }
 
 function lineRange(node: AstValue): { min: number; max: number } | null {

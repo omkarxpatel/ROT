@@ -2,6 +2,51 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.20 — AST node → env binding pulse: closes the parse → execute chain
+
+### Premise
+- Before this Z, the visual chain was source → tokens → AST but
+  the AST → execution leg was disconnected. The user saw new
+  bindings appear in the env card with no indication of *which*
+  AST node produced them.
+
+### Added
+- When the Execution stage opens for a snapshot whose env has new
+  or changed bindings, the matching AST node (the `Assign`,
+  `LetStmt`, `FuncDef`, or `ClassDef` whose `name` field matches
+  the binding) fires a one-shot ring pulse.
+- Pulse color matches the env-card dot: **emerald for new
+  bindings**, **amber for changed values**. So a step that
+  introduces `x = 5` shows an emerald pulse on the AST's `Assign x`
+  node simultaneously with the emerald dot on the env binding row.
+- `AstView` accepts a new `nodePulses: Record<line:col, AstPulse>`
+  prop, threaded recursively to every `AstNodeView`. Pulse keys
+  increment so the same node can fire multiple times within one
+  step (e.g. if the same name is re-assigned twice).
+- Wrapped each `AstNodeView`'s clickable header in a
+  `position: relative` container so the pulse overlay can be
+  absolute-positioned without affecting the children.
+
+### Changed
+- `step-panel.tsx` now tracks `astPulses` state alongside the
+  existing `tokenPulses`. A `useEffect` keyed on `stepIndex` /
+  `stmtAst` computes the env diff (via `bindingDiff`), walks the
+  statement subtree for assigning-kind nodes whose `name` matches
+  a changed binding (via `findAssigningTargets`), and schedules a
+  pulse fire at `STAGE_DELAYS.exec * 1000` ms so the AST pulse is
+  timed with the env card's appearance.
+
+### Notes
+- Parameter bindings (`name` and `this` set by `RotFunction.call`)
+  don't have a corresponding statement AST node, so no pulse fires
+  for them. The user reads the dive-in animation as the entry signal
+  in that case.
+- For-loop variables (`for x in xs`) similarly don't pulse — the
+  `for` AST has `var_name`, not `name`, and the binding lives in a
+  per-iteration scope. Future Z could special-case this.
+- Build clean. Type-check clean. No Python changes; 666 tests still
+  passing.
+
 ## v2.26.19 — bugfix: AST stage showed the wrong subtree for nested-snapshot steps
 
 ### Fixed
