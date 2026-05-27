@@ -61,13 +61,28 @@ export function Editor({ value, onChange, highlightLine }: EditorProps) {
         ".cm-gutters": { backgroundColor: "transparent", borderRight: "none" },
         ".cm-activeLineGutter": { backgroundColor: "transparent" },
         ".cm-activeLine": { backgroundColor: "rgba(255,255,255,0.03)" },
-        // Step-mode current-statement highlight. Amber accent so it
-        // reads distinctly from the regular cursor-active line. Border
-        // on the gutter mirrors the row so it's visible even when the
-        // line is empty.
+        // Step-mode current-statement highlight. Stays present as a
+        // steady amber tint with a 3px left rail. The keyframe
+        // animation re-fires every time the class is applied to a new
+        // line element (which happens on every step that moves the
+        // highlight), producing a bright pulse + outer glow that
+        // settles into the steady state.
         ".cm-rot-current-line": {
-          backgroundColor: "rgba(245, 158, 11, 0.14)",
-          boxShadow: "inset 2px 0 0 rgba(245, 158, 11, 0.7)",
+          backgroundColor: "rgba(245, 158, 11, 0.22)",
+          boxShadow: "inset 3px 0 0 rgba(245, 158, 11, 0.95)",
+          animation: "rot-line-pulse 0.85s ease-out",
+        },
+        "@keyframes rot-line-pulse": {
+          "0%": {
+            backgroundColor: "rgba(245, 158, 11, 0.55)",
+            boxShadow:
+              "inset 3px 0 0 rgba(245, 158, 11, 1), 0 0 18px 6px rgba(245, 158, 11, 0.5)",
+          },
+          "100%": {
+            backgroundColor: "rgba(245, 158, 11, 0.22)",
+            boxShadow:
+              "inset 3px 0 0 rgba(245, 158, 11, 0.95), 0 0 0 0 rgba(245, 158, 11, 0)",
+          },
         },
       }),
     ],

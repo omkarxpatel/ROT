@@ -2,6 +2,57 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.10 — Animate-mode UX: lift Env panel + louder step animations
+
+### Changed
+- The Env display has been promoted from a (default-expanded but
+  easily missed) accordion item inside the Pipeline panel to its
+  own card row in the playground's right column. In Animate mode
+  the right column is now 3 rows — Output, Env, Pipeline — with a
+  faint amber border on the Env card to mark it as the
+  step-mode-specific surface. Run mode is unchanged (2 rows).
+- The Env panel header carries the step counter
+  (`step N/total`) and a progress bar so each Step / Play tick
+  reads as concrete forward motion.
+- The natural-language explainer is now the visual lead: a 14px
+  motion line that ticks over with a slide-up/slide-out transition
+  between steps. The technical `after <kind> at line L:C` subtitle
+  drops to 10.5px muted text below it.
+- Binding rows use `framer-motion` `layout` + `AnimatePresence`
+  with `mode="popLayout"`:
+  - **Values** are keyed by their content, so when a binding
+    changes the old value slides up-and-out while the new value
+    slides up-from-below into place (slot-machine effect).
+  - **Rows** for new bindings slide in from below; deleted bindings
+    slide out upward. Scale jitters slightly for emphasis.
+  - **Dot colors** transition over 500ms instead of snapping.
+- Source-line decoration in
+  [`web/src/components/editor.tsx`](web/src/components/editor.tsx)
+  gets a brighter steady-state tint (alpha 0.14 → 0.22), a thicker
+  3px left rail, and a `rot-line-pulse` keyframe that fires on
+  every class application — bright background + outer glow at 0%,
+  decaying to the steady state over 0.85s. Moving the highlight to
+  a new line re-fires the animation, so each step reads as a
+  visible pulse.
+
+### Removed
+- `PipelinePanel` no longer accepts `currentSnapshot` / `previousSnapshot` /
+  `stepKey`; the Env section it used to render is dead code now
+  that `EnvPanel` is the home for that state.
+
+### Added
+- `web/src/components/env-panel.tsx` — card wrapper around
+  `EnvView` with the step counter + progress bar header and an
+  onboarding message when no snapshot is loaded yet.
+
+### Notes
+- Background colors and animation timings tuned to the user's
+  "loud" preference (~800ms-ish transitions, bright pulse on
+  the active line, visible value-tick animation). Switch to a
+  shorter timing constant in `env-view.tsx` if any of the
+  animations feel too slow.
+- Build clean. Type-check clean. 662 tests still passing.
+
 ## v2.26.9 — hotfix: cache-bust bundled rot/*.py so the playground bridge sees current code
 
 ### Fixed

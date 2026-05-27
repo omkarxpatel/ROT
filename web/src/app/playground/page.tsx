@@ -11,6 +11,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Editor } from "@/components/editor";
+import { EnvPanel } from "@/components/env-panel";
 import { ExamplesDropdown } from "@/components/examples-dropdown";
 import { OutputPanel } from "@/components/output-panel";
 import { PipelinePanel } from "@/components/pipeline-panel";
@@ -299,9 +300,12 @@ export default function PlaygroundPage() {
             />
           </div>
         </section>
-        {/* Right: output (top) + pipeline (bottom) */}
+        {/* Right column. In Run mode: Output + Pipeline (2 rows). In
+            Animate mode: Output + Env + Pipeline (3 rows) so the
+            step-by-step state is visible without scrolling into the
+            Pipeline panel. */}
         <section className="flex min-h-[50vh] flex-1 flex-col gap-3 md:basis-[45%]">
-          <div className="flex min-h-[24vh] flex-1 flex-col overflow-hidden rounded-lg border bg-card">
+          <div className="flex min-h-[20vh] flex-1 flex-col overflow-hidden rounded-lg border bg-card">
             <OutputPanel
               output={displayOutput}
               error={displayError}
@@ -309,23 +313,26 @@ export default function PlaygroundPage() {
               loadingMessage={loadingMessage}
             />
           </div>
-          <div className="flex min-h-[24vh] flex-1 flex-col overflow-hidden rounded-lg border bg-card">
+          {mode === "animate" && (
+            <div className="flex min-h-[24vh] flex-[1.3] flex-col overflow-hidden rounded-lg border border-amber-500/30 bg-card shadow-[0_0_0_1px_rgba(245,158,11,0.05)]">
+              <EnvPanel
+                snapshot={
+                  stepIndex >= 0 ? snapshots[stepIndex] ?? null : null
+                }
+                previousSnapshot={
+                  stepIndex > 0 ? snapshots[stepIndex - 1] ?? null : null
+                }
+                stepIndex={stepIndex}
+                totalSteps={snapshots.length}
+              />
+            </div>
+          )}
+          <div className="flex min-h-[18vh] flex-1 flex-col overflow-hidden rounded-lg border bg-card">
             <PipelinePanel
               tokens={pipeline.tokens}
               ast={pipeline.ast}
               trace={pipeline.trace}
               runKey={pipeline.runKey}
-              currentSnapshot={
-                mode === "animate" && stepIndex >= 0
-                  ? snapshots[stepIndex] ?? null
-                  : null
-              }
-              previousSnapshot={
-                mode === "animate" && stepIndex > 0
-                  ? snapshots[stepIndex - 1] ?? null
-                  : null
-              }
-              stepKey={stepIndex}
             />
           </div>
         </section>

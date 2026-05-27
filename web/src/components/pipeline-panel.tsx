@@ -11,13 +11,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { EnvView } from "@/components/env-view";
-import type {
-  AstNode,
-  AstValue,
-  RotSnapshot,
-  RotToken,
-} from "@/lib/pyodide-runtime";
+import type { AstNode, AstValue, RotToken } from "@/lib/pyodide-runtime";
 import { cn } from "@/lib/utils";
 
 interface PipelinePanelProps {
@@ -26,15 +20,6 @@ interface PipelinePanelProps {
   trace: string;
   // Bumped on every run so the token stagger animation re-fires.
   runKey: number;
-  // When non-null (Animate mode), an extra "Env" accordion item is
-  // rendered at the top, expanded by default, showing the current
-  // snapshot's scope chain. Otherwise hidden.
-  currentSnapshot?: RotSnapshot | null;
-  // Previous snapshot (one step back). Used by EnvView for "new" /
-  // "changed" binding indicators and the explainer copy.
-  previousSnapshot?: RotSnapshot | null;
-  // Bumped per step so EnvView can animate the per-frame fade-in.
-  stepKey?: number;
 }
 
 export function PipelinePanel({
@@ -42,45 +27,18 @@ export function PipelinePanel({
   ast,
   trace,
   runKey,
-  currentSnapshot,
-  previousSnapshot,
-  stepKey,
 }: PipelinePanelProps) {
-  // When in Animate mode, default-expand Env (alongside the other
-  // sections). When not, the Env item isn't rendered at all.
-  const defaultOpen = currentSnapshot
-    ? ["env", "tokens", "ast", "trace"]
-    : ["tokens", "ast", "trace"];
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border/60 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground">
         Pipeline
       </div>
       <ScrollArea className="min-h-0 flex-1">
-        <Accordion type="multiple" defaultValue={defaultOpen} className="w-full">
-          {currentSnapshot && (
-            <AccordionItem value="env" className="border-b border-border/60">
-              <AccordionTrigger>
-                <span>
-                  Env
-                  <span className="ml-2 text-xs text-muted-foreground">
-                    ({currentSnapshot.env.reduce(
-                      (n, f) => n + Object.keys(f.bindings).length,
-                      0,
-                    )}{" "}
-                    bindings)
-                  </span>
-                </span>
-              </AccordionTrigger>
-              <AccordionContent>
-                <EnvView
-                  snapshot={currentSnapshot}
-                  previousSnapshot={previousSnapshot ?? null}
-                  stepKey={stepKey ?? 0}
-                />
-              </AccordionContent>
-            </AccordionItem>
-          )}
+        <Accordion
+          type="multiple"
+          defaultValue={["tokens", "ast", "trace"]}
+          className="w-full"
+        >
           <AccordionItem value="tokens" className="border-b border-border/60">
             <AccordionTrigger>
               <span>Tokens {tokens.length > 0 && <span className="ml-2 text-xs text-muted-foreground">({tokens.length})</span>}</span>
