@@ -2,6 +2,47 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.1 — M1 env serializer: `Environment._env_snapshot()` wired
+
+### Added
+- `Environment._env_snapshot()` walks the scope chain and returns the
+  layers as an **outermost-first** list of `EnvFrame` records. Frozen
+  layers (the builtins root) are excluded — the snapshot only carries
+  user state. Bindings are shallow-copied so the captured frame is
+  stable against subsequent rebinds in the same env (mutable VALUES,
+  e.g. lists or dicts held by reference, still mutate — true historical
+  fidelity is a Milestone 4 / time-travel concern).
+- `Environment.__init__` gains `kind: str = "block"` and
+  `label: str = ""` parameters. Purely descriptive — they don't change
+  binding semantics, but they let `_env_snapshot()` produce readable
+  frame headers for the UI.
+
+### Changed
+- The interpreter's five `Environment(...)` construction sites are now
+  labeled:
+  - Builtins root → `kind="builtins"`, `label="builtins"`
+  - User global → `kind="global"`, `label="global"`
+  - Function call → `kind="function"`, `label="funct <name>"`
+  - Method call → `kind="method"`, `label="method <Class>.<name>"`
+  - Catch block → `kind="catch"`, `label="catch (<var>)"`
+- `Interpreter._snapshot()` now populates `Snapshot.env` via
+  `self.env._env_snapshot()`. `output_since_last` remains empty until
+  v2.26.2 wires the capture buffer.
+
+### Notes
+- Top-level snapshots in M1 always carry exactly one frame
+  (`"global"`), because top-level statement boundaries pop any
+  transient function/method/catch scopes. The function/method/catch
+  labels are forward-compat — they'll surface once expression-level
+  stepping (Milestone 3 / 4) descends into call frames.
+- 7 new tests in
+  [`tests/test_interpreter.py`](tests/test_interpreter.py) cover the
+  serializer directly and through `iter_execute`: one-global-frame
+  invariant, frozen-layer exclusion, growing global, function-binding
+  capture, immutability against rebinds, outermost-first ordering, and
+  the bare `_env_snapshot()` API.
+- Tests: 635 → 642 passing.
+
 ## v2.26.0 — Milestone 1 schema: Snapshot + EnvFrame + iter_execute skeleton
 
 ### Strategic context

@@ -4006,17 +4006,14 @@ def test_iter_execute_empty_program_yields_nothing():
     assert _iter("") == []
 
 
-def test_iter_execute_skeleton_leaves_env_and_output_unwired():
-    # v2.26.0 is a schema-only skeleton. Env serialization (v2.26.1) and
-    # output capture (v2.26.2) intentionally have not been wired yet, so
-    # snapshots ship empty `env` / `output_since_last`. This test pins
-    # that contract so we notice when later patches actually wire them.
+def test_iter_execute_output_still_unwired_in_v2_26_1():
+    # v2.26.1 wires env (see env-snapshot tests below) but leaves
+    # `output_since_last` empty until v2.26.2. Pin the partial contract.
     source = 'x = 1\ncoutln(x)'
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):
         snapshots = _iter(source)
     for snap in snapshots:
-        assert snap.env == []
         assert snap.output_since_last == ""
         assert snap.error is None
 
@@ -4033,3 +4030,75 @@ def test_iter_execute_uncaught_throw_surfaces_as_interpreter_error():
 def test_execute_fast_path_unchanged_after_iter_execute_added():
     # Regression: adding iter_execute() shouldn't disturb execute().
     assert _run('x = 1\ncoutln(x + 2)') == "3\n"
+
+
+# --- v2.26.1: env serializer wiring ---
+
+
+def test_iter_execute_env_has_one_frame_for_global_scope_at_top_level():
+    # Top-level statements never leave global, so each snapshot's env
+    # is a single frame labeled "global".
+    source = 'x = 1'
+    snap = _iter(source)[0]
+    assert len(snap.env) == 1
+    assert snap.env[0].scope_kind == "global"
+    assert snap.env[0].scope_label == "global"
+
+
+def test_iter_execute_env_excludes_frozen_builtins_layer():
+    # `cout`, `pi`, etc. live in the frozen builtins env. They should
+    # NOT appear in snapshots — the UI only renders user state.
+    snap = _iter('x = 1')[0]
+    assert "cout" not in snap.env[0].bindings
+    assert "pi" not in snap.env[0].bindings
+
+
+def test_iter_execute_env_global_frame_grows_with_each_assign():
+    source = 'a = 1\nb = 2\nc = 3'
+    snaps = _iter(source)
+    assert list(snaps[0].env[0].bindings.keys()) == ["a"]
+    assert set(snaps[1].env[0].bindings.keys()) == {"a", "b"}
+    assert set(snaps[2].env[0].bindings.keys()) == {"a", "b", "c"}
+    assert snaps[2].env[0].bindings == {"a": 1, "b": 2, "c": 3}
+
+
+def test_iter_execute_env_includes_function_definition_binding():
+    snap = _iter('funct foo() { return 1 }')[0]
+    # The function value itself is bound in global after FuncDef runs.
+    assert "foo" in snap.env[0].bindings
+
+
+def test_iter_execute_env_snapshot_is_independent_after_mutation():
+    # Shallow-copying bindings means a later mutation of the SAME env
+    # does not retroactively change earlier snapshots' frames.
+    source = 'x = 1\nx = 99'
+    snaps = _iter(source)
+    assert snaps[0].env[0].bindings["x"] == 1
+    assert snaps[1].env[0].bindings["x"] == 99
+
+
+def test_env_snapshot_method_returns_outermost_first():
+    # Direct test of `Environment._env_snapshot()`. Build a manual
+    # 3-layer chain (builtins -> outer -> inner) and confirm the order.
+    from rot.interpreter import Environment as _Env, EnvFrame as _Frame
+    builtins = _Env(frozen=True, kind="builtins", label="builtins")
+    outer = _Env(parent=builtins, kind="global", label="global")
+    outer.set_local("a", 1)
+    inner = _Env(parent=outer, kind="function", label="funct f")
+    inner.set_local("b", 2)
+    frames = inner._env_snapshot()
+    assert [f.scope_label for f in frames] == ["global", "funct f"]
+    assert frames[0].bindings == {"a": 1}
+    assert frames[1].bindings == {"b": 2}
+
+
+def test_env_snapshot_method_skips_frozen_layers():
+    from rot.interpreter import Environment as _Env
+    builtins = _Env(frozen=True, kind="builtins", label="builtins")
+    builtins._populate_frozen("pi", 3.14)
+    user = _Env(parent=builtins, kind="global", label="global")
+    user.set_local("x", 10)
+    frames = user._env_snapshot()
+    assert len(frames) == 1
+    assert frames[0].scope_kind == "global"
+    assert frames[0].bindings == {"x": 10}

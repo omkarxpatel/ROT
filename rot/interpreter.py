@@ -112,10 +112,22 @@ class Environment:
     walk hitting the frozen layer) are rejected.
     """
 
-    def __init__(self, parent: "Environment | None" = None, frozen: bool = False) -> None:
+    def __init__(
+        self,
+        parent: "Environment | None" = None,
+        frozen: bool = False,
+        kind: str = "block",
+        label: str = "",
+    ) -> None:
         self.values: dict[str, Any] = {}
         self.parent = parent
         self.frozen = frozen
+        # `kind` / `label` are purely descriptive — they don't change
+        # binding semantics. Surfaced by `_env_snapshot()` for the
+        # step-mode UI so each frame can render a meaningful header
+        # ("global", "funct foo", "method Counter.tick", "catch (e)").
+        self.kind = kind
+        self.label = label
 
     def get(self, name: str) -> Any:
         if name in self.values:
@@ -169,6 +181,30 @@ class Environment:
         initialization code populates the builtins layer."""
         self.values[name] = value
 
+    def _env_snapshot(self) -> list["EnvFrame"]:
+        """Walk the scope chain and return its layers as a list of
+        `EnvFrame` records, **outermost-first**. Frozen layers (the
+        builtins root) are excluded so the snapshot only carries user
+        scope state. Bindings are shallow-copied: mutating an env after
+        the snapshot won't rewrite the captured frame, but mutating a
+        mutable VALUE held in a binding (a list or dict the user has a
+        handle to) WILL be visible — the snapshot stores references,
+        not deep copies. M4 (time travel) is the right place to revisit
+        if true historical fidelity is needed.
+        """
+        frames: list["EnvFrame"] = []
+        env: "Environment | None" = self
+        while env is not None:
+            if not env.frozen:
+                frames.append(EnvFrame(
+                    scope_kind=env.kind,
+                    scope_label=env.label,
+                    bindings=dict(env.values),
+                ))
+            env = env.parent
+        frames.reverse()
+        return frames
+
 
 class RotFunction:
     """A user-defined function: a `funct` declaration bound to a closure env."""
@@ -183,7 +219,11 @@ class RotFunction:
                 f"function {self.decl.name!r} takes {len(self.decl.params)} "
                 f"argument(s), got {len(args)}"
             )
-        local = Environment(parent=self.closure)
+        local = Environment(
+            parent=self.closure,
+            kind="function",
+            label=f"funct {self.decl.name}",
+        )
         for param, value in zip(self.decl.params, args):
             local.set_local(param, value)
 
@@ -304,7 +344,11 @@ class BoundMethod:
                 f"method {self.decl.name!r} takes {len(self.decl.params)} "
                 f"argument(s), got {len(args)}"
             )
-        local = Environment(parent=self.closure)
+        local = Environment(
+            parent=self.closure,
+            kind="method",
+            label=f"method {self.instance.cls.name}.{self.decl.name}",
+        )
         # set_local (not set) so `this` and params can't clobber outer-scope
         # variables of the same name via the chain-walk in set().
         local.set_local("this", self.instance)
@@ -378,7 +422,7 @@ class Interpreter:
         # the builtins layer (e.g. `pi = 3.0`, `cout = "x"`) are rejected;
         # writes that don't (e.g. `x = 1` where `x` isn't a builtin) land
         # in the user global as usual.
-        builtins_env = Environment(frozen=True)
+        builtins_env = Environment(frozen=True, kind="builtins", label="builtins")
         # `cout` / `coutln` stay defined locally because they use the
         # interpreter-internal _stringify (matters for rot-style null/true/false).
         builtins_env._populate_frozen("cout", _builtin_cout)
@@ -387,7 +431,7 @@ class Interpreter:
         for name, fn in BUILTINS.items():
             builtins_env._populate_frozen(name, fn)
         self._builtins_env = builtins_env
-        self.env = Environment(parent=builtins_env)
+        self.env = Environment(parent=builtins_env, kind="global", label="global")
         # Module-system state.
         self._loaded_modules: set[str] = set()
         self._source_dir: "str | None" = None
@@ -455,13 +499,15 @@ class Interpreter:
     def _snapshot(self, stmt: "ast.Statement") -> Snapshot:
         """Build a `Snapshot` reflecting interpreter state after `stmt`.
 
-        v2.26.0 skeleton: emits position + kind. `env` and
-        `output_since_last` are filled in by later patches.
+        v2.26.0: position + kind only.
+        v2.26.1: env serialized via `Environment._env_snapshot()`.
+        v2.26.2: `output_since_last` drained from the capture buffer.
         """
         return Snapshot(
             statement_line=getattr(stmt, "line", 0),
             statement_col=getattr(stmt, "col", 0),
             statement_kind=type(stmt).__name__,
+            env=self.env._env_snapshot(),
         )
 
     def _error(self, node: "Any", msg: str) -> "InterpreterError":
@@ -789,7 +835,11 @@ class Interpreter:
         outer binding (e.g. the math constant `e` after `catch (e)`).
         The new env's parent is the current env, so the catch body can still
         read and chain-walk-mutate enclosing names."""
-        catch_env = Environment(parent=self.env)
+        catch_env = Environment(
+            parent=self.env,
+            kind="catch",
+            label=f"catch ({stmt.catch_var})",
+        )
         catch_env.set_local(stmt.catch_var, value)
         prior = self.env
         self.env = catch_env
