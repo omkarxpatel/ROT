@@ -2,6 +2,17 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.22.3 — Interpreter threads `line` / `col` into runtime errors
+
+### Added
+- `Interpreter._error(node, msg)` and `Interpreter._locate(err, node)` helpers in `rot/interpreter.py`. The first builds (does not raise — caller does `raise self._error(...)`) an `InterpreterError` carrying ``node``'s source position; the second wraps a position-less `InterpreterError` and re-raises with a fresh exception carrying ``node``'s position, leaving inner-positioned errors untouched.
+- `_execute_statement` and `_evaluate` are now thin wrappers that catch `InterpreterError` and call `_locate(err, current_node)` on it before re-raising. This covers every raise site reachable from the statement/expression dispatchers — including ones inside `Environment.get` (undefined name), builtin call failures, deep nested raises with no AST node in scope. Inner raises that already carry a position keep theirs (the wrapper short-circuits). Net effect: every runtime error now reports `line N:C:` with the position of the AST node that triggered it, instead of `line 0:0:` (CLI prefix suppressed).
+- `_ThrowSignal` carries `line` and `col` of the originating `throw` statement; an uncaught throw at the top level surfaces with the throw's position rather than 0:0.
+- New tests: `test_undefined_name_error_reports_line_col`, `test_division_by_zero_error_reports_line_col`, `test_index_out_of_range_error_reports_line_col`, `test_inner_call_position_is_kept_not_clobbered_by_outer` (regression — the locator must NOT overwrite an inner error's location), `test_call_arity_error_reports_line_col`, `test_uncaught_throw_reports_throw_line_col`, `test_member_access_error_inside_method_reports_correct_line`.
+
+### Notes
+- The locator preserves the inner position (line != 0) — without that, a `cout(undef_inner)` error would re-raise with the position of the surrounding `cout(...)` rather than the inner `undef_inner`. Drilling-down behavior is preserved.
+
 ## v2.22.2 — Parser populates `line` / `col` on every AST node
 
 ### Added

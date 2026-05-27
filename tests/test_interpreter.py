@@ -2783,3 +2783,111 @@ def test_to_string_separate_instances_with_same_class_each_render():
         'coutln([A(1) | A(2) | A(1)])'
     )
     assert _run(src) == "[A(1) | A(2) | A(1)]\n"
+
+
+# ---------- v2.22.3: runtime errors carry line/col -----------------------
+
+
+def _run_for_error(source: str) -> InterpreterError:
+    """Run ``source`` expecting a runtime InterpreterError; return it."""
+    program = Parser(Lexer().tokenize(source)).parse()
+    with pytest.raises(InterpreterError) as exc_info:
+        Interpreter().execute(program)
+    return exc_info.value
+
+
+def test_undefined_name_error_reports_line_col():
+    """v2.22.3: a runtime error for an undefined name now reports the
+    source position of the identifier reference, not 0:0. The CLI prefix
+    ``line N:C:`` is only emitted when ``line`` is nonzero, so before
+    this change runtime errors had no position at all."""
+    src = (
+        'x = 1\n'
+        'cout(undefined_name)\n'
+    )
+    err = _run_for_error(src)
+    # `undefined_name` lives on line 2; col is the start of the
+    # identifier inside `cout(...)`.
+    assert err.line == 2
+    assert err.col > 0
+    assert "undefined_name" in str(err)
+
+
+def test_division_by_zero_error_reports_line_col():
+    src = (
+        'a = 1\n'
+        'b = 2\n'
+        'c = 10 / 0\n'
+    )
+    err = _run_for_error(src)
+    # The divide-by-zero happens at the `/` operator on line 3. The
+    # BinaryOp node's position points at the operator.
+    assert err.line == 3
+    assert "division by zero" in str(err)
+
+
+def test_index_out_of_range_error_reports_line_col():
+    src = (
+        'xs = [1 | 2 | 3]\n'
+        'y = xs[99]\n'
+    )
+    err = _run_for_error(src)
+    assert err.line == 2
+    assert "index error" in str(err) or "out of range" in str(err)
+
+
+def test_inner_call_position_is_kept_not_clobbered_by_outer():
+    """Regression: the position-locator must not overwrite an inner error's
+    line/col with the outer expression's position. The undefined-name
+    inside `cout(...)` should report the name's line/col, not the `cout`
+    call site's."""
+    src = (
+        '\n'
+        '\n'
+        'cout(undef_inner)\n'
+    )
+    err = _run_for_error(src)
+    assert err.line == 3
+    # The undefined identifier starts at column 6 (1-indexed after 'cout(').
+    assert err.col == 6
+
+
+def test_call_arity_error_reports_line_col():
+    src = (
+        'funct one(x) { coutln(x) }\n'
+        'one(1 | 2)\n'
+    )
+    err = _run_for_error(src)
+    assert err.line == 2
+
+
+def test_uncaught_throw_reports_throw_line_col():
+    """v2.22.3: `_ThrowSignal` now carries the throw's source position, so
+    an uncaught throw at the top level surfaces with `line N:C:` instead of
+    no location."""
+    src = (
+        'x = 1\n'
+        '\n'
+        'throw "boom"\n'
+    )
+    err = _run_for_error(src)
+    assert err.line == 3
+    assert "uncaught throw" in str(err)
+    assert "boom" in str(err)
+
+
+def test_member_access_error_inside_method_reports_correct_line():
+    """Regression: an error raised inside a user method via member access
+    should report the line of the member-access expression, not the call
+    site of the method or the class definition."""
+    src = (
+        'class A {\n'
+        '    init(x) { this.x = x }\n'
+        '    bad() { return this.nonexistent }\n'
+        '}\n'
+        'a = A(5)\n'
+        'cout(a.bad())\n'
+    )
+    err = _run_for_error(src)
+    # `this.nonexistent` appears on line 3.
+    assert err.line == 3

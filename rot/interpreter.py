@@ -41,10 +41,13 @@ class _ContinueSignal(BaseException):
 
 class _ThrowSignal(BaseException):
     """User-raised exception value (via the `throw` statement). Caught by
-    `try { ... } catch (e) { ... }`."""
+    `try { ... } catch (e) { ... }`. Carries the source position of the
+    `throw` so an uncaught throw at the top level surfaces with `line N:C:`."""
 
-    def __init__(self, value: "Any") -> None:
+    def __init__(self, value: "Any", line: int = 0, col: int = 0) -> None:
         self.value = value
+        self.line = line
+        self.col = col
 
 
 from .builtins import _stringify, _builtin_type, _set_active_interpreter
@@ -354,9 +357,64 @@ class Interpreter:
             # by `try`/`catch`) would otherwise escape as a raw Python
             # BaseException with a Python traceback. Convert to a clean
             # rot-side InterpreterError so the CLI prints a normal error.
-            raise InterpreterError(f"uncaught throw: {_stringify(t.value)}")
+            # Carry the throw's source position so the error reports
+            # where it was raised, not 0:0.
+            raise InterpreterError(
+                f"uncaught throw: {_stringify(t.value)}",
+                line=t.line, col=t.col,
+            )
+
+    def _error(self, node: "Any", msg: str) -> "InterpreterError":
+        """Build (don't raise) an InterpreterError carrying ``node``'s
+        source position. Callers use ``raise self._error(...)`` so the
+        raise stays at the call site (better tracebacks, no extra frame).
+
+        Falls back to line=0/col=0 when ``node`` is None or doesn't carry
+        position info — keeps the helper safe to call defensively in
+        signal/builtin handlers that lack a node reference."""
+        line = getattr(node, "line", 0) if node is not None else 0
+        col = getattr(node, "col", 0) if node is not None else 0
+        return InterpreterError(msg, line=line, col=col)
+
+    def _locate(self, err: "InterpreterError", node: "Any") -> "InterpreterError":
+        """Locate a position-less InterpreterError on ``node`` and return
+        a fresh exception preserving the original message. Used by the
+        statement/expression dispatchers to attach a position to errors
+        raised from places that don't have a node in scope (e.g.
+        ``Environment.get`` for an undefined name, builtin wrappers).
+
+        If the original error already has a position, keep it — the
+        inner site knew the precise location and we shouldn't overwrite
+        it with our outer wrapper's coarser position. (Matters for
+        nested-evaluate calls: the inner expression knows its position;
+        the outer statement would clobber if we always rewrote.)"""
+        if getattr(err, "line", 0):
+            return err
+        line = getattr(node, "line", 0) if node is not None else 0
+        col = getattr(node, "col", 0) if node is not None else 0
+        if not line:
+            return err
+        # Strip the leading "line N:C: " prefix off the original message
+        # (RotError.__init__ adds it). If a future change drops that prefix,
+        # the .args[0] fallback still produces a sensible message.
+        raw = err.args[0] if err.args else str(err)
+        # The prefix is only present when line was nonzero on the inner
+        # raise — but we already returned early in that case. Safe to
+        # pass the raw message through unchanged.
+        return type(err)(raw, line=line, col=col)
 
     def _execute_statement(self, stmt: ast.Statement) -> None:
+        try:
+            self._execute_statement_impl(stmt)
+        except InterpreterError as e:
+            # Locate any position-less InterpreterError on the current
+            # statement node — covers errors raised from Environment.get,
+            # builtin wrappers, and any deeper raise that didn't get its
+            # own AST node for context. Inner errors with their own
+            # position are kept untouched.
+            raise self._locate(e, stmt)
+
+    def _execute_statement_impl(self, stmt: ast.Statement) -> None:
         if isinstance(stmt, ast.ExprStmt):
             self._evaluate(stmt.expr)
             return
@@ -470,7 +528,7 @@ class Interpreter:
             raise _ContinueSignal()
         if isinstance(stmt, ast.ThrowStmt):
             value = self._evaluate(stmt.value)
-            raise _ThrowSignal(value)
+            raise _ThrowSignal(value, line=stmt.line, col=stmt.col)
         if isinstance(stmt, ast.ImportStmt):
             self._import_file(stmt.path)
             return
@@ -627,6 +685,17 @@ class Interpreter:
             self.env = prior
 
     def _evaluate(self, expr: ast.Expression) -> Any:
+        try:
+            return self._evaluate_impl(expr)
+        except InterpreterError as e:
+            # Locate any position-less InterpreterError on the current
+            # expression node — covers Environment.get raises for
+            # undefined names, builtin call failures, and any deeper
+            # raise without a node in scope. Errors that already carry a
+            # position are returned unchanged.
+            raise self._locate(e, expr)
+
+    def _evaluate_impl(self, expr: ast.Expression) -> Any:
         if isinstance(expr, ast.NumberLit):
             return expr.value
         if isinstance(expr, ast.StringLit):
