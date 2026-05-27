@@ -2,6 +2,39 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.14 — Editor syntax highlighting matched to the token chip palette
+
+### Added
+- ROT syntax highlighting in the playground editor via a regex-based
+  `StreamLanguage` extension in
+  [`web/src/components/editor.tsx`](web/src/components/editor.tsx).
+  Keywords, identifiers, numbers, strings, operators, punctuation,
+  and comments now color in the editor as you type.
+- The palette is **the same** as the token-chip palette in
+  [`tokens-view.tsx`](web/src/components/tokens-view.tsx): keyword =
+  purple-300, identifier = sky-300, number = cyan-300, string =
+  amber-300, operator = rose-300, punctuation = zinc-300, comment =
+  zinc-500 italic. So when tokens fly down to the Step panel,
+  source-color and chip-color line up.
+
+### Notes
+- The highlighter is intentionally lightweight — a `StreamLanguage`
+  regex tokenizer that mirrors the ROT lexer's surface, not a full
+  Lezer parser. Good enough for syntax color; doesn't try to be
+  exhaustive (e.g. embedded `{expr}` inside an f-string colors as
+  string, not as separate expression).
+- The 27 ROT keywords (`funct`, `if`, `elseif`, `else`, `while`,
+  `for`, `return`, `let`, `true`, `false`, `null`, `this`, `super`,
+  `class`, `init`, `in`, `and`, `or`, `not`, `try`, `catch`,
+  `finally`, `throw`, `break`, `continue`, `import`) are matched
+  against an identifier table so `letx` doesn't highlight as the
+  `let` keyword.
+- `syntaxHighlighting(rotHighlight)` is listed after the `oneDark`
+  theme so on-overlap tags (oneDark also styles strings/keywords)
+  resolve to the ROT palette.
+- Build clean. Type-check clean. 666 tests still passing — no Python
+  code touched.
+
 ## v2.26.13 — Deep stepping: snapshots for every executed statement, not just top-level
 
 ### Premise
