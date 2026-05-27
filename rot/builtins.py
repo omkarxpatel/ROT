@@ -88,9 +88,18 @@ def _stringify(x: Any, _seen: "set[int] | None" = None) -> str:
             _seen.discard(id(x))
     # Lazy-import the interpreter types so this module doesn't depend on
     # interpreter at load time (already the pattern in _builtin_type).
-    from .interpreter import RotInstance
+    from .interpreter import RotInstance, RotFunction, RotClass, BoundMethod
     if isinstance(x, RotInstance):
         return _stringify_instance(x)
+    if isinstance(x, BoundMethod):
+        # Order matters: BoundMethod check before RotFunction/RotClass since
+        # BoundMethod isn't a subclass of either, but keeping the most
+        # specific shape first matches the renderers below.
+        return f"<method {x.instance.cls.name}.{x.decl.name}>"
+    if isinstance(x, RotFunction):
+        return f"<funct {x.decl.name}>"
+    if isinstance(x, RotClass):
+        return f"<class {x.name}>"
     return str(x)
 
 

@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.21.5 — `RotFunction` / `RotClass` / `BoundMethod` __str__
+
+### Fixed
+- **B3/I21**: `coutln(f)` for a user function, `coutln(MyClass)` for a class, and `coutln(instance.method)` for a bound method all used to leak Python's internal repr — `<rot.interpreter.RotFunction object at 0x...>`, `<rot.interpreter.RotClass object at 0x...>`, `<rot.interpreter.BoundMethod object at 0x...>` — every callable in rot was rendering with its Python memory address. `_stringify` now special-cases all three (lazy-imported alongside `RotInstance` to keep `builtins.py` independent at module load): `RotFunction` → `<funct {decl.name}>`, `RotClass` → `<class {name}>`, `BoundMethod` → `<method {instance.cls.name}.{decl.name}>`. No override hook for these — they're not user data, the names are already in the source. Affects all `_stringify` paths (cout/coutln, `str()`, f-strings, list/dict recursion, assert messages). Tests: `test_coutln_function_renders_as_funct_name`, `test_coutln_class_renders_as_class_name`, `test_coutln_bound_method_renders_as_method_class_name`, `test_str_of_function_uses_funct_rendering`, `test_str_of_class_uses_class_rendering`, `test_str_of_bound_method_uses_method_rendering`, `test_fstring_with_function_uses_funct_rendering`, `test_fstring_with_class_uses_class_rendering`, `test_fstring_with_bound_method_uses_method_rendering`, `test_list_of_functions_renders_each_as_funct`, `test_list_of_classes_renders_each_as_class`, `test_builtin_function_not_affected_by_funct_rendering` (regression — builtins are Python callables and don't go through the new branches).
+
 ## v2.21.4 — `RotInstance` __str__ + `to_string()` override hook
 
 ### Fixed

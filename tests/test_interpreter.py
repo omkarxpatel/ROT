@@ -2613,3 +2613,104 @@ def test_stringify_instance_inside_dict_uses_override():
         'coutln({"x": A()})'
     )
     assert _run(src) == '{"x": thing}\n'
+
+
+# ---------- v2.21.5: RotFunction/RotClass/BoundMethod __str__ ----------
+
+def test_coutln_function_renders_as_funct_name():
+    # B3/I21: `coutln(f)` for a user function used to leak Python's repr
+    # (`<rot.interpreter.RotFunction object at 0x...>`). Now renders as
+    # `<funct {name}>`.
+    src = 'funct add(a | b) { return a + b }\ncoutln(add)'
+    assert _run(src) == "<funct add>\n"
+
+
+def test_coutln_class_renders_as_class_name():
+    # B3/I21: same for classes — used to leak Python repr. Now renders as
+    # `<class {name}>`.
+    src = 'class Box {}\ncoutln(Box)'
+    assert _run(src) == "<class Box>\n"
+
+
+def test_coutln_bound_method_renders_as_method_class_name():
+    # B3/I21: same for bound methods — used to leak Python repr. Now renders
+    # as `<method {ClassName}.{methodName}>`.
+    src = (
+        'class A {\n'
+        '    greet() { coutln("hi") }\n'
+        '}\n'
+        'a = A()\n'
+        'coutln(a.greet)'
+    )
+    assert _run(src) == "<method A.greet>\n"
+
+
+def test_str_of_function_uses_funct_rendering():
+    # `str()` routes through _stringify so the same rendering applies.
+    src = 'funct f() {}\ncoutln(str(f))'
+    assert _run(src) == "<funct f>\n"
+
+
+def test_str_of_class_uses_class_rendering():
+    src = 'class C {}\ncoutln(str(C))'
+    assert _run(src) == "<class C>\n"
+
+
+def test_str_of_bound_method_uses_method_rendering():
+    src = (
+        'class A {\n'
+        '    f() {}\n'
+        '}\n'
+        'coutln(str(A().f))'
+    )
+    assert _run(src) == "<method A.f>\n"
+
+
+def test_fstring_with_function_uses_funct_rendering():
+    src = 'funct g() {}\ncoutln(f"got: {g}")'
+    assert _run(src) == "got: <funct g>\n"
+
+
+def test_fstring_with_class_uses_class_rendering():
+    src = 'class B {}\ncoutln(f"got: {B}")'
+    assert _run(src) == "got: <class B>\n"
+
+
+def test_fstring_with_bound_method_uses_method_rendering():
+    src = (
+        'class A {\n'
+        '    f() {}\n'
+        '}\n'
+        'coutln(f"got: {A().f}")'
+    )
+    assert _run(src) == "got: <method A.f>\n"
+
+
+def test_list_of_functions_renders_each_as_funct():
+    # _stringify recurses into lists, so each element should render in the
+    # new style.
+    src = (
+        'funct one() {}\n'
+        'funct two() {}\n'
+        'coutln([one | two])'
+    )
+    assert _run(src) == "[<funct one> | <funct two>]\n"
+
+
+def test_list_of_classes_renders_each_as_class():
+    src = 'class P {}\nclass Q {}\ncoutln([P | Q])'
+    assert _run(src) == "[<class P> | <class Q>]\n"
+
+
+def test_builtin_function_not_affected_by_funct_rendering():
+    # Builtins are Python callables, not `RotFunction`, so they still go
+    # through `str()` — the new rendering only applies to user-defined
+    # functions. Locked down here to detect regressions if someone adds a
+    # blanket "stringify any callable" branch.
+    src = 'coutln(str(len))'
+    out = _run(src)
+    # We only check that the new shape isn't used; the exact Python repr
+    # may differ between versions.
+    assert "<funct" not in out
+    assert "<class" not in out
+    assert "<method" not in out
