@@ -2,6 +2,15 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.6 — deferred: floor-division operator (I28)
+
+### Deferred (no code change)
+- Considered adding integer / floor-division as `//`, but `//` is the comment marker in ROT (C-style), so adopting it would either break every existing comment or require a comment-syntax migration. Alternative tokens were evaluated and rejected:
+  - `~/` — visually noisy, no precedent in mainstream languages, easy to misread as a path.
+  - `\\` — confusing next to string escapes, conflicts with the lexer's existing escape rules.
+  - A new keyword like `idiv` — introduces a context-sensitive name that's neither operator nor builtin.
+- Decision: keep `//` for comments. Users who want floor division should use the existing builtin `floor(a / b)` — clear, already tested, no syntax churn. A future minor can revisit if a non-conflicting operator becomes desirable.
+
 ## v2.25.5 — language: `try { ... } catch (e) { ... } finally { ... }` (I43)
 
 ### Added
