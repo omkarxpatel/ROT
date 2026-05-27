@@ -126,19 +126,28 @@ function StagedView({
     return lines[stmtLine - 1] ?? "";
   }, [source, stmtLine]);
 
-  // 2) The tokens on that line (and any tokens whose line falls between
-  // this statement's start line and the next statement's start line,
-  // catching multi-line statements like funct definitions).
+  // 2) The tokens on this statement (and any tokens whose line falls
+  // within the statement's AST line range, catching multi-line
+  // statements like funct definitions).
   const stmtTokens = useMemo(() => {
-    return tokensForStatement(tokens, ast, stepIndex, stmtLine);
-  }, [tokens, ast, stepIndex, stmtLine]);
+    return tokensForStatement(
+      tokens,
+      ast,
+      stmtLine,
+      stmtCol,
+      snapshot.statement_kind,
+    );
+  }, [tokens, ast, stmtLine, stmtCol, snapshot.statement_kind]);
 
-  // 3) The AST subtree for this top-level statement. The program's
-  // body[stepIndex] is the statement node corresponding to this
-  // snapshot.
+  // 3) The AST subtree for this snapshot's statement. With deep
+  // stepping (v2.26.13) the snapshot stream contains nested
+  // statements, so `body[stepIndex]` is wrong — that mapping only
+  // worked when every snapshot was a top-level statement. Look up
+  // by (line, col, kind) instead: walk the AST and return the first
+  // node whose source position and AST type match.
   const stmtAst = useMemo<AstNode | null>(() => {
-    return statementAst(ast, stepIndex);
-  }, [ast, stepIndex]);
+    return findStatementAst(ast, stmtLine, stmtCol, snapshot.statement_kind);
+  }, [ast, stmtLine, stmtCol, snapshot.statement_kind]);
 
   // Pulse coordination: when an AST leaf (a node with a primary
   // field) finishes its entrance animation, fire a pulse on the
@@ -539,13 +548,14 @@ function OnboardingMessage() {
 function tokensForStatement(
   tokens: RotToken[],
   ast: AstNode | null,
-  stepIndex: number,
   stmtLine: number,
+  stmtCol: number,
+  stmtKind: string,
 ): RotToken[] {
-  // First try: use the AST subtree's line range to find the right
-  // tokens. Falls back to "all tokens on stmt_line" if the AST isn't
-  // available.
-  const subtree = statementAst(ast, stepIndex);
+  // First try: use the snapshot's AST subtree's line range to find the
+  // right tokens. Falls back to "all tokens on stmt_line" if the AST
+  // lookup fails (defensive).
+  const subtree = findStatementAst(ast, stmtLine, stmtCol, stmtKind);
   if (!subtree) {
     return tokens.filter((t) => t.line === stmtLine);
   }
@@ -556,13 +566,40 @@ function tokensForStatement(
   return tokens.filter((t) => t.line >= range.min && t.line <= range.max);
 }
 
-function statementAst(ast: AstNode | null, stepIndex: number): AstNode | null {
+// Walk the AST looking for a node with matching (line, col, __type__).
+// Used instead of `body[stepIndex]` because deep stepping yields
+// snapshots for nested statements that aren't direct children of
+// program.body.
+function findStatementAst(
+  ast: AstNode | null,
+  line: number,
+  col: number,
+  kind: string,
+): AstNode | null {
   if (!ast) return null;
-  const body = (ast as { body?: AstValue }).body;
-  if (!Array.isArray(body)) return null;
-  const stmt = body[stepIndex];
-  if (!stmt || typeof stmt !== "object" || Array.isArray(stmt)) return null;
-  return stmt as AstNode;
+  let result: AstNode | null = null;
+  function visit(v: AstValue): void {
+    if (result) return;
+    if (v === null || v === undefined) return;
+    if (typeof v !== "object") return;
+    if (Array.isArray(v)) {
+      for (const x of v) visit(x);
+      return;
+    }
+    const n = v as AstNode;
+    const nl = typeof n.line === "number" ? n.line : 0;
+    const nc = typeof n.col === "number" ? n.col : 0;
+    if (n.__type__ === kind && nl === line && nc === col) {
+      result = n;
+      return;
+    }
+    for (const [k, child] of Object.entries(n)) {
+      if (k === "__type__" || k === "line" || k === "col") continue;
+      visit(child as AstValue);
+    }
+  }
+  visit(ast);
+  return result;
 }
 
 function lineRange(node: AstValue): { min: number; max: number } | null {

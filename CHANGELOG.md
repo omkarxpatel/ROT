@@ -2,6 +2,38 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.19 — bugfix: AST stage showed the wrong subtree for nested-snapshot steps
+
+### Fixed
+- v2.26.13 turned `iter_execute` into deep stepping (snapshots for
+  every executed statement, including inside function bodies / loops
+  / if-blocks). But `step-panel.tsx` was still picking the AST
+  subtree via `ast.body[stepIndex]`, which only worked when
+  `stepIndex` corresponded to a top-level body slot.
+- For an inner snapshot (e.g. the `coutln("hi")` inside `greet`),
+  the AST stage was rendering whatever happened to live at
+  `body[stepIndex]` of the top level — a real subtree, just not the
+  right one. The Tokens stage was also affected because it derives
+  its line range from the same subtree.
+
+### Changed
+- Replaced `statementAst(ast, stepIndex)` with
+  `findStatementAst(ast, line, col, kind)` in
+  [`web/src/components/step-panel.tsx`](web/src/components/step-panel.tsx).
+  Walks the AST recursively and returns the first node whose
+  `(line, col, __type__)` triple matches the snapshot. Statements
+  in ROT are newline-terminated, so the triple uniquely identifies
+  a node in practice.
+- `tokensForStatement` now takes `(line, col, kind)` directly instead
+  of `stepIndex` — same fix path; the line range it computes is now
+  derived from the correct subtree.
+
+### Notes
+- Type-check clean. No Python changes; 666 tests still passing.
+- This unblocks v2.26.20's AST → env binding pulse, which needs to
+  walk the *correct* subtree to find which AST nodes produced which
+  bindings.
+
 ## v2.26.18 — hotfix: CallBreadcrumb crashed with "Invalid prop `ref` on React.Fragment"
 
 ### Fixed
