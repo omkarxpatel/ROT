@@ -2,6 +2,39 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.22 — Output type-on streaming + new-text emerald flash
+
+### Added
+- `OutputPanel`
+  ([`web/src/components/output-panel.tsx`](web/src/components/output-panel.tsx))
+  now streams newly-printed characters one-at-a-time at ~12ms/char
+  (typewriter effect). For chunks longer than 120 chars the stream
+  is skipped — but the highlight still flashes so the user notices
+  what was added.
+- Newly-streamed characters are wrapped in a `.rot-output-new` span
+  that runs a `rot-output-new-fade` keyframe in
+  [`web/src/app/globals.css`](web/src/app/globals.css): starts in
+  emerald with a faint glow, holds briefly, then fades to the
+  regular text color over ~1.1s. So when output appears, the new
+  portion visibly distinguishes from older lines.
+
+### Changed
+- `OutputPanel` now manages internal state (`shown`, `newRange`,
+  `prevOutputRef`) to coordinate the stream + flash. On `output`
+  shrinkage (Reset, switching examples) it syncs immediately with
+  no animation; on growth it streams the diff.
+- The "old" portion of the output renders unanimated in regular
+  text color; only the just-added range gets the flash.
+
+### Notes
+- Stream rate tuned so it doesn't conflict with the default Play
+  cadence (400ms/step). Large outputs from any single step skip
+  the per-char delay so Play stays responsive.
+- The CSS animation `forwards`-fills so once the new portion settles
+  to the regular color, it stays there even after the keyframe
+  completes.
+- Type-check clean. No Python changes; 669 tests still passing.
+
 ## v2.26.21 — Iteration counter for loops
 
 ### Premise
