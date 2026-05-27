@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.3 — Lexer: trailing `\r` no longer captured in COMMENT lexeme on CRLF
+
+### Fixed
+- **L3**: on CRLF (`\r\n`) line endings, a `//` comment lexeme used to include the trailing `\r` (e.g. `"// foo\r"` for `"// foo\r\nbar"`). The same fix as L4 in v2.20.2 — `_scan_comment` now stops on `\n` OR `\r` — also covers this case, but L3 deserves a dedicated regression test. Test: `test_crlf_comment_does_not_capture_trailing_cr`.
+
 ## v2.20.2 — Lexer: bare CR (`\r`) handling
 
 ### Fixed

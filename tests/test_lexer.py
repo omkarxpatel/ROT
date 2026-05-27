@@ -236,3 +236,13 @@ def test_comment_with_bare_cr_stops_at_cr():
     # NEWLINE, then a SPACE, then the IDENT `bar`.
     later = [(t.lexeme, t.kind) for t in tokens[1:]]
     assert ("bar", "IDENT") in later
+
+
+# v2.20.3 — L3: trailing \r must not be captured in COMMENT lexeme on CRLF.
+def test_crlf_comment_does_not_capture_trailing_cr():
+    tokens = Lexer().tokenize("// foo\r\nbar")
+    comment = tokens[0]
+    assert comment.kind == "COMMENT"
+    # Comment lexeme stops before the \r (and certainly before the \n).
+    assert comment.lexeme == "// foo"
+    assert "\r" not in comment.lexeme
