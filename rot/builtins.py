@@ -42,7 +42,7 @@ def _arity(name: str, args: tuple, expected: Any) -> None:
 
 # ==== Conversion ============================================================
 
-def _stringify(x: Any) -> str:
+def _stringify(x: Any, _seen: "set[int] | None" = None) -> str:
     """rot-style string conversion: `null` instead of `None`,
     `true`/`false` instead of `True`/`False`. Used by `str()` and by
     interpreter's cout/coutln to keep output consistent with source.
@@ -51,26 +51,50 @@ def _stringify(x: Any) -> str:
     as `{k: v | k2: v2}` — both recurse so nested elements use rot style
     too. String keys in dicts are double-quoted (matching rot literal
     syntax); other keys are stringified recursively.
+
+    `_seen` is an internal id() set for cycle detection — a list/dict seen
+    twice on the recursion stack renders as `[...]` / `{...}` rather than
+    recursing forever. (B61: Python's `str()` does this via its own
+    "we've seen this id" hack, but it produces `[...]` with the wrong
+    surrounding brackets when ROT output diverges from Python repr —
+    this implementation owns the cycle marker itself.)
     """
     if x is None:
         return "null"
     if isinstance(x, bool):
         return "true" if x else "false"
     if isinstance(x, list):
-        return "[" + " | ".join(_stringify(item) for item in x) + "]"
+        if _seen is None:
+            _seen = set()
+        if id(x) in _seen:
+            return "[...]"
+        _seen.add(id(x))
+        try:
+            return "[" + " | ".join(_stringify(item, _seen) for item in x) + "]"
+        finally:
+            _seen.discard(id(x))
     if isinstance(x, dict):
-        return "{" + " | ".join(
-            f"{_stringify_key(k)}: {_stringify(v)}" for k, v in x.items()
-        ) + "}"
+        if _seen is None:
+            _seen = set()
+        if id(x) in _seen:
+            return "{...}"
+        _seen.add(id(x))
+        try:
+            return "{" + " | ".join(
+                f"{_stringify_key(k, _seen)}: {_stringify(v, _seen)}"
+                for k, v in x.items()
+            ) + "}"
+        finally:
+            _seen.discard(id(x))
     return str(x)
 
 
-def _stringify_key(k: Any) -> str:
+def _stringify_key(k: Any, _seen: "set[int] | None" = None) -> str:
     """Render a dict key. String keys are double-quoted so the output looks
     like a rot dict literal; everything else goes through `_stringify`."""
     if isinstance(k, str):
         return f'"{k}"'
-    return _stringify(k)
+    return _stringify(k, _seen)
 
 
 def _builtin_str(*args: Any) -> str:

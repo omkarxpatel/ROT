@@ -2436,3 +2436,64 @@ def test_fstring_dict_uses_rot_style():
     # I39: f-string interpolation uses _stringify, so dicts render rot-style
     # inside f-strings too.
     assert _run('d = {"a": 1}\ncoutln(f"got {d}")') == 'got {"a": 1}\n'
+
+
+# ==== v2.21.3: cycle detection in _stringify (B61) ============================
+
+def test_stringify_self_referential_list_does_not_recurse():
+    # B61: a list containing itself used to either recurse forever (in a
+    # custom implementation) or display Python's `[...]` (when falling
+    # through to `str()`). Now _stringify owns the cycle marker: a list
+    # seen twice on the recursion stack renders as `[...]`.
+    from rot.builtins import _stringify
+    a: list = []
+    a.append(a)
+    assert _stringify(a) == "[[...]]"
+
+
+def test_stringify_self_referential_dict_does_not_recurse():
+    # B61: same for dicts — a dict containing itself renders as `{...}`.
+    from rot.builtins import _stringify
+    d: dict = {}
+    d["self"] = d
+    assert _stringify(d) == '{"self": {...}}'
+
+
+def test_stringify_indirect_list_cycle_does_not_recurse():
+    # B61: cycles can also be indirect (A -> B -> A).
+    from rot.builtins import _stringify
+    a: list = []
+    b: list = []
+    a.append(b)
+    b.append(a)
+    # `a` contains `b`, `b` contains `a` (which is the outer list seen again).
+    assert _stringify(a) == "[[[...]]]"
+
+
+def test_stringify_indirect_dict_cycle_does_not_recurse():
+    # B61: indirect dict cycle.
+    from rot.builtins import _stringify
+    a: dict = {}
+    b: dict = {}
+    a["b"] = b
+    b["a"] = a
+    assert _stringify(a) == '{"b": {"a": {...}}}'
+
+
+def test_stringify_two_separate_lists_are_not_a_cycle():
+    # B61 regression: appending the same list twice via separate paths is
+    # not a cycle — only when the recursion stack sees the same id again.
+    # `_seen` uses try/finally to remove ids on the way back up.
+    from rot.builtins import _stringify
+    shared: list = [1, 2]
+    parent = [shared, shared]
+    assert _stringify(parent) == "[[1 | 2] | [1 | 2]]"
+
+
+def test_coutln_self_referential_list_does_not_hang():
+    # B61: end-to-end via the interpreter — `coutln(a)` after `append(a | a)`
+    # used to attempt to render `[..., [...]]` via Python's str() which gives
+    # `[[...]]` with single brackets (Python convention). Now uses rot's
+    # `[...]` marker.
+    src = 'a = [1 | 2]\nappend(a | a)\ncoutln(a)'
+    assert _run(src) == "[1 | 2 | [...]]\n"

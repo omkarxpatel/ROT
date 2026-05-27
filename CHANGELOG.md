@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.21.3 — `_stringify` cycle detection for lists and dicts
+
+### Fixed
+- **B61**: a self-referential list (`a = []; append(a | a)`) used to render as Python's `[..., [...]]` — Python's `str()` has its own cycle hack, but the output mixed Python style with rot style after v2.21.1/2. `_stringify` now owns the cycle marker: an internal `_seen` id() set tracks lists and dicts on the recursion stack; a value seen twice renders as `[...]` (list) or `{...}` (dict). The set uses try/finally to remove ids on the way back up, so sharing the same list at two sibling positions (not a cycle) still renders the value at each position. Tests: `test_stringify_self_referential_list_does_not_recurse`, `test_stringify_self_referential_dict_does_not_recurse`, `test_stringify_indirect_list_cycle_does_not_recurse`, `test_stringify_indirect_dict_cycle_does_not_recurse`, `test_stringify_two_separate_lists_are_not_a_cycle`, `test_coutln_self_referential_list_does_not_hang`.
+
 ## v2.21.2 — `_stringify` renders dicts in rot style
 
 ### Fixed
