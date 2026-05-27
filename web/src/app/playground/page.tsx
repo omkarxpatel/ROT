@@ -11,11 +11,11 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Editor } from "@/components/editor";
-import { EnvPanel } from "@/components/env-panel";
 import { ExamplesDropdown } from "@/components/examples-dropdown";
 import { OutputPanel } from "@/components/output-panel";
 import { PipelinePanel } from "@/components/pipeline-panel";
 import { SiteHeader } from "@/components/site-header";
+import { StepPanel } from "@/components/step-panel";
 import {
   DEFAULT_EXAMPLE_KEY,
   DEFAULT_EXAMPLE_SOURCE,
@@ -314,8 +314,11 @@ export default function PlaygroundPage() {
             />
           </div>
           {mode === "animate" && (
-            <div className="flex min-h-[24vh] flex-[1.3] flex-col overflow-hidden rounded-lg border border-amber-500/30 bg-card shadow-[0_0_0_1px_rgba(245,158,11,0.05)]">
-              <EnvPanel
+            <div className="flex min-h-[36vh] flex-[1.8] flex-col overflow-hidden rounded-lg border border-amber-500/30 bg-card shadow-[0_0_0_1px_rgba(245,158,11,0.05)]">
+              <StepPanel
+                source={source}
+                tokens={pipeline.tokens}
+                ast={pipeline.ast}
                 snapshot={
                   stepIndex >= 0 ? snapshots[stepIndex] ?? null : null
                 }

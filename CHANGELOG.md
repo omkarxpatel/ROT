@@ -2,6 +2,61 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.11 — Per-step staged pipeline animation: source → tokens → AST → execution
+
+### Premise
+- v2.26.10 made the Env card prominent, but the demo's actual promise
+  ("watch your code compile") wasn't being delivered: the user was
+  seeing *what changed in memory*, not *how this statement got
+  compiled*. This Z makes the right column's animate-mode card show
+  the compilation pipeline per statement, one stage at a time.
+
+### Added
+- `web/src/components/step-panel.tsx` — replaces the v2.26.10
+  `EnvPanel`. In animate mode the playground's middle row is now a
+  four-stage animated reveal per snapshot:
+  1. **Source** — the exact line of code (line N:col M label, with a
+     caret marker at the statement's column).
+  2. **Tokens** — the lexer's tokens for that statement (filtered by
+     line range derived from the AST subtree). Each token flies in
+     with a stagger.
+  3. **AST** — the parsed subtree for this top-level statement
+     (`ast.body[stepIndex]`). Renders depth-staggered so the tree
+     grows from root outward.
+  4. **Execution** — what the interpreter did with it: a "printed"
+     block (if `output_since_last`) followed by the env diff
+     (delegating to `EnvView` from v2.26.10).
+- Vertical arrows between stages so the pipeline reads as a sequence
+  rather than a stack.
+- `web/src/components/tokens-view.tsx` and
+  `web/src/components/ast-view.tsx` — the token chip stream and AST
+  tree views are extracted from `pipeline-panel.tsx` into shared
+  components so the new step panel and the existing Pipeline panel
+  share rendering code. Each accepts `baseDelaySec` and stagger
+  parameters so the step panel can offset its stage animations
+  precisely.
+
+### Changed
+- The playground page passes `source`, `pipeline.tokens`, and
+  `pipeline.ast` into `StepPanel` so it can extract per-statement
+  data. The middle row gets more vertical space (`flex-[1.8]`,
+  `min-h-[36vh]`) to accommodate the four stages.
+- `PipelinePanel` shrinks to its lex / parse / trace role and
+  imports from the new shared view components. No behavior change.
+
+### Removed
+- `web/src/components/env-panel.tsx` — replaced by `step-panel.tsx`.
+
+### Notes
+- Stage timing: source at 0s, tokens at 0.15s, AST at 0.45s, exec at
+  0.9s — so a single Step is a ~1.4-second pipeline pass. Adjust the
+  `STAGE_DELAYS` constant in `step-panel.tsx` if it feels too long.
+- Multi-line statements (funct definitions, while/for blocks) are
+  handled: the token filter uses the AST subtree's line range so
+  every token from line N to line M of the statement is shown, not
+  just line N.
+- Build clean. Type-check clean. 662 tests still passing.
+
 ## v2.26.10 — Animate-mode UX: lift Env panel + louder step animations
 
 ### Changed
