@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.18.4 — reject Python `bytes` returned from method calls
+
+### Fixed
+- **I48**: `"abc".encode()` used to return Python `b'abc'` — a foreign bytes value that rot has no type for, leaking through `_evaluate_call` and printing with the Python `b'...'` repr. The Python-callable path in `_evaluate_call` now checks the result; if it's `bytes`, `bytearray`, or `memoryview`, raise `InterpreterError(f"method 'encode' returns Python bytes, which is not a ROT type")`. The error names the method that produced the bytes. String/list/dict methods that return native rot types (strings, lists, dicts, numbers, bools) are unaffected. Tests: `test_string_encode_returns_bytes_is_rejected`, `test_string_encode_with_arg_returns_bytes_is_rejected`, `test_string_methods_returning_strings_still_work`.
+
 ## v2.18.3 — BoundMethod attribute access locked down
 
 ### Fixed

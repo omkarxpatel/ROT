@@ -738,7 +738,7 @@ class Interpreter:
         if not callable(callee):
             raise InterpreterError(f"not callable: {callee!r}")
         try:
-            return callee(*args)
+            result = callee(*args)
         except InterpreterError:
             # already in rot form — leave it alone
             raise
@@ -757,6 +757,20 @@ class Interpreter:
             # (`_builtin_input`, `_num`, `_stringify`, ...).
             display = name.lstrip("_")
             raise InterpreterError(f"{display}: {e}")
+        # I48: reject Python `bytes` (and `bytearray`, `memoryview`) — rot
+        # has no bytes type, so `"abc".encode()` returning `b'abc'` would
+        # introduce a foreign value that prints with Python's `b'...'`
+        # repr and can't be operated on cleanly. Catch at the call site
+        # so the error names the method (e.g. "encode") that produced it.
+        if isinstance(result, (bytes, bytearray, memoryview)):
+            name = getattr(callee, "__name__", "<callable>")
+            display = name.lstrip("_")
+            py_type = type(result).__name__
+            raise InterpreterError(
+                f"method {display!r} returns Python {py_type}, "
+                f"which is not a ROT type"
+            )
+        return result
 
 
 def _builtin_cout(*args: Any) -> None:

@@ -2222,3 +2222,30 @@ def test_boundmethod_invocation_still_works():
         'coutln(a.f())'
     )
     assert _run(src) == "7\n"
+
+
+# ==== v2.18.4: reject Python bytes from method calls (I48) ===================
+
+def test_string_encode_returns_bytes_is_rejected():
+    # I48: `"abc".encode()` returns Python `b'abc'` — a foreign bytes type
+    # leaking into rot. Reject at the call site.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln("abc".encode())')
+    msg = str(exc_info.value)
+    assert "encode" in msg
+    assert "bytes" in msg
+    # And the error explicitly says it's not a ROT type.
+    assert "ROT" in msg or "rot" in msg.lower()
+
+
+def test_string_encode_with_arg_returns_bytes_is_rejected():
+    # I48: `"abc".encode("utf-8")` also returns bytes — same fix applies.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln("abc".encode("utf-8"))')
+    assert "bytes" in str(exc_info.value)
+
+
+def test_string_methods_returning_strings_still_work():
+    # Regression: methods that return strings (not bytes) still work.
+    assert _run('coutln("abc".upper())') == "ABC\n"
+    assert _run('coutln("  abc  ".strip())') == "abc\n"
