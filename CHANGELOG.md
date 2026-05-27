@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.24.5 — test backfill: closure / recursion (T55-T57, T70)
+
+### Added
+- 4 tests appended to `tests/test_interpreter.py`. Three-level closure mutation pins that the chain-walking `set` from v2.10.0 still reaches an outer variable through two layers of nested `funct`. A direct factorial unit test pins recursion at the interpreter level (the `examples/factorial.rot` golden file does end-to-end coverage, but no fast unit test did). Mutual recursion between `even` and `odd` succeeds — pinned as documentation of the env-by-reference closure capture (the lookup of `odd` inside `even` resolves at call time, by which point `odd` is bound in the shared global env). And closures over a for-loop variable observe the final value of the loop var (`3, 3, 3` for `[1 | 2 | 3]`) — the Python late-binding footgun ROT inherits, pinned so a future change to capture-by-value is a conscious decision.
+
 ## v2.24.4 — test backfill: BoundMethod fix (T106-T108)
 
 ### Added

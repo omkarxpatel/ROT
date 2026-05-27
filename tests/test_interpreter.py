@@ -3003,3 +3003,84 @@ def test_bound_method_wrong_arity_error_names_method_not_function():
     assert "method 'setX'" in msg
     # Ensure it didn't fall through to the function-call wording.
     assert "function" not in msg
+
+
+# --- v2.24.5: T55-T57, T70 — closure / recursion gaps ---
+
+
+def test_deep_closure_mutation_three_levels():
+    # The v2.10.0 closure-mutation feature lets a nested function `set` walk
+    # up the chain and rebind an enclosing variable. Existing tests only
+    # cover two-level nesting; this pins the chain-walk reaches across
+    # three (and would in principle keep working at deeper levels).
+    src = (
+        'funct outermost() {\n'
+        '    x = 1\n'
+        '    funct mid() {\n'
+        '        funct inner() {\n'
+        '            x = 100\n'   # walks past mid and outermost to find x
+        '        }\n'
+        '        inner()\n'
+        '    }\n'
+        '    mid()\n'
+        '    coutln(x)\n'
+        '}\n'
+        'outermost()'
+    )
+    assert _run(src) == "100\n"
+
+
+def test_recursive_factorial_unit():
+    # The factorial example file is golden-tested end-to-end, but no
+    # interpreter-level unit test pins direct recursion through a single
+    # call. Verify the canonical shape.
+    src = (
+        'funct fact(n) {\n'
+        '    if (n <= 1) { return 1 }\n'
+        '    return n * fact(n - 1)\n'
+        '}\n'
+        'coutln(fact(5))'
+    )
+    assert _run(src) == "120\n"
+
+
+def test_mutually_recursive_functions_resolve_at_call_time():
+    # ROT's `funct` declarations live in a shared scope, and closures
+    # capture the env by reference. By the time `even(4)` is called,
+    # `odd` is already bound in the global env, so the lookup succeeds.
+    # If the implementation ever switched to capturing names at
+    # declaration time (rather than env-by-reference), this would break
+    # — that's the documentation pin.
+    src = (
+        'funct even(n) {\n'
+        '    if (n == 0) { return true }\n'
+        '    return odd(n - 1)\n'
+        '}\n'
+        'funct odd(n) {\n'
+        '    if (n == 0) { return false }\n'
+        '    return even(n - 1)\n'
+        '}\n'
+        'coutln(even(4))\n'   # true
+        'coutln(odd(5))'      # true
+    )
+    assert _run(src) == "true\ntrue\n"
+
+
+def test_closures_capturing_loop_var_observe_final_value():
+    # Closures over a for-loop variable see the variable BY REFERENCE, not
+    # by value at the time the closure was created. After the loop ends,
+    # `i` holds the last iteration's value, and every closure observes
+    # that final value. This is the Python footgun ROT inherits — pinned
+    # here so a future change is a conscious decision.
+    src = (
+        'fns = []\n'
+        'for i in [1 | 2 | 3] {\n'
+        '    funct f() { return i }\n'
+        '    append(fns | f)\n'
+        '}\n'
+        'for g in fns {\n'
+        '    coutln(g())\n'
+        '}'
+    )
+    # All three closures see the final `i = 3`.
+    assert _run(src) == "3\n3\n3\n"
