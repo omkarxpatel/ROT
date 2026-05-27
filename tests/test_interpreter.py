@@ -1255,6 +1255,22 @@ def test_variable_compound_assign_null_plus_int_raises_interpreter_error():
     assert "cannot apply" in str(exc_info.value)
 
 
+def test_index_compound_assign_divide_by_zero_raises_interpreter_error():
+    # I4: `xs[0] /= 0` used to leak a raw Python ZeroDivisionError because
+    # the IndexAssign compound branch wrapped only the index-access errors,
+    # not the op_fn call.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("xs = [10]\nxs[0] /= 0")
+    assert "division by zero" in str(exc_info.value).lower()
+
+
+def test_index_compound_assign_type_mismatch_raises_interpreter_error():
+    # I4: `xs[0] -= "a"` used to leak a raw Python TypeError. Now wrapped.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('xs = [10]\nxs[0] -= "a"')
+    assert "cannot apply" in str(exc_info.value)
+
+
 def test_for_over_non_iterable_raises_interpreter_error():
     with pytest.raises(InterpreterError) as exc_info:
         _run("for x in 123 { coutln(x) }")

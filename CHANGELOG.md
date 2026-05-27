@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.17.2 — index compound assign wraps Python op errors
+
+### Fixed
+- **I4**: `xs[0] /= 0`, `xs[0] -= "a"` used to leak a raw Python `ZeroDivisionError` / `TypeError`. The `IndexAssign` compound branch wrapped only the index-access errors (`IndexError`/`KeyError`/`TypeError` on `target[index]`), not the `op_fn(current, new_value)` call. Restructured the branch so the read, op, and write are each wrapped separately: index errors on read/write produce `index error: ...`; op errors produce `division by zero` or `cannot apply '<op>' to <T1> and <T2>: <msg>`, matching v2.17.1's variable-compound wrapping. Tests: `test_index_compound_assign_divide_by_zero_raises_interpreter_error`, `test_index_compound_assign_type_mismatch_raises_interpreter_error`.
+
 ## v2.17.1 — variable compound assign wraps Python errors
 
 ### Fixed

@@ -443,16 +443,38 @@ class Interpreter:
             target = self._evaluate(stmt.target)
             index = self._evaluate(stmt.index)
             new_value = self._evaluate(stmt.value)
-            try:
-                if stmt.op == "=":
+            if stmt.op == "=":
+                try:
                     target[index] = new_value
-                else:
-                    op_fn = _BINARY_OPS.get(stmt.op)
-                    if op_fn is None:
-                        raise InterpreterError(f"unknown compound op {stmt.op!r}")
-                    target[index] = op_fn(target[index], new_value)
-            except (IndexError, KeyError, TypeError) as e:
-                raise InterpreterError(f"index error: {e}")
+                except (IndexError, KeyError, TypeError) as e:
+                    raise InterpreterError(f"index error: {e}")
+            else:
+                op_fn = _BINARY_OPS.get(stmt.op)
+                if op_fn is None:
+                    raise InterpreterError(f"unknown compound op {stmt.op!r}")
+                # Read side: wrap index errors the same way the plain `=`
+                # path does.
+                try:
+                    current = target[index]
+                except (IndexError, KeyError, TypeError) as e:
+                    raise InterpreterError(f"index error: {e}")
+                # Op side: `xs[0] /= 0` / `xs[0] -= "a"` used to leak raw
+                # Python ZeroDivisionError / TypeError. Wrap to match the
+                # compound-Assign path and _evaluate's BinaryOp wrapper.
+                try:
+                    new_combined = op_fn(current, new_value)
+                except ZeroDivisionError:
+                    raise InterpreterError("division by zero")
+                except TypeError as e:
+                    raise InterpreterError(
+                        f"cannot apply {stmt.op!r} to {type(current).__name__} "
+                        f"and {type(new_value).__name__}: {e}"
+                    )
+                # Write side: still wrap index errors on assignment.
+                try:
+                    target[index] = new_combined
+                except (IndexError, KeyError, TypeError) as e:
+                    raise InterpreterError(f"index error: {e}")
             return
         if isinstance(stmt, ast.MemberAssign):
             target = self._evaluate(stmt.target)
