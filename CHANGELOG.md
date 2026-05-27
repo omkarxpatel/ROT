@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.24.2 — test backfill: Compiler
+
+### Added
+- `tests/test_compiler.py` (9 tests). Drives `Compiler` directly (no subprocess) and pins behavior the v2.13.0 audit flagged as untested for the orchestrator module: `parse(source)` returns a `Program` (including empty-source = empty body); `trace=True` prints the three `Process N` stage headers and per-token rows to stdout, while `trace=False` is silent except for the program's own output; `run(source, source_path=...)` resolves relative imports against that file's directory; without a `source_path`, imports resolve against `os.getcwd()`; reusing a single `Compiler` across multiple `run()` calls creates a fresh `Interpreter` each time (user bindings from the first run are gone in the second), and the v2.16.5 frozen-builtins layer keeps rejecting reassignment on every run; and a `RecursionError` raised during parse converts cleanly to `ParserError("expression too deeply nested")` (v2.14.10).
+
 ## v2.24.1 — test backfill: CLI
 
 ### Added
