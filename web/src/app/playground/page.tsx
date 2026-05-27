@@ -304,6 +304,12 @@ export default function PlaygroundPage() {
               ast={pipeline.ast}
               trace={pipeline.trace}
               runKey={pipeline.runKey}
+              currentSnapshot={
+                mode === "animate" && stepIndex >= 0
+                  ? snapshots[stepIndex] ?? null
+                  : null
+              }
+              stepKey={stepIndex}
             />
           </div>
         </section>

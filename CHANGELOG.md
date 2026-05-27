@@ -2,6 +2,44 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.6 — M1 playground Env pane: scope stack + binding cards
+
+### Added
+- New [`web/src/components/env-view.tsx`](web/src/components/env-view.tsx)
+  — `EnvView` renders the scope chain from a single `RotSnapshot`.
+  Each frame is a card with a `scope_kind` + `scope_label` header
+  and a two-column `name → value` grid for its bindings. Values are
+  the ROT-flavored strings the bridge produced via `_stringify`
+  (`null`, `true`/`false`, `[1 | 2 | 3]`, `<funct foo>`,
+  `<instance of Counter>`).
+- A "Statement just executed" header above the frames — shows the
+  AST kind plus `line:col`, so the user can correlate the env state
+  with the statement that produced it.
+- Per-step entrance animation on frames (`framer-motion`); re-mounts
+  each step so the user sees the env "refresh" visually.
+- Inline error block at the bottom of the Env pane when
+  `snapshot.error` is set — same surface as `OutputPanel`'s error
+  block, just co-located with the scope view.
+
+### Changed
+- [`PipelinePanel`](web/src/components/pipeline-panel.tsx) accepts
+  two new props: `currentSnapshot` and `stepKey`. When a snapshot is
+  passed, an "Env" accordion item appears at the top of the panel
+  (default-expanded, along with Tokens / AST / Trace). When null,
+  the layout is identical to before.
+- The playground page wires
+  `currentSnapshot = mode === "animate" && stepIndex >= 0 ? snapshots[stepIndex] : null`
+  into `PipelinePanel`, plus `stepKey = stepIndex` for the entrance
+  animation.
+
+### Notes
+- "Recently changed" highlights (green flash for new bindings, yellow
+  for mutated) are deferred to v2.26.8 polish. v2.26.6 is the
+  structural pane; v2.26.7 will add the source-line highlight in the
+  editor; v2.26.8 will wire the visual diff cues.
+- Production build clean. Type-check passes.
+- Tests: 662 still passing — no Python code changed.
+
 ## v2.26.5 — M1 playground controls: Animate mode, Step, Play / Pause, speed slider
 
 ### Added
