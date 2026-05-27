@@ -216,13 +216,21 @@ def _builtin_type(*args: Any) -> str:
         return "list"
     if isinstance(x, dict):
         return "dict"
+    # I37: `d.keys()`, `d.values()`, `d.items()` return Python view objects
+    # whose `type(x).__name__` is `"dict_keys"` / `"dict_values"` /
+    # `"dict_items"` — Python internals leaking through `type()`. They're
+    # list-like (iterable, len-able), so report as `"list"`. This mirrors
+    # what users see when iterating them.
+    py_type_name = type(x).__name__
+    if py_type_name in ("dict_keys", "dict_values", "dict_items"):
+        return "list"
     # Lazy-import so this module doesn't depend on interpreter at load time.
     from .interpreter import RotFunction, RotClass, RotInstance, BoundMethod
     if isinstance(x, RotInstance):
         return x.cls.name
     if isinstance(x, (RotFunction, RotClass, BoundMethod)):
         return "function"
-    return type(x).__name__
+    return py_type_name
 
 
 def _is_num(*args: Any) -> bool:

@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.18.5 — `type()` of dict views reports "list" instead of "dict_keys"
+
+### Fixed
+- **I37**: `type({}.keys())` used to return `"dict_keys"` — a Python internal type name leaking through `type()`. Same for `d.values()` (`"dict_values"`) and `d.items()` (`"dict_items"`). `_builtin_type` now detects these three Python view types by class name and reports `"list"` (they're list-like — iterable and len-able, which is how users actually consume them). Real lists, dicts, and other types are unaffected. Tests: `test_type_of_dict_keys_is_list`, `test_type_of_dict_values_is_list`, `test_type_of_dict_items_is_list`, `test_type_of_real_list_still_list`.
+
 ## v2.18.4 — reject Python `bytes` returned from method calls
 
 ### Fixed

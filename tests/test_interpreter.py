@@ -2249,3 +2249,26 @@ def test_string_methods_returning_strings_still_work():
     # Regression: methods that return strings (not bytes) still work.
     assert _run('coutln("abc".upper())') == "ABC\n"
     assert _run('coutln("  abc  ".strip())') == "abc\n"
+
+
+# ==== v2.18.5: dict views report as "list" from type() (I37) =================
+
+def test_type_of_dict_keys_is_list():
+    # I37: `type({}.keys())` used to return "dict_keys" — a Python internal
+    # name leaking through `type()`. Now reports as "list".
+    assert _run('coutln(type({}.keys()))') == "list\n"
+
+
+def test_type_of_dict_values_is_list():
+    # I37 (values): same fix for dict_values.
+    assert _run('coutln(type({"a": 1}.values()))') == "list\n"
+
+
+def test_type_of_dict_items_is_list():
+    # I37 (items): same fix for dict_items.
+    assert _run('coutln(type({"a": 1}.items()))') == "list\n"
+
+
+def test_type_of_real_list_still_list():
+    # Regression: a real list still reports "list".
+    assert _run('coutln(type([1 | 2 | 3]))') == "list\n"
