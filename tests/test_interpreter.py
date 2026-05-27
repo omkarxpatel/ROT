@@ -1322,3 +1322,46 @@ def test_write_file_default_encoding_is_utf8(tmp_path):
     _run(f'write_file("{target}" | "café")')
     raw = target.read_bytes()
     assert raw == "café".encode("utf-8")
+
+
+# ==== v2.14.7: arity errors use rot names, not underscore-prefixed Python ===
+
+@pytest.mark.parametrize("call,name", [
+    ('num()', 'num'),
+    ('num(1 | 2)', 'num'),
+    ('str()', 'str'),
+    ('str(1 | 2)', 'str'),
+    ('type()', 'type'),
+    ('type(1 | 2)', 'type'),
+    ('is_num()', 'is_num'),
+    ('is_str(1 | 2)', 'is_str'),
+    ('is_list()', 'is_list'),
+    ('is_dict()', 'is_dict'),
+    ('is_bool()', 'is_bool'),
+    ('is_null()', 'is_null'),
+    ('is_func()', 'is_func'),
+    ('read_file()', 'read_file'),
+    ('read_file("a" | "b")', 'read_file'),
+    ('write_file()', 'write_file'),
+    ('write_file(1 | 2 | 3)', 'write_file'),
+    ('rand_int()', 'rand_int'),
+    ('rand_int(1)', 'rand_int'),
+    ('rand_float(1)', 'rand_float'),
+    ('assert()', 'assert'),
+    ('assert(1 | 2 | 3)', 'assert'),
+    ('append(1)', 'append'),
+    ('append()', 'append'),
+    ('pop()', 'pop'),
+    ('input(1 | 2)', 'input'),
+])
+def test_builtin_arity_error_uses_rot_name(call, name):
+    # B19, B20, B32, B39, B42-B50: arity errors must not expose internal
+    # Python names like `_num`, `_stringify`, `_builtin_type`, `_rand_int`.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(f"coutln({call})") if call.startswith(("num", "str", "type", "is_", "rand_float", "read_file")) else _run(call)
+    msg = str(exc_info.value)
+    assert name in msg
+    # No internal Python-name leak.
+    assert f"_{name}" not in msg
+    assert "_stringify" not in msg
+    assert "_builtin_" not in msg

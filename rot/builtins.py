@@ -13,6 +13,33 @@ from typing import Any
 from .errors import InterpreterError
 
 
+def _arity(name: str, args: tuple, expected: Any) -> None:
+    """Raise an InterpreterError if `args` doesn't match `expected`.
+
+    `expected` is either an int (exact count) or a (min, max) tuple. Using
+    this from a `*args` builtin keeps the Python parameter list out of the
+    error message, so users see rot-style names like `num` instead of
+    internal `_num()` Python repr.
+    """
+    n = len(args)
+    if isinstance(expected, int):
+        if n != expected:
+            plural = "" if expected == 1 else "s"
+            raise InterpreterError(
+                f"{name}: takes {expected} arg{plural}, got {n}"
+            )
+        return
+    lo, hi = expected
+    if n < lo or n > hi:
+        if lo == hi:
+            raise InterpreterError(
+                f"{name}: takes {lo} arg(s), got {n}"
+            )
+        raise InterpreterError(
+            f"{name}: takes {lo}-{hi} args, got {n}"
+        )
+
+
 # ==== Conversion ============================================================
 
 def _stringify(x: Any) -> str:
@@ -26,8 +53,15 @@ def _stringify(x: Any) -> str:
     return str(x)
 
 
-def _num(x: Any) -> Any:
+def _builtin_str(*args: Any) -> str:
+    _arity("str", args, 1)
+    return _stringify(args[0])
+
+
+def _builtin_num(*args: Any) -> Any:
     """Convert to int if integer-shaped, else float."""
+    _arity("num", args, 1)
+    x = args[0]
     if isinstance(x, bool):
         return int(x)
     if isinstance(x, (int, float)):
@@ -41,14 +75,18 @@ def _num(x: Any) -> Any:
 
 # ==== I/O ===================================================================
 
-def _builtin_input(prompt: Any = "") -> str:
+def _builtin_input(*args: Any) -> str:
+    _arity("input", args, (0, 1))
+    prompt = args[0] if args else ""
     try:
-        return input(str(prompt) if prompt != "" else "")
+        return input(_stringify(prompt) if prompt != "" else "")
     except EOFError:
         raise InterpreterError("input: end of input stream")
 
 
-def _read_file(path: Any) -> str:
+def _read_file(*args: Any) -> str:
+    _arity("read_file", args, 1)
+    path = args[0]
     try:
         with open(str(path), encoding="utf-8") as f:
             return f.read()
@@ -60,7 +98,9 @@ def _read_file(path: Any) -> str:
         raise InterpreterError(f"read_file: {e}")
 
 
-def _write_file(path: Any, content: Any) -> None:
+def _write_file(*args: Any) -> None:
+    _arity("write_file", args, 2)
+    path, content = args
     try:
         with open(str(path), "w", encoding="utf-8") as f:
             f.write(str(content))
@@ -107,13 +147,18 @@ def _builtin_range(*args: Any) -> list:
     raise InterpreterError(f"range() takes 1-3 args, got {len(args)}")
 
 
-def _builtin_append(lst: list, item: Any) -> None:
+def _builtin_append(*args: Any) -> None:
+    _arity("append", args, 2)
+    lst, item = args
     if not isinstance(lst, list):
         raise InterpreterError(f"append: expected list, got {type(lst).__name__}")
     lst.append(item)
 
 
-def _builtin_pop(lst: list, *rest: Any) -> Any:
+def _builtin_pop(*args: Any) -> Any:
+    _arity("pop", args, (1, 2))
+    lst = args[0]
+    rest = args[1:]
     if not isinstance(lst, list):
         raise InterpreterError(f"pop: expected list, got {type(lst).__name__}")
     if not rest:
@@ -153,8 +198,10 @@ def _builtin_round(x: Any, *rest: Any) -> Any:
 
 # ==== Type ==================================================================
 
-def _builtin_type(x: Any) -> str:
+def _builtin_type(*args: Any) -> str:
     """Return a rot-style type name."""
+    _arity("type", args, 1)
+    x = args[0]
     if x is None:
         return "null"
     if isinstance(x, bool):
@@ -178,31 +225,40 @@ def _builtin_type(x: Any) -> str:
     return type(x).__name__
 
 
-def _is_num(x: Any) -> bool:
+def _is_num(*args: Any) -> bool:
+    _arity("is_num", args, 1)
+    x = args[0]
     return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
-def _is_str(x: Any) -> bool:
-    return isinstance(x, str)
+def _is_str(*args: Any) -> bool:
+    _arity("is_str", args, 1)
+    return isinstance(args[0], str)
 
 
-def _is_list(x: Any) -> bool:
-    return isinstance(x, list)
+def _is_list(*args: Any) -> bool:
+    _arity("is_list", args, 1)
+    return isinstance(args[0], list)
 
 
-def _is_dict(x: Any) -> bool:
-    return isinstance(x, dict)
+def _is_dict(*args: Any) -> bool:
+    _arity("is_dict", args, 1)
+    return isinstance(args[0], dict)
 
 
-def _is_bool(x: Any) -> bool:
-    return isinstance(x, bool)
+def _is_bool(*args: Any) -> bool:
+    _arity("is_bool", args, 1)
+    return isinstance(args[0], bool)
 
 
-def _is_null(x: Any) -> bool:
-    return x is None
+def _is_null(*args: Any) -> bool:
+    _arity("is_null", args, 1)
+    return args[0] is None
 
 
-def _is_func(x: Any) -> bool:
+def _is_func(*args: Any) -> bool:
+    _arity("is_func", args, 1)
+    x = args[0]
     from .interpreter import RotFunction, RotClass, BoundMethod
     if isinstance(x, (RotFunction, RotClass, BoundMethod)):
         return True
@@ -211,8 +267,9 @@ def _is_func(x: Any) -> bool:
 
 # ==== Random ================================================================
 
-def _rand_int(a: Any, b: Any) -> int:
-    lo, hi = int(a), int(b)
+def _rand_int(*args: Any) -> int:
+    _arity("rand_int", args, 2)
+    lo, hi = int(args[0]), int(args[1])
     if lo > hi:
         raise InterpreterError(f"rand_int: low ({lo}) > high ({hi})")
     return random.randint(lo, hi)
@@ -225,15 +282,19 @@ def _safe_sqrt(x: Any) -> float:
         raise InterpreterError(f"sqrt: {e}")
 
 
-def _rand_float() -> float:
+def _rand_float(*args: Any) -> float:
+    _arity("rand_float", args, 0)
     return random.random()
 
 
 # ==== Assertions ============================================================
 
-def _assert(cond: Any, *rest: Any) -> None:
+def _assert(*args: Any) -> None:
+    _arity("assert", args, (1, 2))
+    cond = args[0]
+    rest = args[1:]
     if not cond:
-        msg = str(rest[0]) if rest else "assertion failed"
+        msg = _stringify(rest[0]) if rest else "assertion failed"
         raise InterpreterError(msg)
 
 
@@ -241,8 +302,8 @@ def _assert(cond: Any, *rest: Any) -> None:
 
 BUILTINS: dict[str, Any] = {
     # Conversions
-    "str": _stringify,
-    "num": _num,
+    "str": _builtin_str,
+    "num": _builtin_num,
     "len": len,
     # I/O
     "input": _builtin_input,

@@ -2,6 +2,14 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.7 — builtin arity errors use rot names, not Python internals
+
+### Fixed
+- **B19, B20, B32, B39, B42-B50**: arity errors for `num`, `str`, `type`, `is_num` / `is_str` / `is_list` / `is_dict` / `is_bool` / `is_null` / `is_func`, `read_file`, `write_file`, `rand_int`, `rand_float`, `assert`, `append`, `pop`, `input` used to leak Python's internal underscore-prefixed names (`_num()`, `_stringify()`, `_builtin_type()`, etc.). Every affected builtin now uses `*args` + a shared `_arity(name, args, expected)` helper that produces messages like `num: takes 1 arg, got 0`. Side-effect: `_assert` now uses `_stringify` for the failure message (B52 partial).
+
+### Changed (internal)
+- `_num` renamed to `_builtin_num`, the `str` builtin now dispatches through `_builtin_str` wrapper (`_stringify` retained for internal use by `cout`/`coutln`/REPL).
+
 ## v2.14.6 — read_file/write_file use explicit UTF-8
 
 ### Fixed
