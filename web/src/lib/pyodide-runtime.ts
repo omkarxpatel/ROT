@@ -176,8 +176,24 @@ function injectScript(src: string): Promise<void> {
   });
 }
 
+// All asset fetches go through `versioned(url)` so changing `ROT_VERSION`
+// implicitly busts the cache. Without this, a `cache: "force-cache"`
+// browser entry would happily serve stale `rot/*.py` files forever —
+// notably keeping a pre-v2.26 `interpreter.py` (no `iter_execute`)
+// glued to a v2.26+ bridge that calls `iter_execute`, breaking step
+// mode without any visible signal.
+function versioned(url: string): string {
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}v=${encodeURIComponent(ROT_VERSION)}`;
+}
+
 async function fetchText(url: string): Promise<string> {
-  const r = await fetch(url, { cache: "force-cache" });
+  // `cache: "default"` lets the browser respect ETag / Last-Modified
+  // round-trips. Combined with the versioned URL this gives us "cache
+  // hard while the version is stable, refetch instantly on version
+  // bump" — the right behavior for a static site whose files only
+  // change between releases.
+  const r = await fetch(versioned(url), { cache: "default" });
   if (!r.ok) {
     throw new Error(`fetch ${url} failed: ${r.status} ${r.statusText}`);
   }
@@ -185,7 +201,7 @@ async function fetchText(url: string): Promise<string> {
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
-  const r = await fetch(url, { cache: "force-cache" });
+  const r = await fetch(versioned(url), { cache: "default" });
   if (!r.ok) {
     throw new Error(`fetch ${url} failed: ${r.status} ${r.statusText}`);
   }

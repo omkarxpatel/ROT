@@ -2,6 +2,40 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.9 — hotfix: cache-bust bundled rot/*.py so the playground bridge sees current code
+
+### Fixed
+- The Pyodide bridge previously fetched `/rot_package/*.py` and
+  `/rot_examples/*` with `cache: "force-cache"`, which tells the
+  browser to serve a cached response unconditionally without
+  revalidation. Combined with the v2.26.0 jump that added
+  `Interpreter.iter_execute` (and v2.26.4's `Snapshot.to_dict` etc.),
+  any user who had loaded the playground at an earlier version kept
+  serving an older `interpreter.py` from cache — so the new
+  `rot_step` bridge tried to call `iter_execute` on an Interpreter
+  that didn't have it. Symptom: Animate/Step/Play silently did
+  nothing, Reset wouldn't engage, and Run mode could surface a
+  `'Interpreter' object has no attribute 'iter_execute'` error.
+
+### Changed
+- Asset URLs in
+  [`web/src/lib/pyodide-runtime.ts`](web/src/lib/pyodide-runtime.ts)
+  now flow through a `versioned(url)` helper that appends
+  `?v=${ROT_VERSION}`. Version bumps invalidate the cache key
+  implicitly.
+- `cache: "force-cache"` → `cache: "default"` so the browser respects
+  ETag / Last-Modified round-trips for the rare case where a URL is
+  reused without a version bump (e.g. local dev between commits).
+
+### Notes
+- **First load after upgrading: hard-refresh once** (Cmd-Shift-R /
+  Ctrl-Shift-R). The browser's existing cached entries are keyed on
+  the *unversioned* URLs from the buggy code; only a hard refresh
+  drops them. From this version forward, ordinary reloads will pick
+  up new code automatically because the version is in the URL.
+- No interpreter code changed in this hotfix. 662 tests still
+  passing. Type-check clean.
+
 ## v2.26.8 — Milestone 1 ships: explainer copy + recently-changed visual cues
 
 ### Added (polish pass)
