@@ -396,3 +396,41 @@ def test_full_example_functions_rot_parses_end_to_end():
     assert isinstance(call_stmt.expr, ast.Call)
     assert call_stmt.expr.callee == ast.Identifier("hi")
     assert call_stmt.expr.args == [ast.NumberLit(10), ast.NumberLit(10)]
+
+
+def test_let_statement_parses_to_LetStmt():
+    # v2.16.6: `let name = expr` parses into a dedicated ast.LetStmt node so
+    # the interpreter can distinguish it from a plain Assign and bind locally.
+    program = _parse("let x = 42")
+    assert program == ast.Program(
+        body=[ast.LetStmt(name="x", value=ast.NumberLit(value=42))]
+    )
+
+
+def test_let_with_complex_expression():
+    program = _parse("let total = a + b * 2")
+    assert isinstance(program.body[0], ast.LetStmt)
+    let_stmt = program.body[0]
+    assert let_stmt.name == "total"
+    # a + (b * 2)
+    assert let_stmt.value == ast.BinaryOp(
+        op="+",
+        left=ast.Identifier(name="a"),
+        right=ast.BinaryOp(
+            op="*", left=ast.Identifier(name="b"), right=ast.NumberLit(value=2)
+        ),
+    )
+
+
+def test_let_rejects_compound_target_in_parser():
+    with pytest.raises(ParserError):
+        _parse("let obj.x = 1")
+    with pytest.raises(ParserError):
+        _parse("let xs[0] = 1")
+    with pytest.raises(ParserError):
+        _parse("let foo() = 1")
+
+
+def test_let_requires_equals_sign():
+    with pytest.raises(ParserError):
+        _parse("let x 5")

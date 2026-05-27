@@ -2,6 +2,21 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.16.6 — `let` keyword for opt-in fresh-local binding
+
+### Added
+- **I14**: `let name = expr` is a new statement that binds `name` in the CURRENT scope, never walking the parent chain. This is the explicit opt-in for users who want to shadow an outer name (the v2.10.0 closure-mutation feature would otherwise silently mutate the outer binding). Plain `=` (and compound assigns `+=`, etc.) still chain-walk; `let` is the only path that always binds locally for regular user names.
+  - New keyword `let` in `rot/keywords.py` (`LET` token kind).
+  - New AST node `ast.LetStmt(name, value)`.
+  - Parser handling in `rot/syntax.py`: rejects `let obj.x = ...`, `let xs[0] = ...`, `let foo() = ...`, and any non-`=` follow-up — the target must be a bare identifier.
+  - Interpreter handling: `LetStmt` calls `env.set_local`, creating a fresh local binding.
+  - `let pi = 3.0` is ALLOWED — `let` shadows the frozen builtin in the current scope (the chain is never walked, so the frozen layer is untouched). Plain `pi = 3.0` is still rejected by v2.16.5.
+  - `let this = ...` is rejected at parse time (the lexer tokenizes `this` as `THIS`, not `IDENT`).
+- Tests: `test_let_creates_fresh_local_binding`, `test_let_inside_function_followed_by_chainwalking_assign`, `test_let_at_top_level_works`, `test_let_can_shadow_builtin`, `test_plain_assign_to_builtin_still_rejected_even_after_let_is_added`, `test_let_rejects_member_target`, `test_let_rejects_index_target`, `test_let_rejects_call_target`, `test_let_requires_equals`, `test_let_cannot_bind_this`, plus parser tests in `test_syntax.py`.
+
+### Breaking
+- `let` is now a reserved keyword. Any user file that used `let` as an identifier will break — accepted tradeoff per the design discussion.
+
 ## v2.16.5 — builtins live in a frozen env layer
 
 ### Fixed

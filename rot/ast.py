@@ -128,6 +128,16 @@ class Assign:
 
 
 @dataclass
+class LetStmt:
+    """`let name = expr` — an explicit fresh-local binding. Unlike `Assign`,
+    a `LetStmt` never chain-walks: it always binds in the current scope.
+    Use to shadow an outer name in a nested scope (the v2.10.0
+    closure-mutation feature would otherwise silently mutate the outer)."""
+    name: str
+    value: Expression
+
+
+@dataclass
 class Return:
     value: "Expression | None" = None
 
@@ -195,7 +205,7 @@ class ImportStmt:
 
 
 Statement = Union[
-    ExprStmt, FuncDef, IfStmt, Assign, Return, WhileStmt,
+    ExprStmt, FuncDef, IfStmt, Assign, LetStmt, Return, WhileStmt,
     ForStmt, IndexAssign, MemberAssign, BreakStmt, ContinueStmt,
     ClassDef, TryCatch, ThrowStmt, ImportStmt,
 ]

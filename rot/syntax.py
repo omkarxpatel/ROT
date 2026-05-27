@@ -145,6 +145,8 @@ class Parser:
             return self._parse_throw()
         if tok.kind == "IMPORT":
             return self._parse_import()
+        if tok.kind == "LET":
+            return self._parse_let_stmt()
         # Otherwise: parse as expression, then check what follows.
         # `=` or compound (+=, -=, ...) → convert to assign/index-assign.
         expr = self._parse_expression()
@@ -212,6 +214,41 @@ class Parser:
         path_tok = self._consume("STRING_LIT")
         path = _decode_string_escapes(path_tok.lexeme[1:-1])
         return ast.ImportStmt(path=path)
+
+    def _parse_let_stmt(self) -> ast.LetStmt:
+        """`let IDENT = expr` — opt-in fresh-local binding.
+
+        Reject `let obj.x = ...` and `let arr[0] = ...` — those don't make
+        sense as fresh-local declarations. Likewise reject compound ops
+        (`let x += 1`): `let` is for INTRODUCING a binding."""
+        let_tok = self._consume("LET")
+        name_tok = self._consume("IDENT")
+        # Reject member/index/call tail after the name — only a bare IDENT
+        # is a valid let target.
+        next_tok = self._peek()
+        if next_tok is not None and next_tok.kind in ("DOT", "L_BRACKET", "L_PAREN"):
+            raise ParserError(
+                f"`let` target must be a bare identifier, "
+                f"got {next_tok.kind}",
+                next_tok.line,
+                next_tok.col,
+            )
+        if next_tok is not None and next_tok.kind != "SETVALUE":
+            raise ParserError(
+                f"expected `=` after `let {name_tok.lexeme}`, "
+                f"got {next_tok.kind}",
+                next_tok.line,
+                next_tok.col,
+            )
+        if next_tok is None:
+            raise ParserError(
+                f"expected `=` after `let {name_tok.lexeme}`, got end of input",
+                let_tok.line,
+                let_tok.col,
+            )
+        self._consume("SETVALUE")
+        value = self._parse_expression()
+        return ast.LetStmt(name=name_tok.lexeme, value=value)
 
     def _parse_class_def(self) -> ast.ClassDef:
         self._consume("CLASS")

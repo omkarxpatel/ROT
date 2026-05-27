@@ -350,6 +350,16 @@ class Interpreter:
                     raise InterpreterError(f"unknown compound op {stmt.op!r}")
                 self.env.set(stmt.name, op_fn(current, new_value))
             return
+        if isinstance(stmt, ast.LetStmt):
+            # `let x = ...` introduces a FRESH local binding without walking
+            # the chain. The opt-in way to shadow an outer name. Shadowing a
+            # builtin is allowed since the new binding lives in the current
+            # scope and the chain is never walked.
+            if stmt.name == "this":
+                raise InterpreterError("cannot use `let` to bind 'this'")
+            value = self._evaluate(stmt.value)
+            self.env.set_local(stmt.name, value)
+            return
         if isinstance(stmt, ast.Return):
             if self._function_depth == 0:
                 raise InterpreterError("`return` outside of a function")

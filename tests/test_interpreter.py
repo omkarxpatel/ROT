@@ -781,6 +781,104 @@ def test_nested_funct_does_not_clobber_outer_funct():
     assert _run(src) == "inner\nouter\n"
 
 
+def test_let_creates_fresh_local_binding():
+    # `let x = 5` creates a new binding in the current scope even if `x`
+    # exists in an outer scope. Inside a function, the function body's
+    # `let x` shadows the global `x`, and chain-walking `x = ...` after
+    # the `let` mutates the let-introduced (local) `x`, not the global.
+    src = (
+        'x = 1\n'
+        'funct demo() {\n'
+        '    let x = 100\n'    # fresh local
+        '    x = x + 1\n'      # chain-walk finds local first
+        '    coutln(x)\n'
+        '}\n'
+        'demo()\n'
+        'coutln(x)\n'          # global x is untouched
+    )
+    assert _run(src) == "101\n1\n"
+
+
+def test_let_inside_function_followed_by_chainwalking_assign():
+    # Documented v2.10.0 + v2.16.6 interaction: after `let x` introduces a
+    # local binding in `demo`'s env, a `funct inner` declared INSIDE `demo`
+    # closes over `demo`'s env. When inner does `x = ...`, the chain walk
+    # finds the let-introduced `x` first and mutates it (not the outer).
+    src = (
+        'x = "outer"\n'
+        'funct demo() {\n'
+        '    let x = "inner-let"\n'
+        '    funct inner() { x = "mutated" }\n'
+        '    inner()\n'
+        '    coutln(x)\n'           # mutated by `inner()`
+        '}\n'
+        'demo()\n'
+        'coutln(x)\n'                 # global x untouched (let shadowed it)
+    )
+    assert _run(src) == "mutated\nouter\n"
+
+
+def test_let_at_top_level_works():
+    # At top level, `let` just binds in the user global env. Functionally
+    # equivalent to plain `=` for previously-unbound names, but explicit.
+    assert _run("let x = 42\ncoutln(x)") == "42\n"
+
+
+def test_let_can_shadow_builtin():
+    # `let pi = 3.0` is allowed — it creates a new binding in the local
+    # (user-scope) env that shadows the frozen builtin `pi` above it. The
+    # explicit `let` is the opt-in way to shadow a builtin.
+    src = (
+        'let pi = 3.0\n'
+        'coutln(pi)\n'
+    )
+    assert _run(src) == "3.0\n"
+
+
+def test_plain_assign_to_builtin_still_rejected_even_after_let_is_added():
+    # Sanity check: introducing `let` did not loosen plain assignment.
+    # `pi = 3.0` still errors; only `let pi = ...` is allowed.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("pi = 3.0")
+    assert "cannot reassign builtin 'pi'" in str(exc_info.value)
+
+
+def test_let_rejects_member_target():
+    # `let obj.x = ...` doesn't make sense as a fresh-local declaration —
+    # the target is an existing object's field. Parser rejects it.
+    from rot.errors import ParserError
+    with pytest.raises(ParserError):
+        _run("let obj.x = 1")
+
+
+def test_let_rejects_index_target():
+    from rot.errors import ParserError
+    with pytest.raises(ParserError):
+        _run("let xs[0] = 1")
+
+
+def test_let_rejects_call_target():
+    from rot.errors import ParserError
+    with pytest.raises(ParserError):
+        _run("let foo() = 1")
+
+
+def test_let_requires_equals():
+    from rot.errors import ParserError
+    with pytest.raises(ParserError):
+        _run("let x 5")
+
+
+def test_let_cannot_bind_this():
+    # `let this = ...` would create a fresh binding for `this`, which is
+    # nonsense at top level and dangerous inside a method (would shadow
+    # the real `this` mid-method). The parser rejects it because `this`
+    # is a reserved keyword token, not an IDENT — `let` requires an IDENT.
+    from rot.errors import ParserError
+    with pytest.raises(ParserError):
+        _run("let this = 5")
+
+
 def test_reassigning_builtin_pi_is_rejected():
     # I17, B59: builtins used to be silently overwritable via `pi = 3.0`
     # because the global env held them and chain-walking `set` would just
