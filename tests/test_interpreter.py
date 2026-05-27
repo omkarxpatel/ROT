@@ -2948,3 +2948,58 @@ def test_undefined_unknown_name_has_no_hint():
     unknown names produce the bare message."""
     err = _run_for_error('totally_random_name')
     assert "did you mean" not in str(err)
+
+
+# --- v2.24.4: T106-T108 — BoundMethod (regular methods) ---
+
+
+def test_regular_method_param_does_not_clobber_outer_scope():
+    # The existing `test_method_param_does_not_clobber_outer_scope` covers
+    # `init`. v2.13.0's BoundMethod fix used `set_local` for params, so this
+    # also has to hold for any regular (non-init) method. Without the fix,
+    # `c.setX(99)` would chain-walk-mutate the outer `x` from 1 to 99.
+    src = (
+        'class C { setX(x) { this.x = x } }\n'
+        'x = 1\n'
+        'c = C()\n'
+        'c.setX(99)\n'
+        'coutln(x)\n'   # outer x must still be 1, not 99
+    )
+    assert _run(src) == "1\n"
+
+
+def test_regular_method_this_does_not_clobber_outer_this():
+    # Companion to the param check. Without v2.13.0's `set_local("this", ...)`
+    # in `BoundMethod.call`, the method's binding of `this` would walk up and
+    # mutate the outer `this` to the instance.
+    src = (
+        'this = "outer"\n'
+        'class C { method() { coutln(this) } }\n'
+        'C().method()\n'
+        'coutln(this)\n'   # outer must still be "outer"
+    )
+    out = _run(src).splitlines()
+    # First line is the method's view of `this` — an instance rendering (we
+    # don't pin its exact shape because the rot-style instance repr could
+    # evolve). Second line is the outer scope's `this`, which must NOT have
+    # been overwritten with the instance.
+    assert len(out) == 2
+    assert out[1] == "outer"
+
+
+def test_bound_method_wrong_arity_error_names_method_not_function():
+    # T108: when a method gets the wrong number of args, the error must
+    # identify itself as a method (per BoundMethod.call's message), not as
+    # a function (which would be RotFunction.call's wording). Distinguishes
+    # the two code paths.
+    src = (
+        'class C { setX(x | y) { this.x = x } }\n'
+        'c = C()\n'
+        'c.setX(1)\n'   # missing second arg
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    msg = str(exc_info.value)
+    assert "method 'setX'" in msg
+    # Ensure it didn't fall through to the function-call wording.
+    assert "function" not in msg

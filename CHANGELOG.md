@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.24.4 — test backfill: BoundMethod fix (T106-T108)
+
+### Added
+- 3 tests appended to `tests/test_interpreter.py` covering the regular-method side of v2.13.0's `BoundMethod.call` fix. The pre-existing tests `test_method_param_does_not_clobber_outer_scope` and `test_this_in_method_does_not_clobber_outer_this` exercised the `init` method only — same code path, different lexical site. The new tests pin: (1) a non-init method param assigned via `set_local` does not chain-walk-mutate an outer same-named variable, (2) the `this` binding inside a non-init method does not clobber an outer `this`, and (3) a wrong-arity call on a method raises an InterpreterError whose message names it a "method" (not "function") — distinguishing `BoundMethod.call` from `RotFunction.call`.
+
 ## v2.24.3 — test backfill: REPL gaps (T92-T98)
 
 ### Added
