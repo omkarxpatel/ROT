@@ -2,6 +2,52 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.5 — M1 playground controls: Animate mode, Step, Play / Pause, speed slider
+
+### Added
+- Mode toggle (`Run` / `Animate`) in the playground toolbar
+  ([`web/src/app/playground/page.tsx`](web/src/app/playground/page.tsx)).
+  The `Run` button stays as-is; switching to `Animate` swaps it for a
+  step-mode control row.
+- `Step` button — advances one top-level statement. If snapshots are
+  empty (first interaction) or the source has changed since the last
+  fetch, the bridge is re-invoked first.
+- `Play` / `Pause` button — toggles auto-stepping. Auto-step is a
+  React effect re-scheduled per (`playing`, `stepIndex`,
+  `speedMs`, `snapshots.length`) so the speed slider takes effect
+  immediately without a stale-closure issue. Reaching the last
+  snapshot auto-pauses.
+- `Reset` button — drops the snapshot list and rewinds to "before
+  first step." Next interaction refetches.
+- Speed slider — 50ms–2000ms per auto-step, default 400ms. Visually
+  reversed (left = slow, right = fast) so dragging right feels
+  faster.
+- `⌘↵` / `Ctrl+↵` keyboard shortcut now triggers Step in animate mode
+  (and Run in run mode, unchanged).
+
+### Changed
+- The `OutputPanel` is now fed derived output in animate mode: the
+  concatenation of `snapshots[0..stepIndex].output_since_last`.
+  Runtime errors surface from `snapshots[stepIndex].error` rather
+  than the top-level `error` field, since the bridge reserves
+  that for lex/parse-stage failures.
+- Cmd/Ctrl+Enter handler is mode-aware.
+
+### Notes
+- This Z lands the controls and snapshot driver state in the
+  playground. The Env pane (v2.26.6) and source-highlight via
+  CodeMirror decoration (v2.26.7) consume the same `snapshots`
+  and `stepIndex` state — no further state-shape changes expected
+  inside Milestone 1.
+- Editing source while snapshots are loaded does NOT auto-invalidate;
+  the user-clicked `Step` or `Play` will refetch on detecting
+  `source !== snapshotsSource`. This avoids a visual flash to empty
+  on every keystroke.
+- Pyodide bridge unchanged; `compileAndStep(source)` from v2.26.4 is
+  what drives the snapshot list.
+- Production build clean (`next build` succeeds, no type errors).
+- Tests: 662 still passing — no Python code changed in this Z.
+
 ## v2.26.4 — M1 Pyodide bridge: `rot_step(source)` exposes step mode to the browser
 
 ### Added
