@@ -590,12 +590,15 @@ def test_type_builtin():
 
 
 def test_type_of_class_instance_is_class_name():
+    # v2.18.6 (B86): user-instance type names are now wrapped in angle
+    # brackets to disambiguate from primitive types (e.g. `class int {}`
+    # vs the primitive `int`). Pre-v2.18.6 this returned bare "Foo".
     src = (
         'class Foo {}\n'
         'f = Foo()\n'
         'coutln(type(f))'
     )
-    assert _run(src) == "Foo\n"
+    assert _run(src) == "<Foo>\n"
 
 
 def test_is_x_predicates():
@@ -2272,3 +2275,42 @@ def test_type_of_dict_items_is_list():
 def test_type_of_real_list_still_list():
     # Regression: a real list still reports "list".
     assert _run('coutln(type([1 | 2 | 3]))') == "list\n"
+
+
+# ==== v2.18.6: user-instance type names wrapped to avoid collision (B86) =====
+
+def test_user_class_named_int_does_not_collide_with_primitive_int():
+    # B86: `class int {}; type(int())` used to return "int", indistinguishable
+    # from the primitive int. User instances are now wrapped in `<...>`.
+    src = (
+        'class int {}\n'
+        'coutln(type(int()))'
+    )
+    assert _run(src) == "<int>\n"
+
+
+def test_primitive_int_still_reports_int():
+    # Regression: primitive int still reports "int" (not wrapped).
+    assert _run('coutln(type(5))') == "int\n"
+
+
+def test_user_class_and_primitive_are_distinguishable():
+    # The whole point of B86: code can rely on `<int>` ≠ `int`.
+    src = (
+        'class int {}\n'
+        'a = type(5)\n'
+        'b = type(int())\n'
+        'coutln(a == b)\n'
+        'coutln(a)\n'
+        'coutln(b)'
+    )
+    assert _run(src) == "false\nint\n<int>\n"
+
+
+def test_user_class_named_list_does_not_collide_with_primitive_list():
+    # B86 (generalized): same collision protection for any primitive name.
+    src = (
+        'class list {}\n'
+        'coutln(type(list()))'
+    )
+    assert _run(src) == "<list>\n"

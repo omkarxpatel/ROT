@@ -2,6 +2,14 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.18.6 — user-instance type names wrapped to avoid primitive collision
+
+### Fixed
+- **B86**: `class int {}; type(int())` used to return `"int"`, indistinguishable from a real primitive int — any code branching on `type(x) == "int"` would conflate the two. `_builtin_type` now wraps a `RotInstance`'s type name in angle brackets: `"<int>"`, `"<Foo>"`, etc. The primitive types (`int`, `float`, `string`, `list`, `dict`, `bool`, `null`, `function`) remain unwrapped, so `<X>` is always visually distinct from any primitive name no matter what the user names their class. Tests: `test_user_class_named_int_does_not_collide_with_primitive_int`, `test_primitive_int_still_reports_int`, `test_user_class_and_primitive_are_distinguishable`, `test_user_class_named_list_does_not_collide_with_primitive_list`.
+
+### Changed
+- `tests/test_interpreter.py::test_type_of_class_instance_is_class_name` previously asserted `type(<Foo instance>) == "Foo"` — pinning the buggy unwrapped behavior. Updated to assert `"<Foo>"`. The test now serves as the regression for the wrapped form.
+
 ## v2.18.5 — `type()` of dict views reports "list" instead of "dict_keys"
 
 ### Fixed

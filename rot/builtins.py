@@ -227,7 +227,13 @@ def _builtin_type(*args: Any) -> str:
     # Lazy-import so this module doesn't depend on interpreter at load time.
     from .interpreter import RotFunction, RotClass, RotInstance, BoundMethod
     if isinstance(x, RotInstance):
-        return x.cls.name
+        # B86: returning the bare class name (`"int"`, `"list"`, etc.) for a
+        # user instance could collide with a primitive type name — `class
+        # int {}` followed by `type(int())` previously returned `"int"`,
+        # indistinguishable from a real int. Wrap user-instance type names
+        # in angle brackets so they're always visually distinct from the
+        # primitive types (`int`, `float`, `string`, `list`, ...).
+        return f"<{x.cls.name}>"
     if isinstance(x, (RotFunction, RotClass, BoundMethod)):
         return "function"
     return py_type_name
