@@ -49,7 +49,18 @@ class Op(IntEnum):
                      # match ROT's tree-walker since both rely on
                      # Python's bool coercion).
 
-    # ─── Control ───────────────────────────────────────────────────
+    # ─── Control flow ──────────────────────────────────────────────
+    # All jumps target an absolute IP (the index into `Chunk.code`).
+    # The compiler emits jumps with a placeholder target (`0`) and
+    # patches it once the destination IP is known. See
+    # `Chunk.patch_jump`.
+    JUMP = 50            # arg: target IP. Unconditional jump.
+    JUMP_IF_FALSE = 51   # arg: target IP. Pops the top value; if falsy
+                         # (Python truthiness), jumps to `target`.
+    JUMP_IF_TRUE = 52    # arg: target IP. Pops the top value; if truthy,
+                         # jumps to `target`.
+
+    # ─── Halt ──────────────────────────────────────────────────────
     RETURN = 90      # Halt execution. Top of stack (if any) is the
                      # program's "result" — for a whole program that's
                      # always None.

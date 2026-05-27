@@ -176,3 +176,67 @@ def test_vm_not_preserves_python_truthiness_for_strings_and_lists():
     # `not ""` and `not 0` are True (falsy); `not "x"` is False.
     vm = _run('a = not ""\nb = not "x"')
     assert vm.env == {"a": True, "b": False}
+
+
+# ─── if / elseif / else (v2.27.2) ────────────────────────────────
+
+
+def test_vm_if_true_runs_then_block():
+    vm = _run("x = 0\nif (true) { x = 1 }")
+    assert vm.env["x"] == 1
+
+
+def test_vm_if_false_skips_then_block():
+    vm = _run("x = 0\nif (false) { x = 1 }")
+    assert vm.env["x"] == 0
+
+
+def test_vm_if_else_runs_else_when_false():
+    vm = _run("if (false) { x = 1 } else { x = 2 }")
+    assert vm.env["x"] == 2
+
+
+def test_vm_if_else_skips_else_when_true():
+    vm = _run("if (true) { x = 1 } else { x = 2 }")
+    assert vm.env["x"] == 1
+
+
+def test_vm_elif_chain_takes_matching_branch():
+    src = (
+        "if (false) { x = 1 }\n"
+        "elseif (true) { x = 2 }\n"
+        "elseif (false) { x = 3 }\n"
+        "else { x = 4 }\n"
+    )
+    vm = _run(src)
+    assert vm.env["x"] == 2
+
+
+def test_vm_elif_chain_falls_through_to_else():
+    src = (
+        "if (false) { x = 1 }\n"
+        "elseif (false) { x = 2 }\n"
+        "else { x = 3 }\n"
+    )
+    vm = _run(src)
+    assert vm.env["x"] == 3
+
+
+def test_vm_condition_uses_truthiness_for_non_booleans():
+    # ROT (and the VM) match Python: non-empty string truthy, 0 falsy.
+    vm = _run('if ("x") { a = 1 } else { a = 2 }\n'
+              'if (0) { b = 1 } else { b = 2 }')
+    assert vm.env == {"a": 1, "b": 2}
+
+
+def test_vm_nested_if_inside_then_block():
+    src = (
+        "x = 0\n"
+        "if (true) {\n"
+        "  if (true) {\n"
+        "    x = 7\n"
+        "  }\n"
+        "}\n"
+    )
+    vm = _run(src)
+    assert vm.env["x"] == 7

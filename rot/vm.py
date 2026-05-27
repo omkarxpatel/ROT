@@ -181,6 +181,19 @@ class VM:
                 a = self.stack.pop()
                 self.stack.append(not a)
                 continue
+            if op == Op.JUMP:
+                self.ip = instr[1]
+                continue
+            if op == Op.JUMP_IF_FALSE:
+                val = self.stack.pop()
+                if not val:
+                    self.ip = instr[1]
+                continue
+            if op == Op.JUMP_IF_TRUE:
+                val = self.stack.pop()
+                if val:
+                    self.ip = instr[1]
+                continue
             if op == Op.RETURN:
                 return
             raise InterpreterError(f"unknown opcode {int(op)}")

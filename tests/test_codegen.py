@@ -164,9 +164,9 @@ def test_compile_identifier_loads_by_name():
 
 
 def test_compile_unsupported_statement_raises_not_implemented():
-    # `IfStmt` isn't supported yet (lands in v2.27.2 with jumps).
+    # `WhileStmt` isn't supported yet (lands in v2.27.3).
     with pytest.raises(NotImplementedError):
-        _compile("if (true) { x = 1 }")
+        _compile("while (true) { x = 1 }")
 
 
 # ─── Comparison ops (v2.27.1) ────────────────────────────────────
@@ -196,3 +196,63 @@ def test_compile_not_unary():
         (Op.STORE_NAME, 0),
         (Op.RETURN,),
     ]
+
+
+# ─── if / elseif / else (v2.27.2) ────────────────────────────────
+
+
+def test_compile_if_without_else_emits_skip_jump():
+    chunk = _compile("if (true) { x = 1 }")
+    # Expected layout:
+    #   LOAD_TRUE
+    #   JUMP_IF_FALSE → past the body's JUMP
+    #   LOAD_CONST 0 (1)
+    #   STORE_NAME 0 (x)
+    #   JUMP → end (past everything)
+    #   RETURN
+    ops = [instr[0] for instr in chunk.code]
+    assert ops == [
+        Op.LOAD_TRUE,
+        Op.JUMP_IF_FALSE,
+        Op.LOAD_CONST,
+        Op.STORE_NAME,
+        Op.JUMP,
+        Op.RETURN,
+    ]
+    # The JUMP_IF_FALSE target should be the IP right after the
+    # then-block's JUMP, i.e. index 5 (which is RETURN).
+    assert chunk.code[1] == (Op.JUMP_IF_FALSE, 5)
+    # The then-block's JUMP also lands at index 5.
+    assert chunk.code[4] == (Op.JUMP, 5)
+
+
+def test_compile_if_else_branches_to_separate_blocks():
+    chunk = _compile("if (true) { x = 1 } else { x = 2 }")
+    ops = [instr[0] for instr in chunk.code]
+    # then-block + JUMP + else-block + RETURN.
+    assert ops == [
+        Op.LOAD_TRUE,
+        Op.JUMP_IF_FALSE,
+        Op.LOAD_CONST, Op.STORE_NAME, Op.JUMP,
+        Op.LOAD_CONST, Op.STORE_NAME,
+        Op.RETURN,
+    ]
+    # JUMP_IF_FALSE skips over the then-block and its JUMP (5 instrs
+    # from start of if), so it should target index 5.
+    assert chunk.code[1][1] == 5
+    # The then-block's JUMP targets the end (index 7, the RETURN).
+    assert chunk.code[4][1] == 7
+
+
+def test_compile_if_with_elif_chain_emits_one_skip_per_branch():
+    chunk = _compile(
+        "if (1 == 1) { x = 1 }\n"
+        "elseif (1 == 2) { x = 2 }\n"
+        "else { x = 3 }\n"
+    )
+    # Count JUMP_IF_FALSE: one per condition (the if + one elif).
+    ji_count = sum(1 for instr in chunk.code if instr[0] == Op.JUMP_IF_FALSE)
+    assert ji_count == 2
+    # Count JUMP: one per non-else branch (the if's and the elif's).
+    j_count = sum(1 for instr in chunk.code if instr[0] == Op.JUMP)
+    assert j_count == 2

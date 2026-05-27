@@ -61,6 +61,13 @@ class Chunk:
         self.names.append(name)
         return len(self.names) - 1
 
+    def patch_jump(self, idx: int, target: int) -> None:
+        """Replace the placeholder target on a previously-emitted jump
+        with `target` (an absolute IP). Used by control-flow codegen
+        which emits the jump *before* it knows where to land."""
+        op = self.code[idx][0]
+        self.code[idx] = (op, target)
+
 
 class Compiler:
     """Walks an `ast.Program` and emits bytecode into a `Chunk`."""
@@ -95,9 +102,60 @@ class Compiler:
             idx = self.chunk.add_name(stmt.name)
             self.chunk.emit(Op.STORE_NAME, idx)
             return
+        if isinstance(stmt, ast.IfStmt):
+            self._compile_if(stmt)
+            return
         raise NotImplementedError(
             f"codegen: statement {type(stmt).__name__!r} not yet supported"
         )
+
+    def _compile_block(self, block: "ast.Block") -> None:
+        for stmt in block.statements:
+            self._compile_stmt(stmt)
+
+    def _compile_if(self, stmt: ast.IfStmt) -> None:
+        """Emit jump-based if / elseif / else.
+
+        Layout for `if (c1) {b1} elseif (c2) {b2} else {b3}`:
+
+            compile c1
+            JUMP_IF_FALSE → try_c2
+            compile b1
+            JUMP            → end          (added to `end_jumps`)
+          try_c2:
+            compile c2
+            JUMP_IF_FALSE → else_block
+            compile b2
+            JUMP            → end          (added to `end_jumps`)
+          else_block:
+            compile b3
+          end:                              (patches every `end_jumps`)
+        """
+        end_jumps: list[int] = []
+
+        # First branch (the leading `if`).
+        self._compile_expr(stmt.cond)
+        skip_idx = self.chunk.emit(Op.JUMP_IF_FALSE, 0)
+        self._compile_block(stmt.then_block)
+        end_jumps.append(self.chunk.emit(Op.JUMP, 0))
+        self.chunk.patch_jump(skip_idx, len(self.chunk.code))
+
+        # Each elif.
+        for branch in stmt.elif_branches:
+            self._compile_expr(branch.cond)
+            skip_idx = self.chunk.emit(Op.JUMP_IF_FALSE, 0)
+            self._compile_block(branch.body)
+            end_jumps.append(self.chunk.emit(Op.JUMP, 0))
+            self.chunk.patch_jump(skip_idx, len(self.chunk.code))
+
+        # Optional else.
+        if stmt.else_block is not None:
+            self._compile_block(stmt.else_block)
+
+        # All taken-branch jumps land here.
+        end_ip = len(self.chunk.code)
+        for idx in end_jumps:
+            self.chunk.patch_jump(idx, end_ip)
 
     # ─── Expressions ───────────────────────────────────────────────
 

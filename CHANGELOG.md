@@ -2,6 +2,49 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.2 — M2: jumps (`JUMP`, `JUMP_IF_FALSE`, `JUMP_IF_TRUE`) + `if` / `elseif` / `else`
+
+### Added
+- Three control-flow opcodes in
+  [`rot/opcodes.py`](rot/opcodes.py): `JUMP`, `JUMP_IF_FALSE`,
+  `JUMP_IF_TRUE`. All take an absolute IP as their single argument.
+- `Chunk.patch_jump(idx, target)` lets the compiler emit a jump
+  with a placeholder target, compile the body, then back-patch
+  the target once the destination IP is known. Classic
+  emit-then-patch idiom.
+- `Compiler._compile_if` walks an `IfStmt`. Emits a
+  `JUMP_IF_FALSE` to skip the then-block when the condition is
+  falsy; emits a `JUMP` to skip the rest of the if-chain after a
+  branch executes. Elif chains thread through with one
+  `JUMP_IF_FALSE` per condition. Else block (if present) compiles
+  last, and every taken-branch `JUMP` is back-patched to the
+  end IP.
+- `Compiler._compile_block` recurses into a block's statements —
+  used by if/elif/else (and by `while` / `for` in upcoming Z's).
+- VM dispatch for the three jumps. `JUMP_IF_FALSE` / `JUMP_IF_TRUE`
+  pop the value before deciding, so the stack is clean either way.
+
+### Tests
+- `tests/test_codegen.py`: if-without-else emits the
+  `[JUMP_IF_FALSE, body, JUMP, end]` layout with the target
+  pointing at the right IP; if-else emits two separate blocks
+  with the JUMP_IF_FALSE targeting the start of else; elif chains
+  emit one JUMP_IF_FALSE per condition + one JUMP per non-else
+  branch.
+- `tests/test_vm.py`: if-true runs then, if-false skips then,
+  if/else picks the correct branch, elif chains pick the matching
+  branch, fall through to else, non-boolean conditions use Python
+  truthiness, nested ifs work.
+- Tests: 712 → 723 passing.
+
+### Notes
+- An if-without-else still emits a redundant trailing `JUMP` after
+  the then-block (it would otherwise fall through to the same
+  spot). Harmless; later peephole pass could elide it.
+- `IfStmt`'s elif list is named `elif_branches` in the AST (one of
+  the v2.27.0 docs assumed `elifs`). Caught immediately by the
+  first run after coding.
+
 ## v2.27.1 — M2: comparison ops (`== != < <= > >=`) + `not`
 
 ### Added
