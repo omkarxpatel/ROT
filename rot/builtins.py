@@ -66,25 +66,36 @@ def _write_file(path: Any, content: Any) -> None:
 
 # ==== Collection helpers ====================================================
 
+def _range_int(arg: Any, position: str) -> int:
+    """Validate a range positional argument is an integer.
+
+    Bools are accepted because `isinstance(True, int)` is true in Python and
+    they pass through cleanly as 0/1; floats are rejected because
+    `int(0.5) == 0` silently truncates and surprised users (B28).
+    """
+    if not isinstance(arg, int):
+        raise InterpreterError(
+            f"range: {position} argument must be an integer, got "
+            f"{type(arg).__name__}"
+        )
+    return int(arg)
+
+
 def _builtin_range(*args: Any) -> list:
     if len(args) == 1:
-        return list(range(int(args[0])))
+        return list(range(_range_int(args[0], "stop")))
     if len(args) == 2:
-        return list(range(int(args[0]), int(args[1])))
+        return list(range(
+            _range_int(args[0], "start"),
+            _range_int(args[1], "stop"),
+        ))
     if len(args) == 3:
-        # Validate step BEFORE int-coercion so a float step (e.g. 0.5)
-        # is rejected with a clear message — previously int(0.5) == 0
-        # silently triggered the "must not be zero" branch.
-        raw_step = args[2]
-        if not isinstance(raw_step, int):
-            raise InterpreterError(
-                f"range: step argument must be an integer, got "
-                f"{type(raw_step).__name__}"
-            )
-        step = int(raw_step)
+        start = _range_int(args[0], "start")
+        stop = _range_int(args[1], "stop")
+        step = _range_int(args[2], "step")
         if step == 0:
             raise InterpreterError("range: step argument must not be zero")
-        return list(range(int(args[0]), int(args[1]), step))
+        return list(range(start, stop, step))
     raise InterpreterError(f"range() takes 1-3 args, got {len(args)}")
 
 

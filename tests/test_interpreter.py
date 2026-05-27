@@ -1257,3 +1257,35 @@ def test_range_zero_step_still_says_zero():
     with pytest.raises(InterpreterError) as exc_info:
         _run("for i in range(0 | 3 | 0) { coutln(i) }")
     assert "zero" in str(exc_info.value)
+
+
+# ==== v2.14.5: range validates each arg before int() coercion ===============
+
+def test_range_float_start_rejected():
+    # B28: previously int(0.5) silently became 0 and produced an unexpected
+    # range. Now floats are rejected up front.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("for i in range(0.5 | 3) { coutln(i) }")
+    assert "integer" in str(exc_info.value)
+
+
+def test_range_float_stop_rejected():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("for i in range(0 | 3.5) { coutln(i) }")
+    assert "integer" in str(exc_info.value)
+
+
+def test_range_string_arg_rejected_with_clean_message():
+    # B29: previously leaked Python ValueError("invalid literal for int()
+    # with base 10: 'abc'"). Now should be a clean rot error.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('for i in range("abc") { coutln(i) }')
+    msg = str(exc_info.value)
+    assert "integer" in msg or "range" in msg
+    # No raw Python phrasing.
+    assert "invalid literal" not in msg
+
+
+def test_range_single_int_still_works():
+    # Don't break the happy path.
+    assert _run("for i in range(3) { coutln(i) }") == "0\n1\n2\n"

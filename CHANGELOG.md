@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.5 — range validates every arg before int() coercion
+
+### Fixed
+- **B28, B29**: `range(0.5 | 3)` and `range("abc")` used to silently truncate floats (`int(0.5) == 0`) or leak Python's `ValueError("invalid literal for int() with base 10: 'abc'")`. Now every range argument is validated as an integer up front via a shared `_range_int` helper. Errors come out as clean rot messages like `range: stop argument must be an integer, got float`.
+
 ## v2.14.4 — range step must be an integer, says so
 
 ### Fixed
