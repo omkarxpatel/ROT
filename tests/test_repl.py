@@ -502,3 +502,55 @@ def test_repl_install_persistent_history_no_readline_is_noop(monkeypatch, tmp_pa
     monkeypatch.setenv("ROT_HISTORY_FILE", str(tmp_path / "x"))
     repl_module._install_persistent_history()  # must not raise
 
+
+# --- v2.25.2: void Call expressions don't echo `null` ---
+
+def test_repl_coutln_call_does_not_echo_null(monkeypatch, capsys):
+    # `coutln("foo")` produces `foo` as a side effect and returns null.
+    # The REPL must NOT echo `null` after — that doubles the output.
+    _drive_repl(monkeypatch, ['coutln("foo")'])
+    out, _ = capsys.readouterr()
+    assert "foo" in out
+    # The echo path would have added a `\nnull\n`; ensure no `null` slipped in.
+    assert "null" not in out.splitlines()
+
+
+def test_repl_cout_call_does_not_echo_null(monkeypatch, capsys):
+    # Same for `cout` (no trailing newline).
+    _drive_repl(monkeypatch, ['cout("bar")'])
+    out, _ = capsys.readouterr()
+    assert "bar" in out
+    assert "null" not in out.splitlines()
+
+
+def test_repl_user_void_function_does_not_echo_null(monkeypatch, capsys):
+    # A user-defined function with no `return` returns null. The REPL
+    # treats it as a side-effect call (Call returning None) and suppresses
+    # the echo — same as for cout/coutln.
+    _drive_repl(monkeypatch, [
+        'funct beep() { coutln("beep") }',
+        'beep()',
+    ])
+    out, _ = capsys.readouterr()
+    assert "beep" in out
+    assert "null" not in out.splitlines()
+
+
+def test_repl_call_with_non_null_return_still_echoes(monkeypatch, capsys):
+    # A Call that returns a real value still echoes — the suppression only
+    # fires when the return is null.
+    _drive_repl(monkeypatch, [
+        'funct add(a | b) { return a + b }',
+        'add(2 | 3)',
+    ])
+    out, _ = capsys.readouterr()
+    assert "5" in out.splitlines()
+
+
+def test_repl_bare_null_literal_still_echoes(monkeypatch, capsys):
+    # The suppression is Call-specific — a bare `null` literal at the
+    # prompt is a NullLit (not a Call) and still echoes as `null`.
+    _drive_repl(monkeypatch, ["null"])
+    out, _ = capsys.readouterr()
+    assert "null" in out.splitlines()
+

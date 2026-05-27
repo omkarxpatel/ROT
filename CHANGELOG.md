@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.2 — REPL: suppress null-echo on side-effect calls (v2.19.7 follow-up)
+
+### Fixed
+- The v2.19.7 always-echo REPL behavior made `coutln("foo")` at the prompt print `foo` from the side effect, then echo `null` (coutln's return value) on the next line. Confusing double output. Fix: in `rot/repl.py::_execute_with_echo`, when the single expression is a `Call` and its evaluated result is `None`, skip the echo. This generalizes to user-defined void functions too (`funct beep() { coutln("beep") }` then `beep()` no longer dumps a trailing `null`). Bare `null` literals and variables bound to null still echo `null` — the suppression is Call-specific. Tests: 5 new in `tests/test_repl.py` (`test_repl_coutln_call_does_not_echo_null`, `test_repl_cout_call_does_not_echo_null`, `test_repl_user_void_function_does_not_echo_null`, `test_repl_call_with_non_null_return_still_echoes`, `test_repl_bare_null_literal_still_echoes`).
+
 ## v2.25.1 — parser: `return f"..."` now works (P91)
 
 ### Fixed

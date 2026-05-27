@@ -228,9 +228,23 @@ def _repl_repr(value: object) -> str:
 def _execute_with_echo(interp: Interpreter, program: ast.Program) -> None:
     """If the program is a single expression statement, evaluate and echo
     its result (Python-REPL style). Strings are quoted; `null` prints as
-    `null` rather than being silently suppressed. Otherwise just execute."""
+    `null` rather than being silently suppressed. Otherwise just execute.
+
+    v2.25.2: skip the echo when the expression is a `Call` whose result is
+    `None`. The motivating case: `coutln("foo")` at the REPL used to print
+    `foo` (from coutln's side effect) THEN echo `null` (coutln returns
+    None). The double output was confusing — and the second line was a
+    leaked "this call returns nothing" signal that's only useful for
+    debugging. Treat a Call that returned None as a side-effect-only call
+    and suppress the echo. Other null-valued expressions (`null` literal,
+    a variable bound to null) keep echoing as before — those weren't
+    Call expressions and the user-facing concern is specifically the
+    `coutln(...)`-style print-then-null pattern."""
     if len(program.body) == 1 and isinstance(program.body[0], ast.ExprStmt):
-        value = interp._evaluate(program.body[0].expr)
+        expr = program.body[0].expr
+        value = interp._evaluate(expr)
+        if isinstance(expr, ast.Call) and value is None:
+            return
         print(_repl_repr(value))
         return
     interp.execute(program)
