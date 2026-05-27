@@ -86,7 +86,60 @@ def _stringify(x: Any, _seen: "set[int] | None" = None) -> str:
             ) + "}"
         finally:
             _seen.discard(id(x))
+    # Lazy-import the interpreter types so this module doesn't depend on
+    # interpreter at load time (already the pattern in _builtin_type).
+    from .interpreter import RotInstance
+    if isinstance(x, RotInstance):
+        return _stringify_instance(x)
     return str(x)
+
+
+def _stringify_instance(instance: Any) -> str:
+    """Render a `RotInstance` for output.
+
+    Default form: `<instance of {ClassName}>`. If the user defined a
+    `to_string()` method on the class, call it with no args and use its
+    return value — gives users an override hook for instance display. If
+    `to_string` raises, returns a non-string, or has the wrong arity, fall
+    back to the default form silently (display must not crash output).
+    """
+    method = instance.cls.methods.get("to_string")
+    if method is not None:
+        # Find the active Interpreter. Set at Interpreter() construction
+        # time, so any cout/coutln/str/f-string path through _stringify
+        # will see it. If there's no active interpreter (extremely unusual
+        # — direct call from a test before any Interpreter was built), we
+        # silently fall back to the default form.
+        interp = _active_interpreter()
+        if interp is not None:
+            from .interpreter import BoundMethod
+            bound = BoundMethod(instance, method, instance.cls.closure)
+            try:
+                result = bound.call([], interp)
+                if isinstance(result, str):
+                    return result
+            except Exception:
+                # to_string raised or had the wrong arity — fall back to
+                # the default form rather than crashing the display path.
+                pass
+    return f"<instance of {instance.cls.name}>"
+
+
+# Tracks the currently-running Interpreter so `_stringify` can invoke
+# user-defined `to_string()` methods without needing the interpreter
+# passed explicitly through every `_stringify` site (cout, coutln, str,
+# f-strings, assert, etc.). Set in `Interpreter.__init__` and updated as a
+# stack if needed; for single-interpreter use the simple global is fine.
+_ACTIVE_INTERPRETER: Any = None
+
+
+def _active_interpreter() -> Any:
+    return _ACTIVE_INTERPRETER
+
+
+def _set_active_interpreter(interp: Any) -> None:
+    global _ACTIVE_INTERPRETER
+    _ACTIVE_INTERPRETER = interp
 
 
 def _stringify_key(k: Any, _seen: "set[int] | None" = None) -> str:

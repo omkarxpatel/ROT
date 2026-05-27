@@ -2,6 +2,12 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.21.4 — `RotInstance` __str__ + `to_string()` override hook
+
+### Fixed
+- **B2/I21**: `coutln(a)` for a bare instance used to leak Python's repr (`<rot.interpreter.RotInstance object at 0x...>`) — internal address-and-type goo bleeding into user output. `_stringify` now special-cases `RotInstance` and renders the default form as `<instance of {ClassName}>`. If the class defines a `to_string()` method, `_stringify_instance` invokes it (zero args) and uses the returned string instead — gives users an override hook for instance display that mirrors Python's `__str__`. If `to_string()` raises, returns a non-string, or has the wrong arity, the renderer falls back to the default form silently (display must not crash output).
+- The override path needs an `Interpreter` to dispatch the bound method, but `_stringify` is reached from many call sites (cout/coutln, `str()`, f-strings, `assert`) that don't thread an interpreter through. Solution: a module-level `_ACTIVE_INTERPRETER` slot in `builtins.py`, set by `Interpreter.__init__` and `Interpreter.execute` via `_set_active_interpreter`. Last-interpreter-wins; tests construct fresh `Interpreter`s per call and end-user programs only have one interpreter alive at a time, so the simple global is sound. If no interpreter is registered (extreme edge — direct `_stringify` call before any `Interpreter` exists), the override is skipped and the default form is used. Tests: `test_coutln_instance_default_renders_as_instance_of_class`, `test_coutln_instance_to_string_override_is_used`, `test_coutln_instance_to_string_raising_falls_back_to_default`, `test_coutln_instance_to_string_returning_non_string_falls_back`, `test_str_of_instance_uses_to_string_override`, `test_fstring_of_instance_uses_to_string_override`, `test_stringify_instance_with_no_active_interpreter_falls_back`, `test_stringify_instance_inside_list_uses_override`, `test_stringify_instance_inside_dict_uses_override`.
+
 ## v2.21.3 — `_stringify` cycle detection for lists and dicts
 
 ### Fixed

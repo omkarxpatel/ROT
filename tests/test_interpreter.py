@@ -2497,3 +2497,119 @@ def test_coutln_self_referential_list_does_not_hang():
     # `[...]` marker.
     src = 'a = [1 | 2]\nappend(a | a)\ncoutln(a)'
     assert _run(src) == "[1 | 2 | [...]]\n"
+
+
+# ---------- v2.21.4: RotInstance __str__ + to_string() override hook ----------
+
+def test_coutln_instance_default_renders_as_instance_of_class():
+    # B2/I21: `coutln(a)` for a bare instance used to leak Python's repr
+    # (`<rot.interpreter.RotInstance object at 0x...>`). Default form is now
+    # `<instance of {ClassName}>`.
+    src = 'class A {}\na = A()\ncoutln(a)'
+    assert _run(src) == "<instance of A>\n"
+
+
+def test_coutln_instance_to_string_override_is_used():
+    # If the class defines `to_string()`, _stringify calls it and uses the
+    # returned string instead of the default form. Override hook for users.
+    src = (
+        'class Greeter {\n'
+        '    init(name) { this.name = name }\n'
+        '    to_string() { return "hello, " + this.name }\n'
+        '}\n'
+        'coutln(Greeter("world"))'
+    )
+    assert _run(src) == "hello, world\n"
+
+
+def test_coutln_instance_to_string_raising_falls_back_to_default():
+    # If `to_string()` raises (e.g. division by zero), _stringify must not
+    # crash the output path — fall back to the default form silently.
+    src = (
+        'class A {\n'
+        '    to_string() { return 1 / 0 }\n'
+        '}\n'
+        'coutln(A())'
+    )
+    assert _run(src) == "<instance of A>\n"
+
+
+def test_coutln_instance_to_string_returning_non_string_falls_back():
+    # If `to_string()` returns a non-string (e.g. a number), fall back to
+    # the default form rather than emitting Python-style coercion.
+    src = (
+        'class A {\n'
+        '    to_string() { return 5 }\n'
+        '}\n'
+        'coutln(A())'
+    )
+    assert _run(src) == "<instance of A>\n"
+
+
+def test_str_of_instance_uses_to_string_override():
+    # `str(a)` goes through `_stringify` too — same override applies.
+    src = (
+        'class A {\n'
+        '    to_string() { return "custom" }\n'
+        '}\n'
+        'coutln(str(A()))'
+    )
+    assert _run(src) == "custom\n"
+
+
+def test_fstring_of_instance_uses_to_string_override():
+    # f-string interpolation also routes through `_stringify`.
+    src = (
+        'class A {\n'
+        '    to_string() { return "x" }\n'
+        '}\n'
+        'a = A()\n'
+        'coutln(f"got: {a}")'
+    )
+    assert _run(src) == "got: x\n"
+
+
+def test_stringify_instance_with_no_active_interpreter_falls_back():
+    # _stringify_instance reads the active interpreter via _active_interpreter().
+    # If no Interpreter has ever been constructed (or one was explicitly
+    # cleared), the override hook is skipped and we render the default form.
+    # Guards against crashes in direct-API callers.
+    from rot.builtins import _stringify, _set_active_interpreter
+    # Build a real instance via an interpreter, then clear the global so we
+    # exercise the "no active interpreter" branch.
+    program = Parser(Lexer().tokenize(
+        'class A { to_string() { return "x" } }\na = A()'
+    )).parse()
+    interp = Interpreter()
+    interp.execute(program)
+    a = interp.env.get("a")
+    _set_active_interpreter(None)
+    try:
+        assert _stringify(a) == "<instance of A>"
+    finally:
+        # Restore the interpreter so later tests see a sane global.
+        _set_active_interpreter(interp)
+
+
+def test_stringify_instance_inside_list_uses_override():
+    # _stringify recurses into lists — instances inside a list should also
+    # use the override hook, not Python's repr.
+    src = (
+        'class A {\n'
+        '    init(n) { this.n = n }\n'
+        '    to_string() { return "A(" + str(this.n) + ")" }\n'
+        '}\n'
+        'coutln([A(1) | A(2)])'
+    )
+    assert _run(src) == "[A(1) | A(2)]\n"
+
+
+def test_stringify_instance_inside_dict_uses_override():
+    # Same for dict values.
+    src = (
+        'class A {\n'
+        '    to_string() { return "thing" }\n'
+        '}\n'
+        'coutln({"x": A()})'
+    )
+    assert _run(src) == '{"x": thing}\n'

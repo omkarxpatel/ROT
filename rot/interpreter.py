@@ -47,7 +47,7 @@ class _ThrowSignal(BaseException):
         self.value = value
 
 
-from .builtins import _stringify, _builtin_type
+from .builtins import _stringify, _builtin_type, _set_active_interpreter
 
 
 def _plus(a: Any, b: Any) -> Any:
@@ -328,6 +328,13 @@ class Interpreter:
         # raise a clear InterpreterError instead of escaping as BaseException.
         self._loop_depth: int = 0
         self._function_depth: int = 0
+        # Register as the active interpreter so `_stringify` can call
+        # user-defined `to_string()` methods on RotInstance. The REPL drives
+        # `_evaluate` directly (not always via `execute`), so registering
+        # here covers both paths. Last-Interpreter-wins is fine in practice:
+        # tests construct fresh Interpreters per call, and end-user code
+        # only has one Interpreter alive at a time.
+        _set_active_interpreter(self)
 
     def set_source_dir(self, source_dir: "str | None") -> None:
         """Tell the interpreter where the current source file lives so
@@ -335,6 +342,10 @@ class Interpreter:
         self._source_dir = source_dir
 
     def execute(self, program: ast.Program) -> None:
+        # Register this interpreter so `_stringify` can invoke user-defined
+        # `to_string()` methods on RotInstance without threading the
+        # interpreter through every _stringify caller.
+        _set_active_interpreter(self)
         try:
             for stmt in program.body:
                 self._execute_statement(stmt)
