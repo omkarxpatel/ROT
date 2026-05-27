@@ -268,3 +268,22 @@ def test_fstring_well_formed_interpolation_still_works():
     tokens = Lexer().tokenize('f"hi {name}, you are {age}"')
     assert len(tokens) == 1
     assert tokens[0].kind == "FSTRING"
+
+
+# v2.20.5 — L28: UTF-8 BOM at start of source must be silently stripped.
+def test_leading_utf8_bom_is_stripped():
+    tokens = Lexer().tokenize("﻿cout")
+    # The BOM is consumed; the first real token is the PRINT keyword.
+    assert tokens[0].lexeme == "cout"
+    assert tokens[0].kind == "PRINT"
+    # And position tracking starts at line 1, col 1 — the BOM doesn't
+    # consume a column.
+    assert (tokens[0].line, tokens[0].col) == (1, 1)
+
+
+def test_bom_only_at_start_is_stripped_not_in_middle():
+    # A BOM that appears mid-source should still produce an error: only the
+    # leading BOM is treated as a UTF-8 marker. Without this guarantee a
+    # stray BOM mid-file would silently disappear.
+    with pytest.raises(LexerError):
+        Lexer().tokenize("cout﻿")

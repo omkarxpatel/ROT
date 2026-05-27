@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.5 — Lexer: silently strip leading UTF-8 BOM
+
+### Fixed
+- **L28**: a source file saved with a leading UTF-8 byte-order mark (U+FEFF) used to fail at the first scan with `unexpected character '﻿'`. Many editors on Windows write a BOM by default, so source authored on those tools was unrunnable. `tokenize` now strips a leading BOM before resetting state. Mid-file BOMs are still errors (they're almost certainly a paste artifact). Tests: `test_leading_utf8_bom_is_stripped`, `test_bom_only_at_start_is_stripped_not_in_middle`.
+
 ## v2.20.4 — Lexer: f-string with unclosed `{` errors at lex time
 
 ### Fixed

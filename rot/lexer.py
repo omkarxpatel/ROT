@@ -76,6 +76,11 @@ class Lexer:
         self.tokens: list[Token] = []
 
     def tokenize(self, source: str) -> list[Token]:
+        # Strip leading UTF-8 BOM (U+FEFF) so files saved by editors that
+        # default to BOM-prefixed UTF-8 don't trip a bare
+        # "unexpected character" error on the very first token (L28).
+        if source[:1] == "﻿":
+            source = source[1:]
         # Reset state so Lexer instances are reusable across calls (L1).
         # Without this, self.pos / self.line / self.col / self.tokens
         # would carry over from the previous tokenize call and a second
