@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.16.1 — nested funct declarations bind locally
+
+### Fixed
+- **I15**: a nested `funct f` inside `funct outer` used to silently overwrite the outer `f` because `_execute_statement`'s `FuncDef` branch called `self.env.set(...)`, which chain-walks (v2.10.0 closure-mutation semantics) and so found the outer `f` and rebound it. Function declarations now always use `set_local`, introducing a fresh binding in the current scope. Only user `Assign` (`x = ...`) walks the chain. Test: `test_nested_funct_does_not_clobber_outer_funct`.
+
 ## v2.15.2 — uncaught throw raises a clean InterpreterError
 
 ### Fixed

@@ -764,6 +764,21 @@ def test_nested_closure_mutates_outer_scope():
     assert _run(src) == "99\n"
 
 
+def test_nested_funct_does_not_clobber_outer_funct():
+    # I15: a nested `funct f` inside `funct outer` used to silently overwrite
+    # the outer `f` via the chain-walking `set`. Now declarations bind locally.
+    src = (
+        'funct f() { return "outer" }\n'
+        'funct outer() {\n'
+        '    funct f() { return "inner" }\n'
+        '    coutln(f())\n'
+        '}\n'
+        'outer()\n'
+        'coutln(f())\n'
+    )
+    assert _run(src) == "inner\nouter\n"
+
+
 def test_for_loop_var_is_local():
     # Loop variable shouldn't leak as a global if `i` isn't already declared.
     src = (

@@ -282,7 +282,11 @@ class Interpreter:
             self._evaluate(stmt.expr)
             return
         if isinstance(stmt, ast.FuncDef):
-            self.env.set(stmt.name, RotFunction(stmt, self.env))
+            # A `funct f` declaration ALWAYS introduces a fresh local binding,
+            # never walking the parent chain. Otherwise nested `funct f` inside
+            # `funct outer` would silently overwrite the outer `f` via the
+            # closure-mutating `set` — a footgun. Only user `Assign` walks.
+            self.env.set_local(stmt.name, RotFunction(stmt, self.env))
             return
         if isinstance(stmt, ast.ClassDef):
             method_map = {m.name: m for m in stmt.methods}
