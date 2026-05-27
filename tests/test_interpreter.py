@@ -3227,3 +3227,77 @@ def test_nested_dict_access():
         'coutln(d["a"]["b"])\n'
     )
     assert _run(src) == "42\n"
+
+
+# --- v2.24.8: T77-T81, T102-T105 — imports + edge cases ---
+
+
+def test_empty_source_runs_without_error():
+    # An empty `.rot` file produces an empty Program; executing it is a
+    # no-op. Pinned for the interpreter (the compiler-side parse case is
+    # in tests/test_compiler.py).
+    assert _run("") == ""
+
+
+def test_source_with_only_comments_runs_without_error():
+    # `// ...` comments are stripped by the lexer; what reaches the parser
+    # is an empty token stream → empty Program → no-op execution.
+    assert _run("// first comment\n// second comment\n") == ""
+
+
+def test_source_with_only_whitespace_runs_without_error():
+    # Spaces / tabs / blank lines are stripped by the lexer; same outcome
+    # as the empty-source / comment-only cases.
+    assert _run("   \n\t\t\n   \n") == ""
+
+
+def test_import_deep_chain_a_imports_b_imports_c(tmp_path):
+    # Three-level import chain (A → B → C). All bindings flow up: C
+    # binds `z`; B reads `z` from C and binds `y`; A reads both.
+    # The shared global env is the same Environment across the chain
+    # (the interpreter only swaps `_source_dir`, not the env), so each
+    # imported module's top-level assignments land in the global scope.
+    (tmp_path / "c.rot").write_text("z = 42\n")
+    (tmp_path / "b.rot").write_text('import "c"\ny = z + 1\n')
+    main = tmp_path / "a.rot"
+    main.write_text('import "b"\ncoutln(y)\ncoutln(z)\n')
+
+    import contextlib
+    import io
+    from rot.compiler import Compiler
+
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        Compiler(trace=False).run(main.read_text(), source_path=str(main))
+    assert captured.getvalue() == "43\n42\n"
+
+
+def test_import_cycle_does_not_raise_but_re_runs_main(tmp_path):
+    # Pinning ACTUAL behavior (not desired). An import cycle a → b → a
+    # is NOT detected as an error today: the import cache keys on absolute
+    # path, and `Compiler.run` does not add the main file's path to
+    # `_loaded_modules` before executing it. So a's `import "b"` runs b,
+    # b's `import "a"` re-runs a's body — producing interleaved output
+    # `a loaded\nb loaded\na loaded`. The bug-audit's I40 / T79 flagged
+    # this; until it's fixed in a future minor, the test pins what
+    # actually happens so a future change is intentional.
+    (tmp_path / "b.rot").write_text(
+        'import "a"\n'
+        'coutln("b loaded")\n'
+    )
+    main = tmp_path / "a.rot"
+    main.write_text(
+        'import "b"\n'
+        'coutln("a loaded")\n'
+    )
+
+    import contextlib
+    import io
+    from rot.compiler import Compiler
+
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        Compiler(trace=False).run(main.read_text(), source_path=str(main))
+    # Re-entry of `a` happens during b's import; the outer `a` then runs
+    # its own `coutln` after b returns. Result: "a loaded" appears twice.
+    assert captured.getvalue() == "a loaded\nb loaded\na loaded\n"

@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.24.8 — test backfill: imports + edge cases (T77-T81, T102-T105)
+
+### Added
+- 5 tests appended to `tests/test_interpreter.py`. Empty source, comment-only source, and whitespace-only source all parse + interpret without error and produce no output. Deep import chains (A → B → C) flow bindings up through the shared global env — A reads what B defined from C. The import-cycle case (`a → b → a`) pins ACTUAL behavior: the cycle does NOT raise an error today, but because `Compiler.run` does not add the main file's path to `_loaded_modules` before executing it, the cycle re-runs the main file's body during the imported module's import — producing interleaved output `a loaded \n b loaded \n a loaded`. This is the bug-audit's I40 / T79 footgun; the test pins what happens until a future minor fixes it.
+
 ## v2.24.7 — test backfill: indexing & dict reads (T61-T66)
 
 ### Added
