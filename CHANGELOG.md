@@ -2,6 +2,27 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.18 — housekeeping: example refresh + version-file resync
+
+### Changed
+- [`examples/multiple_prints.rot`](examples/multiple_prints.rot) and its
+  `.expected` golden file gain a trailing `cout("d")` so the example
+  visibly demonstrates that `cout` does not append a newline (output is
+  `abc\nd`, no trailing newline) while `coutln` does. Tighter pedagogy
+  for what was previously an underwhelming three-liner.
+- [`web/src/lib/rot-version.ts`](web/src/lib/rot-version.ts) regenerated
+  via [`web/scripts/copy-rot.mjs`](web/scripts/copy-rot.mjs). The file
+  had drifted (`2.25.15`) because v2.25.16 and v2.25.17 bumped
+  [`rot/__init__.py`](rot/__init__.py) without re-running the script.
+  Now back in sync at `2.25.18`. `public/rot_package/`,
+  `public/rot_examples/`, and `public/paper/main.pdf` were copied as
+  part of the same script run.
+
+### Notes
+- Clean baseline before opening the Milestone 1 / v2.26.x line described
+  in [`HANDOFF.md`](HANDOFF.md).
+- No language code changed. All 628 tests still pass.
+
 ## v2.25.17 — handoff: strategic direction toward visible compilation
 
 ### Changed
