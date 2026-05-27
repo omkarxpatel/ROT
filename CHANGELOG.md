@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.15.2 — uncaught throw raises a clean InterpreterError
+
+### Fixed
+- **I44, C5**: an uncaught `throw` (at top level, or inside a function with no surrounding `try`/`catch`) used to escape as a raw `_ThrowSignal` (a `BaseException`) and print a Python traceback. `Interpreter.execute` now wraps the outer statement loop in `try/except _ThrowSignal` and re-raises as `InterpreterError("uncaught throw: <value>")`. Catches of throws inside a matching `try`/`catch` still work — the wrapper only fires when the signal escapes the entire program.
+
 ## v2.15.1 — break/continue can no longer escape a function boundary
 
 ### Fixed

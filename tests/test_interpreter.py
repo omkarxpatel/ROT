@@ -1073,6 +1073,52 @@ def test_top_level_break_still_works_after_function_call_in_loop():
     assert _run(src) == "0\n1\n"
 
 
+def test_uncaught_throw_at_top_level_raises_interpreter_error():
+    # I44, C5: an uncaught `throw` used to escape as a raw _ThrowSignal
+    # (BaseException) → Python traceback. It's now wrapped.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('throw "boom"')
+    msg = str(exc_info.value)
+    assert "uncaught throw" in msg
+    assert "boom" in msg
+
+
+def test_uncaught_throw_of_number_raises_interpreter_error():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("throw 42")
+    msg = str(exc_info.value)
+    assert "uncaught throw" in msg
+    assert "42" in msg
+
+
+def test_uncaught_throw_from_inside_function_raises_interpreter_error():
+    # No `try`/`catch` anywhere — the throw must bubble up to the top-level
+    # wrapper, not escape as a BaseException.
+    src = (
+        'funct bad() { throw "from inside" }\n'
+        'bad()'
+    )
+    with pytest.raises(InterpreterError) as exc_info:
+        _run(src)
+    msg = str(exc_info.value)
+    assert "uncaught throw" in msg
+    assert "from inside" in msg
+
+
+def test_throw_caught_by_try_is_not_wrapped_as_uncaught():
+    # Regression: a `throw` inside a `try` block must still be caught by
+    # the matching `catch` — the outer wrapper only catches truly-uncaught
+    # throws.
+    src = (
+        'try {\n'
+        '    throw "x"\n'
+        '} catch (e) {\n'
+        '    coutln("got: " + e)\n'
+        '}'
+    )
+    assert _run(src) == "got: x\n"
+
+
 def test_method_param_does_not_clobber_outer_scope():
     src = (
         'x = 1\n'

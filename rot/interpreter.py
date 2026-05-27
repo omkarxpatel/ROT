@@ -267,8 +267,15 @@ class Interpreter:
         self._source_dir = source_dir
 
     def execute(self, program: ast.Program) -> None:
-        for stmt in program.body:
-            self._execute_statement(stmt)
+        try:
+            for stmt in program.body:
+                self._execute_statement(stmt)
+        except _ThrowSignal as t:
+            # An uncaught `throw` at top level (or anywhere not surrounded
+            # by `try`/`catch`) would otherwise escape as a raw Python
+            # BaseException with a Python traceback. Convert to a clean
+            # rot-side InterpreterError so the CLI prints a normal error.
+            raise InterpreterError(f"uncaught throw: {_stringify(t.value)}")
 
     def _execute_statement(self, stmt: ast.Statement) -> None:
         if isinstance(stmt, ast.ExprStmt):
