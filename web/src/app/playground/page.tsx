@@ -320,6 +320,11 @@ export default function PlaygroundPage() {
                   ? snapshots[stepIndex] ?? null
                   : null
               }
+              previousSnapshot={
+                mode === "animate" && stepIndex > 0
+                  ? snapshots[stepIndex - 1] ?? null
+                  : null
+              }
               stepKey={stepIndex}
             />
           </div>

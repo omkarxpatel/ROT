@@ -30,6 +30,9 @@ interface PipelinePanelProps {
   // rendered at the top, expanded by default, showing the current
   // snapshot's scope chain. Otherwise hidden.
   currentSnapshot?: RotSnapshot | null;
+  // Previous snapshot (one step back). Used by EnvView for "new" /
+  // "changed" binding indicators and the explainer copy.
+  previousSnapshot?: RotSnapshot | null;
   // Bumped per step so EnvView can animate the per-frame fade-in.
   stepKey?: number;
 }
@@ -40,6 +43,7 @@ export function PipelinePanel({
   trace,
   runKey,
   currentSnapshot,
+  previousSnapshot,
   stepKey,
 }: PipelinePanelProps) {
   // When in Animate mode, default-expand Env (alongside the other
@@ -71,6 +75,7 @@ export function PipelinePanel({
               <AccordionContent>
                 <EnvView
                   snapshot={currentSnapshot}
+                  previousSnapshot={previousSnapshot ?? null}
                   stepKey={stepKey ?? 0}
                 />
               </AccordionContent>

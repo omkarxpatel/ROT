@@ -2,6 +2,54 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.8 — Milestone 1 ships: explainer copy + recently-changed visual cues
+
+### Added (polish pass)
+- **Recently-changed indicators** in
+  [`web/src/components/env-view.tsx`](web/src/components/env-view.tsx).
+  Each binding row now carries a colored dot + tinted row background:
+  emerald for bindings introduced in this step (`new`), amber for
+  bindings whose value changed since the previous step (`changed`),
+  and a transparent placeholder for unchanged rows so columns stay
+  aligned. Hover tooltip explains the indicator.
+- **Natural-language explainer** above the scope frames. Reads
+  `statement_kind` plus the env diff and produces a short prose line:
+  "Bound x = 5.", "Loop ran; printed \"0\\n1\\n2\".", "Defined funct
+  greet.", "Conditional taken; x updated.", "try/catch ran.", etc.
+  Captured output is quoted compactly (max ~40 chars). On error the
+  explainer reads "Error during \<kind\>."
+- Diff computation honors the scope chain — frames are matched
+  across snapshots by `(scope_kind, scope_label)`, so when M3/M4
+  expands snapshots to include function/method scopes the indicators
+  will already track them correctly.
+
+### Changed
+- `PipelinePanel` accepts a new `previousSnapshot` prop and forwards
+  it to `EnvView`. The playground page passes
+  `snapshots[stepIndex - 1] ?? null` in animate mode and `null`
+  otherwise.
+
+### Notes — Milestone 1 complete
+- The playground now does what the
+  [`HANDOFF.md`](HANDOFF.md) vision called for: any user can write
+  any program, switch to Animate mode, and Step / Play through
+  execution while watching the current line highlight in the editor,
+  the env pane fill in with colored indicators, and a natural-
+  language line summarize what just happened. The Output panel shows
+  output as it accumulates.
+- That covers all eight Z bumps the handoff laid out for Milestone 1
+  (v2.26.0–.8): schema → env serializer → output capture → error
+  snapshots → Pyodide bridge → playground controls → Env pane →
+  source highlight → polish.
+- **Backend tests: 662 passing.** No regressions in run mode; CLI,
+  REPL, examples and imports still behave identically. Production
+  build clean.
+- Milestone 2 (bytecode VM + bytecode pane) is the next big lift.
+  The interpreter's snapshot scaffolding (statement-step generator
+  + output capture + env serializer) is the right shape for the VM
+  to slot in: each opcode dispatch will be an analogous step yield
+  in `vm.py`, surfacing through a similar pane in the playground.
+
 ## v2.26.7 — M1 source-line highlight: CodeMirror decoration on current statement
 
 ### Added
