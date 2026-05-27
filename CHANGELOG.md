@@ -2,6 +2,34 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.7 — M1 source-line highlight: CodeMirror decoration on current statement
+
+### Added
+- `highlightLine?: number | null` prop on the `Editor` component
+  ([`web/src/components/editor.tsx`](web/src/components/editor.tsx)).
+  When set to a 1-indexed line number, the editor draws an amber-tinted
+  line decoration with a 2px left rail on that row. Out-of-range and
+  `null` clear the decoration.
+- CodeMirror `StateEffect` (`setHighlightLine`) + `StateField`
+  (`lineHighlightField`) pipeline that converts the prop into a
+  `Decoration.line({ class: "cm-rot-current-line" })`. Theme rule for
+  `.cm-rot-current-line` is co-located with the existing editor
+  theme block. Decorations are mapped through document changes so
+  the highlight stays glued to its row when the user types above it.
+
+### Changed
+- Playground page derives `highlightLine` in animate mode:
+  `snapshots[stepIndex]?.statement_line ?? null`. In run mode the
+  prop is `null`, so the editor renders identically to before this
+  change.
+
+### Notes
+- Statement-granularity at top level matches the snapshot model
+  (M1). Sub-statement highlighting (e.g. flashing the right-hand
+  side of an `Assign` as it's evaluated) requires expression-level
+  stepping and lands in M3/M4.
+- Build clean. Type-check passes. 662 tests still passing.
+
 ## v2.26.6 — M1 playground Env pane: scope stack + binding cards
 
 ### Added

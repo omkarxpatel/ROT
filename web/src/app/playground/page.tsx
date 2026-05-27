@@ -224,6 +224,13 @@ export default function PlaygroundPage() {
     };
   }, [mode, stepIndex, snapshots, pipeline.error]);
 
+  // Editor line-highlight: in animate mode point at the current
+  // snapshot's statement. Null in run mode (no decoration drawn).
+  const highlightLine =
+    mode === "animate" && stepIndex >= 0
+      ? snapshots[stepIndex]?.statement_line ?? null
+      : null;
+
   const displayOutput = mode === "animate" ? animateOutput : pipeline.output;
   const displayError = mode === "animate" ? animateError : pipeline.error;
   const displayRunning =
@@ -285,7 +292,11 @@ export default function PlaygroundPage() {
             Source ({currentExample}.rot)
           </div>
           <div className="min-h-0 flex-1 overflow-hidden">
-            <Editor value={source} onChange={setSource} />
+            <Editor
+              value={source}
+              onChange={setSource}
+              highlightLine={highlightLine}
+            />
           </div>
         </section>
         {/* Right: output (top) + pipeline (bottom) */}
