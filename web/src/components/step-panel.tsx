@@ -36,6 +36,12 @@ interface StepPanelProps {
   // When the user clicks a token chip, the playground jumps the
   // editor cursor to that source position.
   onJumpToSource?: (line: number, col: number) => void;
+  // When the user hovers an AST node, fires with the line range that
+  // node covers (or null on mouseleave). The page paints the editor's
+  // hover-range decoration.
+  onAstHover?: (
+    range: { startLine: number; endLine: number } | null,
+  ) => void;
 }
 
 // Stage timing (seconds). The four reveals stagger so the user reads
@@ -58,6 +64,7 @@ export function StepPanel({
   stepIndex,
   totalSteps,
   onJumpToSource,
+  onAstHover,
 }: StepPanelProps) {
   const hasSteps = totalSteps > 0;
   const progressPct = hasSteps
@@ -125,6 +132,7 @@ export function StepPanel({
               previousSnapshot={previousSnapshot}
               stepIndex={stepIndex}
               onJumpToSource={onJumpToSource}
+              onAstHover={onAstHover}
             />
           ) : (
             <OnboardingMessage />
@@ -143,6 +151,7 @@ function StagedView({
   previousSnapshot,
   stepIndex,
   onJumpToSource,
+  onAstHover,
 }: {
   source: string;
   tokens: RotToken[];
@@ -151,6 +160,9 @@ function StagedView({
   previousSnapshot: RotSnapshot | null;
   stepIndex: number;
   onJumpToSource?: (line: number, col: number) => void;
+  onAstHover?: (
+    range: { startLine: number; endLine: number } | null,
+  ) => void;
 }) {
   const stmtLine = snapshot.statement_line;
   const stmtCol = snapshot.statement_col;
@@ -297,6 +309,7 @@ function StagedView({
           empty="(no AST subtree available)"
           onLeafReveal={handleLeafReveal}
           nodePulses={astPulses}
+          onNodeHover={onAstHover}
         />
       </StageBlock>
 

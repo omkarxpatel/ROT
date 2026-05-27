@@ -33,6 +33,12 @@ interface AstViewProps {
   // Step panel to highlight the AST node responsible for a newly-
   // bound or changed env entry — closes the parse → execute chain.
   nodePulses?: Record<string, AstPulse>;
+  // Hover hook. When the user mouses over an AST node, this fires
+  // with the source line range that node covers (computed by walking
+  // the subtree's `line` fields). On mouseleave it fires with null.
+  // The playground uses this to paint the editor's source range
+  // matching the hovered node.
+  onNodeHover?: (range: { startLine: number; endLine: number } | null) => void;
 }
 
 export function AstView({
@@ -42,6 +48,7 @@ export function AstView({
   empty,
   onLeafReveal,
   nodePulses,
+  onNodeHover,
 }: AstViewProps) {
   if (!ast) {
     return (
@@ -59,6 +66,7 @@ export function AstView({
         depthStaggerSec={depthStaggerSec}
         onLeafReveal={onLeafReveal}
         nodePulses={nodePulses}
+        onNodeHover={onNodeHover}
       />
     </div>
   );
@@ -71,6 +79,7 @@ interface AstNodeProps {
   depthStaggerSec: number;
   onLeafReveal?: (line: number, col: number) => void;
   nodePulses?: Record<string, AstPulse>;
+  onNodeHover?: (range: { startLine: number; endLine: number } | null) => void;
 }
 
 function AstNodeView({
@@ -80,6 +89,7 @@ function AstNodeView({
   depthStaggerSec,
   onLeafReveal,
   nodePulses,
+  onNodeHover,
 }: AstNodeProps) {
   const [open, setOpen] = useState(true);
   const type = node.__type__;
@@ -140,7 +150,17 @@ function AstNodeView({
       onAnimationComplete={handleAnimationComplete}
       style={{ paddingLeft: indent }}
     >
-      <div className="relative inline-block w-full">
+      <div
+        className="relative inline-block w-full"
+        onMouseEnter={() => {
+          if (!onNodeHover) return;
+          const range = nodeLineRange(node);
+          if (range) onNodeHover(range);
+        }}
+        onMouseLeave={() => {
+          if (onNodeHover) onNodeHover(null);
+        }}
+      >
         <button
           onClick={() => setOpen((o) => !o)}
           className="group flex w-full items-center gap-1.5 text-left hover:text-foreground"
@@ -204,6 +224,7 @@ function AstNodeView({
                 depthStaggerSec={depthStaggerSec}
                 onLeafReveal={onLeafReveal}
                 nodePulses={nodePulses}
+                onNodeHover={onNodeHover}
               />
             </div>
           ))}
@@ -220,6 +241,7 @@ function AstValueView({
   depthStaggerSec,
   onLeafReveal,
   nodePulses,
+  onNodeHover,
 }: {
   value: AstValue;
   depth: number;
@@ -227,6 +249,7 @@ function AstValueView({
   depthStaggerSec: number;
   onLeafReveal?: (line: number, col: number) => void;
   nodePulses?: Record<string, AstPulse>;
+  onNodeHover?: (range: { startLine: number; endLine: number } | null) => void;
 }) {
   if (value === null || value === undefined) {
     return (
@@ -254,6 +277,7 @@ function AstValueView({
             depthStaggerSec={depthStaggerSec}
             onLeafReveal={onLeafReveal}
             nodePulses={nodePulses}
+            onNodeHover={onNodeHover}
           />
         ))}
       </div>
@@ -277,8 +301,41 @@ function AstValueView({
       depthStaggerSec={depthStaggerSec}
       onLeafReveal={onLeafReveal}
       nodePulses={nodePulses}
+      onNodeHover={onNodeHover}
     />
   );
+}
+
+// Walk an AST node's subtree, finding the min and max `line` values
+// among descendant nodes. Used to compute the source range a hovered
+// AST node "covers" so the editor can highlight it. Returns null if
+// no positions are recoverable (defensive).
+function nodeLineRange(
+  node: AstNode,
+): { startLine: number; endLine: number } | null {
+  let min = Number.POSITIVE_INFINITY;
+  let max = 0;
+  function visit(v: AstValue): void {
+    if (v === null || v === undefined) return;
+    if (typeof v !== "object") return;
+    if (Array.isArray(v)) {
+      for (const x of v) visit(x);
+      return;
+    }
+    const n = v as AstNode;
+    const line = typeof n.line === "number" ? n.line : 0;
+    if (line > 0) {
+      if (line < min) min = line;
+      if (line > max) max = line;
+    }
+    for (const [k, child] of Object.entries(n)) {
+      if (k === "__type__" || k === "line" || k === "col") continue;
+      visit(child as AstValue);
+    }
+  }
+  visit(node);
+  if (max === 0) return null;
+  return { startLine: min, endLine: max };
 }
 
 // ─── Humanization ───────────────────────────────────────────────────

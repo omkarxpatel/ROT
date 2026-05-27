@@ -28,6 +28,10 @@ interface EditorProps {
   // cursor there and scrolls it into view. `key` increments per
   // request so repeated jumps to the same coordinates still re-fire.
   jumpTo?: { line: number; col: number; key: number } | null;
+  // 1-indexed inclusive line range to highlight when the user hovers
+  // an AST node in the Step panel. Painted as a subtle sky-blue tint
+  // distinct from the amber active-step highlight. null clears it.
+  hoverRange?: { startLine: number; endLine: number } | null;
 }
 
 const setHighlightLine = StateEffect.define<number | null>();
@@ -47,6 +51,43 @@ const lineHighlightField = StateField.define<DecorationSet>({
           next = Decoration.set([
             Decoration.line({ class: "cm-rot-current-line" }).range(line.from),
           ]);
+        }
+      }
+    }
+    return next;
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
+// Multi-line hover range — painted in a sky-blue tint, distinct from
+// the amber "current statement" decoration. Driven externally via the
+// `hoverRange` prop; cleared when the parent dispatches null.
+const setHoverRange = StateEffect.define<{
+  startLine: number;
+  endLine: number;
+} | null>();
+
+const hoverRangeField = StateField.define<DecorationSet>({
+  create() {
+    return Decoration.none;
+  },
+  update(decorations, tr) {
+    let next = decorations.map(tr.changes);
+    for (const e of tr.effects) {
+      if (e.is(setHoverRange)) {
+        if (e.value === null) {
+          next = Decoration.none;
+        } else {
+          const start = Math.max(1, e.value.startLine);
+          const end = Math.min(e.value.endLine, tr.state.doc.lines);
+          const lines = [];
+          for (let n = start; n <= end; n++) {
+            const line = tr.state.doc.line(n);
+            lines.push(
+              Decoration.line({ class: "cm-rot-hover-range" }).range(line.from),
+            );
+          }
+          next = Decoration.set(lines);
         }
       }
     }
@@ -134,6 +175,7 @@ export function Editor({
   onChange,
   highlightLine,
   jumpTo,
+  hoverRange,
 }: EditorProps) {
   const viewRef = useRef<EditorView | null>(null);
 
@@ -141,6 +183,7 @@ export function Editor({
     () => [
       EditorView.lineWrapping,
       lineHighlightField,
+      hoverRangeField,
       rotLanguage,
       // Listed AFTER oneDark so this style wins on overlapping tags.
       syntaxHighlighting(rotHighlight),
@@ -165,6 +208,12 @@ export function Editor({
             boxShadow:
               "inset 3px 0 0 rgba(245, 158, 11, 0.95), 0 0 0 0 rgba(245, 158, 11, 0)",
           },
+        },
+        // Hover-range decoration — sky blue, distinct from the amber
+        // current-step line so the two can coexist without confusion.
+        ".cm-rot-hover-range": {
+          backgroundColor: "rgba(56, 189, 248, 0.12)",
+          boxShadow: "inset 2px 0 0 rgba(56, 189, 248, 0.6)",
         },
       }),
     ],
@@ -202,6 +251,17 @@ export function Editor({
     view.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jumpTo?.key]);
+
+  // Hover range — fires whenever the parent's range changes. Cheap to
+  // dispatch on every render because we pass through to the state
+  // field which diffs decoration sets.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    view.dispatch({
+      effects: setHoverRange.of(hoverRange ?? null),
+    });
+  }, [hoverRange?.startLine, hoverRange?.endLine, hoverRange]);
 
   return (
     <div className="h-full w-full">

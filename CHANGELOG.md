@@ -2,6 +2,46 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.24 — Hover an AST node → highlight source range in editor
+
+### Added
+- Hovering any AST node in the Step Detail panel now paints the
+  matching source range in the editor with a sky-blue tint — distinct
+  from the amber "current statement" decoration so the two can
+  coexist without confusion. Mouseleave clears the highlight.
+- The range is computed by walking the hovered node's subtree for
+  the min and max `line` values (`nodeLineRange` in
+  [`web/src/components/ast-view.tsx`](web/src/components/ast-view.tsx)).
+  So hovering a `Function greet` node lights up the whole funct
+  body in the editor; hovering a nested `Number 3` lights up just
+  the line it's on.
+
+### Changed
+- `AstView` accepts an `onNodeHover` callback. `AstNodeView` wires
+  `onMouseEnter` / `onMouseLeave` on the relative-positioned header
+  div so the hover region matches the visible row.
+- `StepPanel` passes the hover callback up via a new `onAstHover`
+  prop. The playground page maintains `editorHoverRange` state and
+  feeds it to the `Editor`'s new `hoverRange` prop.
+- `Editor` registers a second `StateField`
+  (`hoverRangeField`) backed by a `setHoverRange` `StateEffect`.
+  On the prop changing, it dispatches the effect; the field
+  expands the range into one `Decoration.line` per row in the
+  inclusive range. The CSS rule
+  `.cm-rot-hover-range` applies a sky-blue tint with a 2px left
+  rail.
+
+### Notes
+- Two simultaneous decorations now coexist: amber current-statement
+  + sky hover-range. They visually layer correctly because the
+  current-statement border is brighter and the hover tint is more
+  diffuse.
+- Hover-event volume is light: nested nodes don't propagate mouse
+  events through their parents (children own the `onMouseEnter`),
+  so the editor's state field receives one dispatch per move
+  between AST nodes.
+- Type-check clean. No Python changes; 669 tests still passing.
+
 ## v2.26.23 — QoL pack: auto-scroll env, done flourish, click-chip-to-jump
 
 ### Added (three small wins)

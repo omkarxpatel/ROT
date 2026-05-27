@@ -246,6 +246,13 @@ export default function PlaygroundPage() {
     setEditorJumpTo({ line, col, key: jumpCounter.current });
   }, []);
 
+  // Editor's hover-range highlight (sky-blue tint over the line span)
+  // driven by mouse hover on AST nodes in the Step panel.
+  const [editorHoverRange, setEditorHoverRange] = useState<{
+    startLine: number;
+    endLine: number;
+  } | null>(null);
+
   const displayOutput = mode === "animate" ? animateOutput : pipeline.output;
   const displayError = mode === "animate" ? animateError : pipeline.error;
   const displayRunning =
@@ -312,6 +319,7 @@ export default function PlaygroundPage() {
               onChange={setSource}
               highlightLine={highlightLine}
               jumpTo={editorJumpTo}
+              hoverRange={editorHoverRange}
             />
           </div>
         </section>
@@ -343,6 +351,7 @@ export default function PlaygroundPage() {
                 stepIndex={stepIndex}
                 totalSteps={snapshots.length}
                 onJumpToSource={handleJumpToSource}
+                onAstHover={setEditorHoverRange}
               />
             </div>
           )}
