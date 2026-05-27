@@ -1,8 +1,16 @@
-# ROT Playground (web)
+# ROT site
 
-A browser-only playground for the [ROT programming language](https://github.com/omkarxpatel/ROT). Write `.rot` code in the editor, click **Run**, and watch the lex → parse → interpret pipeline run live. Everything executes in your browser via [Pyodide](https://pyodide.org/) — there is no backend.
+The full project site for the [ROT programming language](https://github.com/omkarxpatel/ROT). Three routes:
 
-## Layout
+- **`/`** — landing page: tagline, fizzbuzz example, stats, "what is ROT?", side-by-side ROT/Python, feature highlights, links
+- **`/docs`** — single-page language reference with a sticky TOC
+- **`/playground`** — write `.rot` code in the editor, click **Run**, watch the lex → parse → interpret pipeline run live. Pyodide runs everything in your browser; no backend
+
+Plus a static asset:
+
+- **`/paper/main.pdf`** — the design retrospective paper (copied from `../paper/main.pdf` at build time)
+
+## Playground layout
 
 ```
 +--------------------------------------------------------+
@@ -70,13 +78,18 @@ vercel deploy
 ## Files of interest
 
 ```
-src/app/page.tsx                  # the playground layout
+src/app/page.tsx                  # landing page (server component)
+src/app/docs/page.tsx             # docs page (server component, sticky TOC)
+src/app/playground/page.tsx       # the playground (client component)
 src/lib/pyodide-runtime.ts        # Pyodide loader + Python bridge
 src/lib/examples.ts               # example metadata + fetcher
-src/components/editor.tsx         # CodeMirror wrapper
-src/components/pipeline-panel.tsx # tokens + AST + trace
-src/components/output-panel.tsx   # stdout + error rendering
-scripts/copy-rot.mjs              # build-time copy of ../rot/ -> public/
+src/components/site-header.tsx    # shared sticky nav
+src/components/site-footer.tsx    # shared footer (landing + docs only)
+src/components/code-block.tsx     # custom ROT/Python syntax highlighter
+src/components/editor.tsx         # CodeMirror wrapper (playground)
+src/components/pipeline-panel.tsx # tokens + AST + trace (playground)
+src/components/output-panel.tsx   # stdout + error rendering (playground)
+scripts/copy-rot.mjs              # build-time copy of ../rot/, ../examples/, ../paper/main.pdf
 ```
 
 ## Known limitations

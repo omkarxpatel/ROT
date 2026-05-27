@@ -41,3 +41,4 @@ next-env.d.ts
 # generated at build/dev — copied from ../rot/ and ../examples/
 /public/rot_package/
 /public/rot_examples/
+/public/paper/

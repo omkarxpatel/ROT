@@ -2,6 +2,42 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.15 — expand `web/` into a full project site
+
+### Added
+- **Landing page at `/`** — tagline, fizzbuzz example, stats row
+  (version / LOC / tests / commits), "What is ROT?", side-by-side
+  ROT-vs-Python comparison, 6-card feature highlights grid, footer with
+  links to Try / Read / Code.
+- **Docs page at `/docs`** — single-page language reference with a sticky
+  TOC sidebar (desktop), 17 sections covering syntax, literals, operators,
+  control flow, functions, classes, error handling, imports, f-strings,
+  slicing, the REPL, errors, and reserved words. Includes a 7-category
+  builtins reference table (38 entries) and a reserved-words table.
+- **Playground moved to `/playground`** — same 3-pane MVP, no functional
+  change; the existing toolbar (Examples / Run / runtime status) lives
+  below the shared header.
+- **Shared `SiteHeader`** — sticky top nav (ROT logo + version pill, Docs
+  / Playground / Paper / GitHub).
+- **Shared `SiteFooter`** — three columns (Try / Read / Code) + credit.
+  Used on landing + docs, not on the playground (full-bleed).
+- **`CodeBlock` component** — custom ~420-line regex tokenizer with
+  ROT and Python keyword/builtin tables, f-string-aware. No external
+  highlighter library.
+- **Paper PDF at `/paper/main.pdf`** — `scripts/copy-rot.mjs` extended
+  to copy `../paper/main.pdf` into `public/paper/`.
+
+### Build
+- `npm run build` passes with 4 prerendered static routes:
+  - `/` and `/docs` at 164 B + 106 KB shared
+  - `/playground` at 211 KB / 317 KB First Load JS (unchanged)
+  - `/paper/main.pdf` as a 303 KB static asset
+- All routes are SSG-friendly. Playground is the only client island.
+
+### Changed
+- `web/README.md` updated to describe the four routes (landing / docs /
+  playground / paper).
+
 ## v2.25.14 — web playground (Next.js + Pyodide)
 
 ### Added

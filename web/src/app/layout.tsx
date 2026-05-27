@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ROT Playground",
+  title: "ROT — a hand-rolled programming language",
   description:
-    "Write .rot code in your browser and watch the lex / parse / interpret pipeline run live.",
+    "A C++/Python-flavored programming language built from scratch in Python. Tree-walking interpreter with rustc-style errors, written as a learning project and portfolio piece.",
 };
 
 export default function RootLayout({
