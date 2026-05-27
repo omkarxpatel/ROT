@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.18.1 — block `_`-prefixed member access on Python passthrough
+
+### Fixed
+- **I47**: `"abc".__class__`, `[1].__len__`, `"a".__init__`, etc. used to leak Python internals via the `MemberAccess` getattr fallback in `_evaluate`. Any rot program could pivot from a string or list to Python's class hierarchy, `__bases__`, `__globals__`, etc. The `MemberAccess` evaluation now rejects any member name starting with `_` (covers dunder and private convention) before attempting `getattr`. Errors use `_builtin_type` so users see rot-style type names (`string`, `list`) in the message, not Python's `str`/`list`. Public methods (`.upper()`, `.sort()`, `.count()`, `.keys()`, etc.) still work unchanged. Tests: `test_dunder_class_on_string_raises_interpreter_error`, `test_dunder_len_on_list_raises_interpreter_error`, `test_dunder_init_on_string_raises_interpreter_error`, `test_dunder_member_uses_rot_type_name_in_error`, `test_legitimate_string_method_still_works`, `test_legitimate_list_method_still_works`, `test_legitimate_dict_method_still_works`, `test_single_underscore_private_also_blocked`.
+
 ## v2.17.5 — missing dict key says "key 'k' not found in dict"
 
 ### Fixed

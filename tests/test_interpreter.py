@@ -2036,3 +2036,67 @@ def test_all_file_open_sites_use_explicit_utf8():
         "All open()/read_text()/write_text() in rot/* must use "
         "encoding=\"utf-8\":\n" + "\n".join(bad)
     )
+
+
+# ==== v2.18.1: dunder/private member access blocked (I47) ====================
+
+def test_dunder_class_on_string_raises_interpreter_error():
+    # I47: `"abc".__class__` used to return `<class 'str'>` — a Python
+    # internal leaking through the member-access getattr fallback.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln("abc".__class__)')
+    msg = str(exc_info.value)
+    assert "__class__" in msg
+    assert "no member" in msg
+
+
+def test_dunder_len_on_list_raises_interpreter_error():
+    # I47: `[1].__len__` used to return a Python method-wrapper repr.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("coutln([1 | 2].__len__)")
+    msg = str(exc_info.value)
+    assert "__len__" in msg
+
+
+def test_dunder_init_on_string_raises_interpreter_error():
+    # I47: `"a".__init__` was a Python wrapper, exposing constructors.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln("a".__init__)')
+    assert "__init__" in str(exc_info.value)
+
+
+def test_dunder_member_uses_rot_type_name_in_error():
+    # The error should report a rot-style type name (`string`), not Python's
+    # `str`.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln("abc".__class__)')
+    msg = str(exc_info.value)
+    assert "string" in msg
+    # And no Python-internal name leaks.
+    assert "<class" not in msg
+
+
+def test_legitimate_string_method_still_works():
+    # Regression: blocking `_`-prefixed names must not touch public methods.
+    assert _run('coutln("abc".upper())') == "ABC\n"
+
+
+def test_legitimate_list_method_still_works():
+    # Regression: `.count` is a public list method (no underscore).
+    assert _run("coutln([1 | 2 | 1].count(1))") == "2\n"
+
+
+def test_legitimate_dict_method_still_works():
+    # Regression: `.keys()` still works.
+    src = (
+        'd = {"a": 1 | "b": 2}\n'
+        'coutln(len(d.keys()))'
+    )
+    assert _run(src) == "2\n"
+
+
+def test_single_underscore_private_also_blocked():
+    # Defence in depth: not just dunder — any `_`-prefixed name is rejected.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln("abc"._private)')
+    assert "_private" in str(exc_info.value)

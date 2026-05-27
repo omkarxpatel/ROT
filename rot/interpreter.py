@@ -47,7 +47,7 @@ class _ThrowSignal(BaseException):
         self.value = value
 
 
-from .builtins import _stringify
+from .builtins import _stringify, _builtin_type
 
 
 def _plus(a: Any, b: Any) -> Any:
@@ -625,6 +625,16 @@ class Interpreter:
             # falls back to Python's getattr (strings, lists, dicts, etc.).
             if isinstance(target, RotInstance):
                 return target.get_member(expr.member)
+            # I47: filter `_`-prefixed names (dunder + private) from the
+            # Python-getattr fallback. Without this, `"abc".__class__`,
+            # `[1].__len__`, `"a".__init__`, etc. expose Python internals
+            # — a sandbox-escape footgun and an info leak. Reject any
+            # member name starting with `_` before touching getattr.
+            if expr.member.startswith("_"):
+                type_name = _builtin_type(target)
+                raise InterpreterError(
+                    f"no member {expr.member!r} on {type_name}"
+                )
             try:
                 return getattr(target, expr.member)
             except AttributeError:
