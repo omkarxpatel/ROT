@@ -67,8 +67,14 @@ def start_repl() -> None:
             _execute_with_echo(interp, program)
         except RotError as err:
             print(f"rot error: {err}", file=sys.stderr)
-        except BaseException as err:
-            # _ThrowSignal / _ReturnSignal can escape if used at top level.
+        except Exception as err:
+            # Catch only `Exception`, NOT `BaseException` — KeyboardInterrupt
+            # and SystemExit are BaseException subclasses and must propagate
+            # so the user can ctrl-C out of a runaway program. The internal
+            # _ThrowSignal / _ReturnSignal / _BreakSignal / _ContinueSignal
+            # types are BaseException subclasses too, but v2.15.x wrapped
+            # them into RotError at every escape point, so they shouldn't
+            # reach this handler anymore.
             print(f"rot error: {err}", file=sys.stderr)
 
 

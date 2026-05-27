@@ -123,3 +123,57 @@ def test_repl_comment_with_brace_does_not_hang(monkeypatch, capsys):
     ])
     out, _ = capsys.readouterr()
     assert "alive" in out
+
+
+# --- C14: KeyboardInterrupt must propagate, not be swallowed ---
+
+def test_repl_keyboard_interrupt_during_execute_propagates(monkeypatch):
+    # If user code (or a builtin) raises KeyboardInterrupt while executing,
+    # the REPL's exception handler must NOT swallow it — otherwise the user
+    # can never ctrl-C out of a runaway loop. Simulate by patching
+    # `_execute_with_echo` to raise KeyboardInterrupt on the first call.
+    raised = {"done": False}
+
+    def fake_execute(interp, program):
+        if not raised["done"]:
+            raised["done"] = True
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr("rot.repl._execute_with_echo", fake_execute)
+
+    # input() returns once with a benign expression; on the second call
+    # (after the KeyboardInterrupt would have killed the REPL) it'd raise
+    # EOFError, but we should never get there.
+    inputs = iter(["1 + 1"])
+
+    def mock_input(prompt=""):
+        try:
+            return next(inputs)
+        except StopIteration:
+            raise EOFError
+
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    with pytest.raises(KeyboardInterrupt):
+        start_repl()
+
+
+def test_repl_system_exit_during_execute_propagates(monkeypatch):
+    # SystemExit is also BaseException; should not be swallowed either.
+    def fake_execute(interp, program):
+        raise SystemExit(0)
+
+    monkeypatch.setattr("rot.repl._execute_with_echo", fake_execute)
+
+    inputs = iter(["1 + 1"])
+
+    def mock_input(prompt=""):
+        try:
+            return next(inputs)
+        except StopIteration:
+            raise EOFError
+
+    monkeypatch.setattr("builtins.input", mock_input)
+    from rot.repl import start_repl
+    with pytest.raises(SystemExit):
+        start_repl()

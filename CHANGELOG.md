@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.19.3 — REPL no longer swallows KeyboardInterrupt during execute
+
+### Fixed
+- **C14**: the REPL's outer execute handler was `except BaseException` — which caught `KeyboardInterrupt` and `SystemExit` as if they were ordinary errors. A user running a runaway loop in the REPL had no way to ctrl-C out: the interrupt was caught, printed as `rot error:`, and the REPL kept running. Narrowed the handler to `except Exception`, so `KeyboardInterrupt` and `SystemExit` (both `BaseException` but not `Exception`) now propagate normally. The control-flow signals (`_ReturnSignal`, `_BreakSignal`, `_ContinueSignal`, `_ThrowSignal`) are also `BaseException` subclasses, but v2.15.x already wraps them into `RotError` at every escape point, so they never reach this handler. Tests: `test_repl_keyboard_interrupt_during_execute_propagates`, `test_repl_system_exit_during_execute_propagates`.
+
 ## v2.19.2 — REPL `//` comments no longer confuse the brace counter
 
 ### Fixed
