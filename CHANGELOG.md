@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.4 — range step must be an integer, says so
+
+### Fixed
+- **B27**: `range(0 | 3 | 0.5)` used to say "step argument must not be zero" because `int(0.5) == 0` happened silently before the zero check. Now the float step is rejected first with "step argument must be an integer, got float". Zero ints still report "must not be zero".
+
 ## v2.14.3 — pop reports "out of range" when index, not the list, is the problem
 
 ### Fixed

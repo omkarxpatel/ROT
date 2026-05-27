@@ -1238,3 +1238,22 @@ def test_pop_empty_still_says_empty():
     with pytest.raises(InterpreterError) as exc_info:
         _run("pop([])")
     assert "empty" in str(exc_info.value)
+
+
+# ==== v2.14.4: range with float step says "integer", not "zero" =============
+
+def test_range_float_step_says_integer():
+    # B27: range(0 | 3 | 0.5) used to say "step must not be zero" because
+    # int(0.5) == 0. The real problem is the float step — say so.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("for i in range(0 | 3 | 0.5) { coutln(i) }")
+    msg = str(exc_info.value)
+    assert "integer" in msg
+    assert "zero" not in msg
+
+
+def test_range_zero_step_still_says_zero():
+    # Make sure an honest zero step still gets the "must not be zero" message.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("for i in range(0 | 3 | 0) { coutln(i) }")
+    assert "zero" in str(exc_info.value)

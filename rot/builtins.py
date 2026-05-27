@@ -72,7 +72,16 @@ def _builtin_range(*args: Any) -> list:
     if len(args) == 2:
         return list(range(int(args[0]), int(args[1])))
     if len(args) == 3:
-        step = int(args[2])
+        # Validate step BEFORE int-coercion so a float step (e.g. 0.5)
+        # is rejected with a clear message — previously int(0.5) == 0
+        # silently triggered the "must not be zero" branch.
+        raw_step = args[2]
+        if not isinstance(raw_step, int):
+            raise InterpreterError(
+                f"range: step argument must be an integer, got "
+                f"{type(raw_step).__name__}"
+            )
+        step = int(raw_step)
         if step == 0:
             raise InterpreterError("range: step argument must not be zero")
         return list(range(int(args[0]), int(args[1]), step))
