@@ -2318,3 +2318,58 @@ def test_user_class_named_list_does_not_collide_with_primitive_list():
         'coutln(type(list()))'
     )
     assert _run(src) == "<list>\n"
+
+
+# ==== v2.21.1: _stringify renders lists in rot style (B1) =====================
+
+def test_stringify_empty_list_renders_as_brackets():
+    # B1: empty list used to render as `[]` (matches Python; happens to be the
+    # rot form too — keep as regression).
+    from rot.builtins import _stringify
+    assert _stringify([]) == "[]"
+
+
+def test_stringify_list_uses_pipe_separator():
+    # B1: a list used to render via Python str() → `[1, 2, 3]`. Now uses rot's
+    # `|` separator: `[1 | 2 | 3]`.
+    from rot.builtins import _stringify
+    assert _stringify([1, 2, 3]) == "[1 | 2 | 3]"
+
+
+def test_stringify_list_with_rot_scalars():
+    # B1: list elements used to render Python-style — `True`, `False`, `None`.
+    # Now recurse through `_stringify` so booleans/null render in rot style.
+    from rot.builtins import _stringify
+    assert _stringify([1, None, True, False]) == "[1 | null | true | false]"
+
+
+def test_stringify_nested_lists():
+    # B1: nested lists also use rot style at every depth.
+    from rot.builtins import _stringify
+    assert _stringify([[1, 2], [3, 4]]) == "[[1 | 2] | [3 | 4]]"
+
+
+def test_coutln_list_uses_pipe_separator():
+    # B1: `coutln([1 | 2 | 3])` used to print `[1, 2, 3]`. Now prints rot-style.
+    assert _run('coutln([1 | 2 | 3])') == "[1 | 2 | 3]\n"
+
+
+def test_coutln_list_with_bool_and_null():
+    # B1: list elements render in rot style — `true`/`false`/`null`.
+    assert _run('coutln([1 | true | null])') == "[1 | true | null]\n"
+
+
+def test_coutln_nested_list():
+    # B1: nesting renders rot-style at every level.
+    assert _run('coutln([[1 | 2] | [3 | 4]])') == "[[1 | 2] | [3 | 4]]\n"
+
+
+def test_str_of_list_uses_pipe_separator():
+    # B1: `str([...])` also uses rot style now.
+    assert _run('coutln(str([1 | 2 | 3]))') == "[1 | 2 | 3]\n"
+
+
+def test_fstring_list_uses_pipe_separator():
+    # I39: f-string interpolation goes through `_stringify`, so lists also
+    # render rot-style inside f-strings.
+    assert _run('xs = [1 | 2]\ncoutln(f"got {xs}")') == "got [1 | 2]\n"

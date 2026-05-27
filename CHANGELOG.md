@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.21.1 — `_stringify` renders lists in rot style
+
+### Fixed
+- **B1 (lists)**: `coutln([1 | 2 | true | null])` used to print `[1, 2, True, None]` — Python's `str(list)` was leaking through `_stringify`. `_stringify` now recurses into lists, joining elements with rot's `|` separator and using rot-style scalars (`null`, `true`, `false`) at every depth. Affects `cout`/`coutln`, `str()`, f-string interpolation, `assert` failure messages, and any other path through `_stringify`. Tests: `test_stringify_empty_list_renders_as_brackets`, `test_stringify_list_uses_pipe_separator`, `test_stringify_list_with_rot_scalars`, `test_stringify_nested_lists`, `test_coutln_list_uses_pipe_separator`, `test_coutln_list_with_bool_and_null`, `test_coutln_nested_list`, `test_str_of_list_uses_pipe_separator`, `test_fstring_list_uses_pipe_separator`.
+
 ## v2.20.10 — Lexer: hint at `\\` when a trailing `\` consumes the closing quote
 
 ### Fixed

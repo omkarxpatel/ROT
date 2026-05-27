@@ -45,11 +45,17 @@ def _arity(name: str, args: tuple, expected: Any) -> None:
 def _stringify(x: Any) -> str:
     """rot-style string conversion: `null` instead of `None`,
     `true`/`false` instead of `True`/`False`. Used by `str()` and by
-    interpreter's cout/coutln to keep output consistent with source."""
+    interpreter's cout/coutln to keep output consistent with source.
+
+    Lists render with rot's `|` separator (`[a | b | c]`) and recurse so
+    nested elements use rot style too.
+    """
     if x is None:
         return "null"
     if isinstance(x, bool):
         return "true" if x else "false"
+    if isinstance(x, list):
+        return "[" + " | ".join(_stringify(item) for item in x) + "]"
     return str(x)
 
 
