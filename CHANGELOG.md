@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.10 — Lexer: hint at `\\` when a trailing `\` consumes the closing quote
+
+### Fixed
+- **L8**: `"abc\"` (user wanted a literal trailing backslash) used to error with the bare `unterminated string literal` — confusing, because the user had clearly written a closing quote. The backslash was escaping the `"`, leaving the string unterminated. `_scan_string_literal` now tracks whether the last consumed character was part of a backslash-escape pair; if so, the error message appends ` (did you mean '\\\\'?)` to suggest using a doubled backslash. Tests: `test_trailing_backslash_escapes_closing_quote_gives_hint`, `test_lone_trailing_backslash_no_close_quote_gives_hint`, `test_unterminated_string_without_backslash_has_no_hint` (regression — plain unterminated strings still get the bare message), `test_well_formed_string_with_escaped_quote_still_works` (regression — `"a\"b"` still lexes correctly).
+
 ## v2.20.9 — `keywords.py` docstring matches actual identifier rule
 
 ### Fixed

@@ -257,16 +257,34 @@ class Lexer:
     def _scan_string_literal(self, line: int, col: int) -> None:
         start = self.pos
         self._advance()  # opening "
+        # Track whether we just consumed a `\?` escape pair so we can give a
+        # better diagnostic in the unterminated-string branch (L8). If the
+        # last action was a backslash-escape that consumed what would have
+        # been the closing `"`, the user almost certainly wanted a literal
+        # trailing backslash.
+        last_was_backslash_escape = False
         while not self._at_end() and self._peek() != '"':
             # Backslash escapes: consume `\` plus the next char as a unit
             # so `\"` doesn't terminate the string.
             if self._peek() == "\\":
                 self._advance()  # consume backslash
                 if self._at_end():
+                    last_was_backslash_escape = True
                     break
-            self._advance()  # consume next char (escaped or not)
+                self._advance()  # consume next char (escaped or not)
+                last_was_backslash_escape = True
+                continue
+            self._advance()  # consume next char
+            last_was_backslash_escape = False
         if self._at_end():
-            raise LexerError("unterminated string literal", line, col)
+            # L8: a trailing `\` that ate the closing quote (or sits at EOF
+            # with no closing quote) produces a confusing "unterminated
+            # string" error — the user thinks they closed the string. Append
+            # a hint when the failure is likely caused by the escape.
+            msg = "unterminated string literal"
+            if last_was_backslash_escape:
+                msg += " (did you mean '\\\\'?)"
+            raise LexerError(msg, line, col)
         self._advance()  # closing "
         self._add(self.source[start : self.pos], "STRING_LIT", line, col)
 

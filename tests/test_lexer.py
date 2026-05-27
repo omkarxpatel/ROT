@@ -420,3 +420,42 @@ def test_mixed_case_identifier_is_classified_as_ident():
     tokens = Lexer().tokenize("If")
     assert tokens[0].kind == "IDENT"
     assert tokens[0].lexeme == "If"
+
+
+# v2.20.10 — L8: trailing `\` in a string ate the closing quote — hint at `\\`.
+def test_trailing_backslash_escapes_closing_quote_gives_hint():
+    # `"abc\"` was intended as "abc\" (string containing literal backslash)
+    # but `\` escapes the `"`, leaving the string unterminated. Hint should
+    # appear in the error message.
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize('"abc\\"')
+    msg = str(exc_info.value)
+    assert "unterminated string literal" in msg
+    assert "\\\\" in msg  # the message includes the suggested `\\`
+
+
+def test_lone_trailing_backslash_no_close_quote_gives_hint():
+    # `"abc\` ends abruptly with a backslash — also signals "you probably
+    # meant a literal backslash".
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize('"abc\\')
+    msg = str(exc_info.value)
+    assert "unterminated string literal" in msg
+    assert "\\\\" in msg
+
+
+def test_unterminated_string_without_backslash_has_no_hint():
+    # Plain unterminated string (no backslash anywhere near EOF) should NOT
+    # get the hint — it's not a backslash-escape problem.
+    with pytest.raises(LexerError) as exc_info:
+        Lexer().tokenize('"abc')
+    msg = str(exc_info.value)
+    assert "unterminated string literal" in msg
+    assert "did you mean" not in msg
+
+
+def test_well_formed_string_with_escaped_quote_still_works():
+    # Regression: `"a\"b"` is a legit string of 3 chars; must not error.
+    tokens = Lexer().tokenize(r'"a\"b"')
+    assert tokens[0].kind == "STRING_LIT"
+    assert tokens[0].lexeme == r'"a\"b"'
