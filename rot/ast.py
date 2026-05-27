@@ -251,6 +251,9 @@ class TryCatch:
     try_block: Block
     catch_var: str
     catch_block: Block
+    # v2.25.5: optional finally clause. Runs after try/catch regardless of
+    # whether the catch fired, including on return, break, continue, throw.
+    finally_block: "Block | None" = None
     line: int = 0
     col: int = 0
 

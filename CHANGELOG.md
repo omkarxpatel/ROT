@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.5 — language: `try { ... } catch (e) { ... } finally { ... }` (I43)
+
+### Added
+- Optional `finally` block after `try`/`catch`. Runs unconditionally — on the success path, after a caught throw, after a caught Python-derived error (e.g. `1/0`), after a `return` from inside `try` or `catch`, after a `throw` inside the catch (the rethrow propagates AFTER finally runs), and after `break`/`continue` inside a loop's try. Implementation: in the interpreter's `TryCatch` branch, the existing try/catch is wrapped in an outer try/finally so BaseException-derived control signals (_ReturnSignal, _BreakSignal, _ContinueSignal, _ThrowSignal) propagate after finally runs but aren't swallowed. A new `finally` keyword in `rot/keywords.py`, an optional `finally_block: Block | None` field on `ast.TryCatch`, and the parser consumes the optional clause after the catch block. 9 new tests covering all the propagation paths.
+
 ## v2.25.4 — parser: `else if` two-word form (P6)
 
 ### Added

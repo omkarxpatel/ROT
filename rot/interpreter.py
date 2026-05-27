@@ -558,15 +558,29 @@ class Interpreter:
             self._import_file(stmt.path)
             return
         if isinstance(stmt, ast.TryCatch):
+            # v2.25.5: optional `finally` clause runs unconditionally —
+            # on success, on caught exception, on `return`/`break`/
+            # `continue` signals passing through, and on a `throw` from
+            # inside the catch block. We wrap the existing try/catch in
+            # an outer try/finally so the BaseException-derived control
+            # signals propagate (Python's `finally` runs even when a
+            # BaseException is unwinding the stack, but doesn't swallow
+            # it). A new exception or signal raised inside the finally
+            # block REPLACES whatever was propagating (matches Python
+            # semantics); that's the standard footgun and intentional.
             try:
-                self._execute_block(stmt.try_block)
-            except _ThrowSignal as signal:
-                self._execute_catch(stmt, signal.value)
-            except Exception as e:
-                # Captures InterpreterError, ZeroDivisionError, KeyError, etc.
-                # Control-flow signals (_Return / _Break / _Continue / _Throw)
-                # subclass BaseException, so they aren't caught here.
-                self._execute_catch(stmt, str(e))
+                try:
+                    self._execute_block(stmt.try_block)
+                except _ThrowSignal as signal:
+                    self._execute_catch(stmt, signal.value)
+                except Exception as e:
+                    # Captures InterpreterError, ZeroDivisionError, KeyError, etc.
+                    # Control-flow signals (_Return / _Break / _Continue / _Throw)
+                    # subclass BaseException, so they aren't caught here.
+                    self._execute_catch(stmt, str(e))
+            finally:
+                if stmt.finally_block is not None:
+                    self._execute_block(stmt.finally_block)
             return
         if isinstance(stmt, ast.IndexAssign):
             target = self._evaluate(stmt.target)

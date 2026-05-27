@@ -42,6 +42,7 @@ KEYWORDS: dict[str, str] = {
     "this":     "THIS",
     "try":      "TRY",
     "catch":    "CATCH",
+    "finally":  "FINALLY",
     "throw":    "THROW",
     "import":   "IMPORT",
     "let":      "LET",

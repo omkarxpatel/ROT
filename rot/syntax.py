@@ -137,6 +137,7 @@ _TOKEN_DISPLAY: dict[str, str] = {
     "THIS":          "'this'",
     "TRY":           "'try'",
     "CATCH":         "'catch'",
+    "FINALLY":       "'finally'",
     "THROW":         "'throw'",
     "IMPORT":        "'import'",
     "LET":           "'let'",
@@ -292,8 +293,14 @@ class Parser:
         catch_var = self._consume("IDENT").lexeme
         self._consume("R_PAREN")
         catch_block = self._parse_block()
+        # v2.25.5: optional `finally` clause.
+        finally_block: "ast.Block | None" = None
+        if self._check("FINALLY"):
+            self._advance()
+            finally_block = self._parse_block()
         return ast.TryCatch(
             try_block=try_block, catch_var=catch_var, catch_block=catch_block,
+            finally_block=finally_block,
             line=try_tok.line, col=try_tok.col,
         )
 

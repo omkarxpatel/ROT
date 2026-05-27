@@ -587,6 +587,162 @@ def test_throw_in_function_caught_by_caller():
     assert _run(src) == "from inside\n"
 
 
+# ---- v2.25.5: try/catch/finally ----
+
+def test_finally_runs_on_non_error_path():
+    src = (
+        'try {\n'
+        '    coutln("try")\n'
+        '} catch (e) {\n'
+        '    coutln("catch")\n'
+        '} finally {\n'
+        '    coutln("finally")\n'
+        '}'
+    )
+    assert _run(src) == "try\nfinally\n"
+
+
+def test_finally_runs_after_caught_throw():
+    src = (
+        'try {\n'
+        '    throw "oops"\n'
+        '} catch (e) {\n'
+        '    coutln("caught: " + e)\n'
+        '} finally {\n'
+        '    coutln("finally ran")\n'
+        '}'
+    )
+    assert _run(src) == "caught: oops\nfinally ran\n"
+
+
+def test_finally_runs_after_caught_python_error():
+    # Captures InterpreterError-derived (e.g. zero-division).
+    src = (
+        'try {\n'
+        '    x = 1 / 0\n'
+        '} catch (e) {\n'
+        '    coutln("ok")\n'
+        '} finally {\n'
+        '    coutln("done")\n'
+        '}'
+    )
+    assert _run(src) == "ok\ndone\n"
+
+
+def test_finally_runs_after_return_in_try():
+    # `return` is a control-flow signal (BaseException). The finally
+    # block must run before the signal propagates out of the function.
+    src = (
+        'funct f() {\n'
+        '    try {\n'
+        '        return 1\n'
+        '    } catch (e) {\n'
+        '        coutln("catch")\n'
+        '    } finally {\n'
+        '        coutln("finally")\n'
+        '    }\n'
+        '}\n'
+        'coutln(f())'
+    )
+    assert _run(src) == "finally\n1\n"
+
+
+def test_finally_runs_after_return_in_catch():
+    src = (
+        'funct f() {\n'
+        '    try {\n'
+        '        throw "boom"\n'
+        '    } catch (e) {\n'
+        '        return "caught"\n'
+        '    } finally {\n'
+        '        coutln("finally")\n'
+        '    }\n'
+        '}\n'
+        'coutln(f())'
+    )
+    assert _run(src) == "finally\ncaught\n"
+
+
+def test_finally_runs_on_uncaught_rethrow_from_catch():
+    # A throw from inside the catch block is uncaught by the current
+    # try/catch — but the finally block must still run before the throw
+    # propagates.
+    src = (
+        'try {\n'
+        '    try {\n'
+        '        throw "first"\n'
+        '    } catch (e) {\n'
+        '        throw "second"\n'
+        '    } finally {\n'
+        '        coutln("inner finally")\n'
+        '    }\n'
+        '} catch (outer) {\n'
+        '    coutln("outer caught: " + outer)\n'
+        '}'
+    )
+    assert _run(src) == "inner finally\nouter caught: second\n"
+
+
+def test_finally_runs_on_break_in_loop():
+    # `break` is a control-flow signal. finally must run before it
+    # propagates to the enclosing loop.
+    src = (
+        'i = 0\n'
+        'while (i < 3) {\n'
+        '    try {\n'
+        '        if (i == 1) { break }\n'
+        '        coutln("try " + str(i))\n'
+        '    } catch (e) {\n'
+        '        coutln("catch")\n'
+        '    } finally {\n'
+        '        coutln("finally " + str(i))\n'
+        '    }\n'
+        '    i = i + 1\n'
+        '}\n'
+        'coutln("done")'
+    )
+    assert _run(src) == (
+        "try 0\n"
+        "finally 0\n"
+        "finally 1\n"
+        "done\n"
+    )
+
+
+def test_finally_runs_on_continue_in_loop():
+    src = (
+        'for x in [1 | 2 | 3] {\n'
+        '    try {\n'
+        '        if (x == 2) { continue }\n'
+        '        coutln("try " + str(x))\n'
+        '    } catch (e) {\n'
+        '        coutln("catch")\n'
+        '    } finally {\n'
+        '        coutln("finally " + str(x))\n'
+        '    }\n'
+        '}'
+    )
+    assert _run(src) == (
+        "try 1\n"
+        "finally 1\n"
+        "finally 2\n"
+        "try 3\n"
+        "finally 3\n"
+    )
+
+
+def test_finally_block_can_be_omitted():
+    # Backwards compat: try/catch without finally still works as before.
+    src = (
+        'try {\n'
+        '    throw "x"\n'
+        '} catch (e) {\n'
+        '    coutln("caught")\n'
+        '}'
+    )
+    assert _run(src) == "caught\n"
+
+
 def test_math_builtins():
     assert _run("coutln(abs(-5))") == "5\n"
     assert _run("coutln(min(3 | 1 | 2))") == "1\n"
