@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.24.6 — test backfill: collection equality (T68-T70)
+
+### Added
+- 5 tests appended to `tests/test_interpreter.py`. List `==` is element-wise (Python-default): same elements true, same length but different element false, different length false, empty-vs-empty true. Recursion into nested lists is verified. Dict `==` is key-value based regardless of insertion order. Instance `==` is identity-based: two freshly constructed instances of the same class with identical fields are NOT equal (a separate identity test pins this), while an instance always equals itself; `!=` is the consistent logical complement.
+
 ## v2.24.5 — test backfill: closure / recursion (T55-T57, T70)
 
 ### Added

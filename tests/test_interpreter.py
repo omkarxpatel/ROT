@@ -3084,3 +3084,69 @@ def test_closures_capturing_loop_var_observe_final_value():
     )
     # All three closures see the final `i = 3`.
     assert _run(src) == "3\n3\n3\n"
+
+
+# --- v2.24.6: T68-T70 — collection equality ---
+
+
+def test_list_equality_is_elementwise():
+    # `==` on two lists with the same elements returns true. Same length
+    # but a different element returns false. Different length is also
+    # false. Inherited from Python's list `==`.
+    src = (
+        'coutln([1 | 2] == [1 | 2])\n'
+        'coutln([1 | 2] == [1 | 3])\n'
+        'coutln([1 | 2] == [1 | 2 | 3])\n'
+        'coutln([] == [])\n'
+    )
+    assert _run(src) == "true\nfalse\nfalse\ntrue\n"
+
+
+def test_list_equality_with_nested_lists():
+    # Equality recurses into nested structures.
+    src = (
+        'coutln([[1 | 2] | [3]] == [[1 | 2] | [3]])\n'
+        'coutln([[1 | 2] | [3]] == [[1 | 2] | [4]])\n'
+    )
+    assert _run(src) == "true\nfalse\n"
+
+
+def test_dict_equality_is_key_value():
+    # Two dicts compare equal when they have the same keys mapping to the
+    # same values, regardless of insertion order.
+    src = (
+        'coutln({"a": 1} == {"a": 1})\n'
+        'coutln({"a": 1} == {"a": 2})\n'
+        'coutln({"a": 1} == {"b": 1})\n'
+        'coutln({} == {})\n'
+    )
+    assert _run(src) == "true\nfalse\nfalse\ntrue\n"
+
+
+def test_instance_equality_is_identity_based():
+    # User class instances inherit Python's default `==` (identity). Two
+    # freshly constructed instances of the same class never compare equal,
+    # even with identical field values; an instance always compares equal
+    # to itself.
+    src = (
+        'class C {\n'
+        '    init() { this.v = 1 }\n'
+        '}\n'
+        'a = C()\n'
+        'b = C()\n'
+        'coutln(a == b)\n'   # false — different objects
+        'coutln(a == a)\n'   # true — identity
+    )
+    assert _run(src) == "false\ntrue\n"
+
+
+def test_instance_inequality_is_consistent_with_equality():
+    # `!=` is the logical complement of `==` for instances.
+    src = (
+        'class C { init() {} }\n'
+        'a = C()\n'
+        'b = C()\n'
+        'coutln(a != b)\n'   # true
+        'coutln(a != a)\n'   # false
+    )
+    assert _run(src) == "true\nfalse\n"
