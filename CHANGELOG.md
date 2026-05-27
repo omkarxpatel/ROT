@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.14.12 — regression test pins UTF-8 on every file-open site
+
+### Fixed
+- **C18, C19**: every `open()` / `read_text()` / `write_text()` in `rot/*` was already updated to use `encoding="utf-8"` by v2.14.6, v2.14.9, and v2.14.11. This release adds a regression test (`test_all_file_open_sites_use_explicit_utf8`) that scans the package and fails if a future change reintroduces a locale-dependent open. No code change here — the test is the deliverable.
+
 ## v2.14.11 — _import_file wraps OSError on the imported file
 
 ### Fixed

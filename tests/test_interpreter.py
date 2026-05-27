@@ -1500,3 +1500,48 @@ def test_import_directory_does_not_leak_traceback(tmp_path):
     msg = str(exc_info.value)
     # Either "directory" or some IO-style message — just not a Python crash.
     assert "Traceback" not in msg
+
+
+# ==== v2.14.12: every file-open path uses explicit UTF-8 ====================
+
+def test_all_file_open_sites_use_explicit_utf8():
+    """Regression test: every open()/read_text()/write_text() in rot/* must
+    pass `encoding="utf-8"`. Without this, behavior varies by platform
+    locale and files round-trip differently on Windows than on macOS/Linux.
+    """
+    import pathlib
+    import re
+
+    rot_dir = pathlib.Path(__file__).parent.parent / "rot"
+    # Patterns that open files for read/write text.
+    # We accept any call that explicitly mentions utf-8 or utf_8 in its args.
+    bad: list[str] = []
+    for py in rot_dir.glob("*.py"):
+        text = py.read_text(encoding="utf-8")
+        # Search for `open(...)` and `read_text(...)` / `write_text(...)`
+        # calls, then check each one for an encoding= argument.
+        for match in re.finditer(r"\b(open|read_text|write_text)\s*\(", text):
+            start = match.end() - 1  # opening paren
+            # Find the matching close paren (simple depth counter, naive but
+            # sufficient for this codebase).
+            depth = 0
+            i = start
+            while i < len(text):
+                if text[i] == "(":
+                    depth += 1
+                elif text[i] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            call = text[start:i + 1]
+            # Heuristic: binary mode opens are fine without text-encoding.
+            if "'rb'" in call or '"rb"' in call or "'wb'" in call or '"wb"' in call:
+                continue
+            if "encoding" not in call:
+                line_no = text[:match.start()].count("\n") + 1
+                bad.append(f"{py.name}:{line_no}: {call!r}")
+    assert not bad, (
+        "All open()/read_text()/write_text() in rot/* must use "
+        "encoding=\"utf-8\":\n" + "\n".join(bad)
+    )
