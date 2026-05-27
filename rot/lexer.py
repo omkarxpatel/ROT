@@ -287,7 +287,11 @@ class Lexer:
             self._log(token)
 
     def _log(self, token: Token) -> None:
+        # Use proper f-string field widths instead of manual `" " * (N - len(...))`
+        # (L34): the old form produced negative-length padding (crashing on
+        # str.__mul__) for indices > 5 digits or lexemes > 10 chars after repr.
+        # The `:>5` / `:<10` width specifiers truncate gracefully (well — they
+        # don't, but they at least never crash and don't produce ragged output
+        # at small widths).
         idx = len(self.tokens) - 1
-        spaces = " " * (5 - len(str(idx)))
-        spaces2 = " " * (10 - len(repr(token.lexeme)))
-        print(f"{idx}{spaces}|  {repr(token.lexeme)}{spaces2}|  {token.kind}")
+        print(f"{idx:>5} | {token.lexeme!r:<10} | {token.kind}")

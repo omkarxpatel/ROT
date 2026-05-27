@@ -348,3 +348,29 @@ def test_unknown_character_without_hint_still_errors():
     msg = str(exc_info.value)
     assert "unexpected character" in msg
     assert "'@'" in msg
+
+
+# v2.20.7 — L34: trace mode shouldn't crash on long lexemes or large indices.
+def test_trace_mode_does_not_crash(capsys):
+    # The old `" " * (5 - len(str(idx)))` form would crash with a negative
+    # repetition count once token count exceeded 99999. We can't easily
+    # construct that many tokens in a unit test, but we can at least verify
+    # the basic case works and the format is the expected one.
+    Lexer(trace=True).tokenize("x = 1\n")
+    captured = capsys.readouterr().out
+    # Format: "{idx:>5} | {lexeme!r:<10} | {kind}"
+    assert "|" in captured
+    # First token is `x`, index 0.
+    assert "    0 | 'x'" in captured
+
+
+def test_trace_mode_handles_long_lexeme_without_crashing(capsys):
+    # A lexeme that produces a repr longer than the old 10-char field width
+    # used to produce negative padding and crash on `" " * negative`.
+    long_ident = "a" * 50
+    Lexer(trace=True).tokenize(long_ident)
+    captured = capsys.readouterr().out
+    # The new f-string `:<10` width truncates gracefully (well, it doesn't
+    # truncate — Python field widths are min-width, not max — but it doesn't
+    # crash).
+    assert long_ident in captured

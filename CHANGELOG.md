@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.20.7 — Lexer: trace `_log` uses f-string field widths
+
+### Fixed
+- **L34**: `_log` built padding as `" " * (5 - len(str(idx)))` and `" " * (10 - len(repr(token.lexeme)))`, both of which raised `ValueError` on negative repetition counts the moment the index exceeded 99999 tokens or a lexeme's repr exceeded 10 characters. Replaced with `f"{idx:>5} | {token.lexeme!r:<10} | {token.kind}"` so wide values are never a crash. Tests: `test_trace_mode_does_not_crash` (basic format), `test_trace_mode_handles_long_lexeme_without_crashing`.
+
 ## v2.20.6 — Lexer: friendly hints for common typos
 
 ### Added
