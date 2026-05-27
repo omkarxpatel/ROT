@@ -258,8 +258,11 @@ function explainSnapshot(
   prev: RotSnapshot | null,
 ): string {
   if (snap.error) return `Error during ${humanKind(snap.statement_kind)}.`;
-  const frame = snap.env[0];
-  const prevFrame = prev?.env[0];
+  // Use the INNERMOST frame for diffing — that's where the just-
+  // executed statement's changes live. Outside a function call that's
+  // just the global; inside, it's the function/method/catch local.
+  const frame = snap.env[snap.env.length - 1];
+  const prevFrame = prev ? matchingFrame(prev, frame ?? { scope_kind: "", scope_label: "" }) : null;
   const changes = computeBindingChanges(frame?.bindings ?? {}, prevFrame?.bindings);
   const newKeys = Object.entries(changes)
     .filter(([, c]) => c === "new")

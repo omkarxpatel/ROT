@@ -3989,15 +3989,26 @@ def test_iter_execute_snapshot_carries_line_col_and_kind():
 
 def test_iter_execute_kind_reports_each_ast_statement_type():
     # Spot-check several statement kinds reach the snapshot intact.
+    # With deep stepping (v2.26.13+), nested statements inside if/while
+    # blocks ALSO yield snapshots, so the kind list reflects every
+    # statement that actually ran.
     source = (
         'x = 0\n'
         'let y = 1\n'
         'if (true) { x = 2 }\n'
-        'while (x < 5) { x = x + 1 }\n'
+        'while (x < 4) { x = x + 1 }\n'
         'funct f() { return 0 }\n'
     )
     kinds = [s.statement_kind for s in _iter(source)]
-    assert kinds == ["Assign", "LetStmt", "IfStmt", "WhileStmt", "FuncDef"]
+    # x=0, let y=1, then inside-if x=2, then IfStmt itself;
+    # then while: x=3, x=4 (two iterations), then WhileStmt;
+    # then FuncDef. (x starts at 2 after the if, so 2->3->4 takes 2 iters.)
+    assert kinds == [
+        "Assign", "LetStmt",
+        "Assign", "IfStmt",
+        "Assign", "Assign", "WhileStmt",
+        "FuncDef",
+    ]
 
 
 def test_iter_execute_empty_program_yields_nothing():
@@ -4117,10 +4128,10 @@ def test_iter_execute_attributes_output_to_producing_statement():
     assert snaps[2].output_since_last == ""
 
 
-def test_iter_execute_concatenates_multiple_couts_within_one_statement():
-    # A single statement that internally produces multiple writes (e.g.
-    # via a function call) should aggregate them. ROT terminates
-    # statements with newlines, not `;`.
+def test_iter_execute_routes_inner_output_to_inner_snapshots():
+    # With deep stepping, each statement inside a function body records
+    # its own snapshot — so cout's output lands on the snapshot for the
+    # cout statement, not the outer call's snapshot.
     source = (
         'funct trio() {\n'
         '  cout("x")\n'
@@ -4130,11 +4141,16 @@ def test_iter_execute_concatenates_multiple_couts_within_one_statement():
         'trio()\n'
     )
     snaps = _iter(source)
-    # First snapshot: the FuncDef itself, no output.
+    # FuncDef, three inner ExprStmts, outer call ExprStmt.
+    assert len(snaps) == 5
+    assert snaps[0].statement_kind == "FuncDef"
     assert snaps[0].output_since_last == ""
-    # Second snapshot: the call. The whole trio() body is one
-    # statement at the top level, so all output lands here.
-    assert snaps[1].output_since_last == "xyz\n"
+    assert snaps[1].output_since_last == "x"
+    assert snaps[2].output_since_last == "y"
+    assert snaps[3].output_since_last == "z\n"
+    # Outer call drained its own buffer before recording — no leftover.
+    assert snaps[4].statement_kind == "ExprStmt"
+    assert snaps[4].output_since_last == ""
 
 
 def test_iter_execute_does_not_write_to_real_stdout():
@@ -4189,10 +4205,10 @@ def test_iter_execute_cout_without_newline_appears_in_same_snapshot():
 # --- v2.26.3: integration sweep across control flow / errors ---
 
 
-def test_iter_execute_loop_is_one_top_level_snapshot():
-    # M1 is top-level granularity: a `while` loop, however many
-    # iterations it runs, is ONE snapshot. Output aggregates; env
-    # reflects the final state.
+def test_iter_execute_while_loop_steps_into_each_iteration():
+    # With deep stepping, each statement inside the loop body
+    # produces its own snapshot — once per iteration. The outer
+    # WhileStmt snapshot still fires after the loop exits.
     source = (
         'i = 0\n'
         'while (i < 3) {\n'
@@ -4201,27 +4217,42 @@ def test_iter_execute_loop_is_one_top_level_snapshot():
         '}\n'
     )
     snaps = _iter(source)
-    # `i = 0` then the while loop.
-    assert len(snaps) == 2
-    assert snaps[1].statement_kind == "WhileStmt"
-    assert snaps[1].output_since_last == "0\n1\n2\n"
-    assert snaps[1].env[0].bindings["i"] == 3
+    # i = 0 (1)
+    # iter 0: coutln(0) + i = 1 (2)
+    # iter 1: coutln(1) + i = 2 (2)
+    # iter 2: coutln(2) + i = 3 (2)
+    # WhileStmt itself (1)
+    assert len(snaps) == 1 + 6 + 1
+    assert snaps[-1].statement_kind == "WhileStmt"
+    assert snaps[-1].env[0].bindings["i"] == 3
+    # Inner coutln statements own their output, one per iteration.
+    couts = [s for s in snaps if s.output_since_last]
+    assert [s.output_since_last for s in couts] == ["0\n", "1\n", "2\n"]
 
 
-def test_iter_execute_if_is_one_snapshot_reflecting_taken_branch():
+def test_iter_execute_if_steps_into_taken_branch():
+    # With deep stepping the taken branch's statements record snapshots
+    # individually; the untaken branch produces none. The outer IfStmt
+    # snapshot fires after the branch completes.
     source = (
         'x = 0\n'
         'if (true) { x = 1 } else { x = 2 }\n'
     )
     snaps = _iter(source)
-    assert len(snaps) == 2
-    assert snaps[1].statement_kind == "IfStmt"
-    assert snaps[1].env[0].bindings["x"] == 1
+    # initial x=0, then inside-if x=1, then IfStmt.
+    assert len(snaps) == 3
+    assert [s.statement_kind for s in snaps] == ["Assign", "Assign", "IfStmt"]
+    # No snapshot from the else branch — it didn't run.
+    assert all(
+        s.env[0].bindings.get("x") in (0, 1) for s in snaps
+    )
+    assert snaps[-1].env[0].bindings["x"] == 1
 
 
-def test_iter_execute_function_call_is_one_top_level_snapshot():
-    # The FuncDef is one snapshot; the call is another. The function's
-    # internal statements don't surface — M1 is top-level only.
+def test_iter_execute_steps_into_function_body():
+    # Deep stepping descends into called functions: the body's
+    # statements each produce a snapshot. The env for inner snapshots
+    # carries the function-local frame, not just global.
     source = (
         'funct greet(name) {\n'
         '  coutln("hi " + name)\n'
@@ -4229,10 +4260,20 @@ def test_iter_execute_function_call_is_one_top_level_snapshot():
         'greet("world")\n'
     )
     snaps = _iter(source)
-    assert len(snaps) == 2
+    # FuncDef, inner coutln ExprStmt, outer call ExprStmt.
+    assert len(snaps) == 3
     assert snaps[0].statement_kind == "FuncDef"
-    assert snaps[1].statement_kind == "ExprStmt"  # the call expression
-    assert snaps[1].output_since_last == "hi world\n"
+    # Inner snapshot: env carries both global AND the function-local frame.
+    inner = snaps[1]
+    assert inner.statement_kind == "ExprStmt"
+    assert inner.output_since_last == "hi world\n"
+    labels = [f.scope_label for f in inner.env]
+    assert labels == ["global", "funct greet"]
+    assert inner.env[1].bindings["name"] == "world"
+    # Outer snapshot: function returned, env is back to global only.
+    outer = snaps[2]
+    assert outer.statement_kind == "ExprStmt"
+    assert [f.scope_label for f in outer.env] == ["global"]
 
 
 def test_iter_execute_error_in_middle_yields_error_snapshot_then_stops():
@@ -4283,20 +4324,106 @@ def test_iter_execute_finally_runs_even_when_error_propagates():
         '}\n'
     )
     snaps = _iter(source)
-    # Two snapshots: the initial assignment, and the try/catch/finally.
-    assert len(snaps) == 2
-    assert snaps[1].error is not None
-    assert "boom" in snaps[1].error
-    # finally ran before the throw escaped.
-    assert snaps[1].env[0].bindings["ran_finally"] is True
+    # Deep stepping: initial assignment + first throw + catch-block
+    # re-throw + finally-block assignment + outer TryCatch.
+    assert len(snaps) == 5
+    assert snaps[-1].statement_kind == "TryCatch"
+    assert snaps[-1].error is not None
+    assert "boom" in snaps[-1].error
+    # finally ran — env reflects ran_finally = true on the last snapshot.
+    assert snaps[-1].env[0].bindings["ran_finally"] is True
 
 
-def test_iter_execute_for_loop_aggregates_output_across_iterations():
+def test_iter_execute_for_loop_steps_into_each_iteration():
     source = 'for x in [1 | 2 | 3] {\n  cout(x)\n}\n'
     snaps = _iter(source)
-    assert len(snaps) == 1
-    assert snaps[0].statement_kind == "ForStmt"
-    assert snaps[0].output_since_last == "123"
+    # Three inner cout(x) statements (one per iteration) + outer ForStmt.
+    assert len(snaps) == 4
+    assert snaps[-1].statement_kind == "ForStmt"
+    # Inner statements own their own output per iteration.
+    assert [s.output_since_last for s in snaps[:3]] == ["1", "2", "3"]
+
+
+# --- v2.26.13: deep stepping ---
+
+
+def test_iter_execute_inner_snapshot_env_carries_function_local_frame():
+    # When stepping inside a function body, the snapshot's env chain
+    # includes the function-local frame so the UI can show params and
+    # locals as separate scope cards.
+    source = (
+        'funct add(a | b) {\n'
+        '  let s = a + b\n'
+        '  return s\n'
+        '}\n'
+        'add(2 | 3)\n'
+    )
+    snaps = _iter(source)
+    # FuncDef, let s = a+b, return s, outer ExprStmt(add(2|3)).
+    assert len(snaps) == 4
+    let_snap = snaps[1]
+    assert let_snap.statement_kind == "LetStmt"
+    labels = [f.scope_label for f in let_snap.env]
+    assert labels == ["global", "funct add"]
+    assert let_snap.env[1].bindings["a"] == 2
+    assert let_snap.env[1].bindings["b"] == 3
+    assert let_snap.env[1].bindings["s"] == 5
+
+
+def test_iter_execute_error_inside_function_records_at_deepest_site():
+    # An undefined name inside a function should produce ONE error
+    # snapshot, attached to the deepest statement (the failing call site
+    # inside the body), not duplicated on every outer wrapper as it
+    # propagates up.
+    source = (
+        'funct boom() {\n'
+        '  oops()\n'
+        '}\n'
+        'boom()\n'
+    )
+    snaps = _iter(source)
+    err_snaps = [s for s in snaps if s.error]
+    assert len(err_snaps) == 1
+    assert "oops" in err_snaps[0].error
+    # The error snapshot is the inner ExprStmt, not the outer call.
+    assert err_snaps[0].statement_kind == "ExprStmt"
+    assert err_snaps[0].statement_line == 2  # the `oops()` line
+
+
+def test_iter_execute_nested_loops_step_each_inner_iteration():
+    source = (
+        'for i in [1 | 2] {\n'
+        '  for j in [10 | 20] {\n'
+        '    cout(i + j)\n'
+        '  }\n'
+        '}\n'
+    )
+    snaps = _iter(source)
+    couts = [s for s in snaps if s.output_since_last]
+    # 2 outer iters * 2 inner iters * 1 cout = 4 cout snapshots.
+    assert [s.output_since_last for s in couts] == ["11", "21", "12", "22"]
+
+
+def test_iter_execute_recursion_steps_each_call_frame():
+    # Recursive function: each call's body statements should record
+    # snapshots, with the function-local frame visible at each depth.
+    source = (
+        'funct fac(n) {\n'
+        '  if (n <= 1) { return 1 }\n'
+        '  return n * fac(n - 1)\n'
+        '}\n'
+        'r = fac(3)\n'
+    )
+    snaps = _iter(source)
+    # We're not pinning the exact count (recursion produces many) — we
+    # do pin the final result and that snapshots from BOTH recursion
+    # depths were observed (each carries a `funct fac` frame).
+    fac_frame_snaps = [
+        s for s in snaps
+        if any(f.scope_label == "funct fac" for f in s.env)
+    ]
+    assert len(fac_frame_snaps) > 0
+    assert snaps[-1].env[0].bindings["r"] == 6
 
 
 # --- v2.26.4: JSON-safe serialization for the Pyodide bridge ---

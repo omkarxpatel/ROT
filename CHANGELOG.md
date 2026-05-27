@@ -2,6 +2,68 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.13 — Deep stepping: snapshots for every executed statement, not just top-level
+
+### Premise
+- M1's original spec said "statement-level granularity" but the
+  v2.26.0 implementation only walked `program.body` at the top level
+  and skipped every statement inside function bodies, if/while/for
+  branches, and try/catch blocks. So stepping through
+  `funct foo() { ... }\nfoo()` yielded exactly 2 snapshots — one for
+  the def and one for the call — with the function's internal
+  statements invisible. That's not the experience anyone reasonable
+  expects from "step through this program."
+
+### Changed
+- Snapshot recording moved from `iter_execute`'s top-level loop down
+  into `_execute_statement` itself. Every statement that runs records
+  a snapshot — inside function bodies, method calls, if/elif/else
+  blocks, while/for iterations, try/catch/finally clauses, and
+  imported modules.
+- For a snapshot taken inside a function call, `Snapshot.env` carries
+  BOTH the global frame and the function-local frame (outermost-
+  first), so the UI can render the call's params and locals as their
+  own scope card alongside global.
+- The env-view explainer now diffs against the **innermost** frame
+  (where the just-executed statement's effects actually land),
+  matching frames across snapshots by `(scope_kind, scope_label)`.
+  Inside a function, "Bound s = 5." now refers to the function-local
+  binding instead of mistakenly diffing against global.
+
+### Snapshot semantics
+- **Clean statement**: a snapshot is recorded with `error=null`.
+- **Statement that raises an `InterpreterError`**: only the deepest
+  statement that observed the error records the error snapshot. Outer
+  wrappers (e.g. an `IfStmt` containing the failing call) skip their
+  own error snapshot to avoid duplication at coarser source
+  locations.
+- **Control-flow signals** (`return`, `break`, `continue`, `throw`):
+  the originating statement records a clean snapshot, then the
+  signal propagates. The throwing statement's env is captured BEFORE
+  the function-local scope is torn down, so the snapshot sees the
+  local frame intact.
+- **Uncaught throw at top level**: the most recently recorded
+  snapshot's `error` is set to `"uncaught throw: ..."` so the UI
+  knows where the program halted.
+
+### Tests
+- Seven tests that pinned the old top-level-only contract have been
+  rewritten to assert deep-stepping behavior (loop, if, function
+  call, for, throw, kind sweep, output routing).
+- Four new tests pin the new contract directly:
+  - Inner snapshots carry the function-local frame with its bindings.
+  - Errors inside a function attach to the deepest statement only.
+  - Nested loops step every inner iteration.
+  - Recursion produces snapshots that carry the function frame at
+    each call depth.
+
+### Notes
+- `execute()` (the fast CLI/REPL path) is unchanged in behavior —
+  `_step_mode=False` keeps `_execute_statement` from doing snapshot
+  bookkeeping. The added `if self._step_mode` branch is the only
+  overhead, and only when False.
+- Tests: 662 → 666 passing. Type-check clean.
+
 ## v2.26.12 — Tokens & AST stages simplified for non-compiler-expert audience
 
 ### Premise

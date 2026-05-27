@@ -475,6 +475,19 @@ class Interpreter:
         # always. `iter_execute()` installs a buffer on entry, drains it
         # per snapshot, and clears on exit (try/finally).
         self._capture_buffer: "io.StringIO | None" = None
+        # Step-mode state (v2.26.13). When `_step_mode` is True, every
+        # `_execute_statement` call records a snapshot into
+        # `_step_snapshots` — including statements inside function
+        # bodies, if/while/for blocks, and try/catch/finally. The fast
+        # `execute()` path leaves `_step_mode = False` so this overhead
+        # is skipped entirely.
+        # `_error_recorded` deduplicates error snapshots: when an
+        # `InterpreterError` bubbles up through nested statements, only
+        # the deepest one records the error snapshot — outer wrappers
+        # would just attach the same message at a coarser location.
+        self._step_mode: bool = False
+        self._step_snapshots: "list[Snapshot]" = []
+        self._error_recorded: bool = False
         # Register as the active interpreter so `_stringify` can call
         # user-defined `to_string()` methods on RotInstance. The REPL drives
         # `_evaluate` directly (not always via `execute`), so registering
@@ -509,54 +522,68 @@ class Interpreter:
             )
 
     def iter_execute(self, program: ast.Program) -> Iterator[Snapshot]:
-        """Step-mode entry point. Yields one `Snapshot` per top-level
-        statement. Used by the playground's Animate mode; the CLI/REPL
-        continue to use `execute()` for normal full-speed runs.
+        """Step-mode entry point. Yields one `Snapshot` per executed
+        statement — including statements **inside** function bodies,
+        if/while/for blocks, try/catch/finally, and imported modules.
+        The playground's Animate mode consumes this; the CLI/REPL use
+        the fast `execute()` path.
 
-        v2.26.0 skeleton: position + kind only.
-        v2.26.1: env serialized via `Environment._env_snapshot()`.
-        v2.26.2: `cout`/`coutln` route through a per-interpreter
-        capture buffer; output produced by each statement is drained
-        into `Snapshot.output_since_last` before the next statement
-        runs.
-        v2.26.3: errors become snapshot fields rather than exceptions.
-        An `InterpreterError` (or uncaught throw) on statement N still
-        yields a snapshot for N — with `error` set to the rendered
-        message — and then iteration halts. The fast `execute()` path
-        is unchanged; it still raises.
+        v2.26.0–.3 evolved this from a skeleton through env + output +
+        error-as-snapshot wiring. v2.26.13 changes the granularity:
+        snapshot recording moved from this method's outer loop down
+        into `_execute_statement`, so every statement that runs gets a
+        snapshot — not just top-level body items.
 
-        Non-`InterpreterError` Python exceptions (interpreter bugs,
-        `KeyboardInterrupt`, ...) are NOT caught — they propagate so
-        the harness sees them.
+        Errors and control-flow signals:
+        - `InterpreterError`: deduplicated — the deepest statement that
+          observes the error records it; outer wrappers don't.
+        - `_ThrowSignal` that escapes the top level: the most recently
+          recorded snapshot's `error` is set to "uncaught throw: ...".
+        - `_ReturnSignal` / `_BreakSignal` / `_ContinueSignal` at the
+          top level: the originating statement's snapshot is recorded
+          cleanly; the signal then triggers an `InterpreterError` from
+          the impl which surfaces normally.
+        - Non-rot Python exceptions still propagate.
         """
         _set_active_interpreter(self)
+        # Save prior step-mode state so nested calls compose. None of
+        # the callers do this today, but `import` recursively invokes
+        # `execute`, and a future re-entrant iter_execute should be
+        # safe rather than overwriting unrelated state.
         prior_buffer = self._capture_buffer
+        prior_step_mode = self._step_mode
+        prior_snapshots = self._step_snapshots
+        prior_error_recorded = self._error_recorded
         self._capture_buffer = io.StringIO()
+        self._step_mode = True
+        self._step_snapshots = []
+        self._error_recorded = False
+        collected: list[Snapshot] = []
         try:
-            for stmt in program.body:
-                err_msg: "str | None" = None
-                try:
+            try:
+                for stmt in program.body:
                     self._execute_statement(stmt)
-                except _ThrowSignal as t:
-                    err_msg = str(InterpreterError(
-                        f"uncaught throw: {_stringify(t.value)}",
-                        line=t.line, col=t.col,
-                    ))
-                except InterpreterError as e:
-                    err_msg = str(e)
-                snap = self._snapshot(stmt)
-                snap.output_since_last = self._capture_buffer.getvalue()
-                snap.error = err_msg
-                # Reset for the next statement so each snapshot's output
-                # is attributed to the statement that produced it.
-                self._capture_buffer = io.StringIO()
-                yield snap
-                if err_msg is not None:
-                    return  # halt iteration after the failing statement
+            except _ThrowSignal as t:
+                # Uncaught throw at top level. The throw statement
+                # itself already recorded a clean snapshot; we attach
+                # the "uncaught" message to the most recent one so the
+                # UI knows where the program halted.
+                msg = (
+                    f"uncaught throw: {_stringify(t.value)}"
+                )
+                if self._step_snapshots:
+                    self._step_snapshots[-1].error = msg
+            except InterpreterError:
+                # Inner _execute_statement already attached the error
+                # to the right snapshot. Nothing to do here.
+                pass
+            collected = self._step_snapshots
         finally:
-            # Restore (typically to None) so a subsequent `execute()`
-            # call on the same interpreter writes to real stdout again.
+            self._step_snapshots = prior_snapshots
+            self._step_mode = prior_step_mode
+            self._error_recorded = prior_error_recorded
             self._capture_buffer = prior_buffer
+        yield from collected
 
     def _snapshot(self, stmt: "ast.Statement") -> Snapshot:
         """Build a `Snapshot` reflecting interpreter state after `stmt`.
@@ -620,7 +647,39 @@ class Interpreter:
             # builtin wrappers, and any deeper raise that didn't get its
             # own AST node for context. Inner errors with their own
             # position are kept untouched.
-            raise self._locate(e, stmt)
+            located = self._locate(e, stmt)
+            # In step mode: only the deepest statement that observes the
+            # error records a snapshot for it. Outer wrappers would just
+            # attach the same message at a coarser source location.
+            if self._step_mode and not self._error_recorded:
+                self._error_recorded = True
+                self._record_snapshot(stmt, str(located))
+            raise located
+        except (_ReturnSignal, _BreakSignal, _ContinueSignal, _ThrowSignal):
+            # Control-flow signals — the statement completed and is
+            # signaling something up the stack. Record a clean snapshot
+            # (no error) before letting the signal propagate.
+            if self._step_mode:
+                self._record_snapshot(stmt, None)
+            raise
+        else:
+            if self._step_mode:
+                self._record_snapshot(stmt, None)
+
+    def _record_snapshot(self, stmt: "ast.Statement", err_msg: "str | None") -> None:
+        """Append a Snapshot for ``stmt`` to ``_step_snapshots``.
+
+        Drains the per-statement output capture buffer into the
+        snapshot and resets it for the next statement. No-op if step
+        mode isn't installed (defensive — callers already guard).
+        """
+        if self._capture_buffer is None:
+            return
+        snap = self._snapshot(stmt)
+        snap.output_since_last = self._capture_buffer.getvalue()
+        snap.error = err_msg
+        self._capture_buffer = io.StringIO()
+        self._step_snapshots.append(snap)
 
     def _execute_statement_impl(self, stmt: ast.Statement) -> None:
         if isinstance(stmt, ast.ExprStmt):
