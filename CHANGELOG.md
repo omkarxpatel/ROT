@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.3 — imports: cycle no longer re-runs main file body (I40)
+
+### Fixed
+- An import cycle `a → b → a` used to re-run the main file's body during the imported module's import (b's `import "a"` saw a's path missing from `_loaded_modules` because `Compiler.run` executed main BEFORE registering its path). Output looked like `a loaded\nb loaded\na loaded`. Fix: `Compiler.run` now seeds `_loaded_modules` with the main file's absolute path before executing it (same path key `_import_file` uses). Cycle imports of main now short-circuit out of the cache and main runs exactly once. Pre-import bindings remain visible to the cycle (b can read `a`'s globals set before main's `import "b"` line). Tests: existing `test_import_cycle_does_not_re_run_main` updated to pin the fix; new `test_import_cycle_main_seeded_before_body_so_binding_uses_partial` confirms partial-binding visibility.
+
 ## v2.25.2 — REPL: suppress null-echo on side-effect calls (v2.19.7 follow-up)
 
 ### Fixed

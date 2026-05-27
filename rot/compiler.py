@@ -65,6 +65,15 @@ class Compiler:
         if source_path is not None:
             import os
             interp.set_source_dir(os.path.dirname(os.path.abspath(source_path)))
+            # I40: seed the import cache with the main file's absolute path
+            # BEFORE executing it. Without this, an import cycle a → b → a
+            # re-runs main's body during b's import (b's `import "a"` sees
+            # a's path is not in `_loaded_modules` and re-executes a). The
+            # absolute-path key matches the one `_import_file` uses, so
+            # subsequent imports targeting main short-circuit out of the
+            # cache as no-ops — same protection imported modules already
+            # had against being re-entered.
+            interp._loaded_modules.add(os.path.abspath(source_path))
         try:
             interp.execute(program)
         except RecursionError:

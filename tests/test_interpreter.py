@@ -3291,15 +3291,16 @@ def test_import_deep_chain_a_imports_b_imports_c(tmp_path):
     assert captured.getvalue() == "43\n42\n"
 
 
-def test_import_cycle_does_not_raise_but_re_runs_main(tmp_path):
-    # Pinning ACTUAL behavior (not desired). An import cycle a → b → a
-    # is NOT detected as an error today: the import cache keys on absolute
-    # path, and `Compiler.run` does not add the main file's path to
-    # `_loaded_modules` before executing it. So a's `import "b"` runs b,
-    # b's `import "a"` re-runs a's body — producing interleaved output
-    # `a loaded\nb loaded\na loaded`. The bug-audit's I40 / T79 flagged
-    # this; until it's fixed in a future minor, the test pins what
-    # actually happens so a future change is intentional.
+def test_import_cycle_does_not_re_run_main(tmp_path):
+    # I40 (fixed in v2.25.3): an import cycle a → b → a no longer re-runs
+    # main's body. `Compiler.run` now seeds `_loaded_modules` with the main
+    # file's absolute path before executing it, so b's `import "a"` becomes
+    # a no-op (the path is already in the cache). Bindings created during
+    # main's first pass ARE visible to b (the import cache is keyed before
+    # the body starts executing — same as Python's `sys.modules` partial
+    # registration trick), but main's body never re-enters. Output is
+    # `b loaded\na loaded` — b's coutln runs first (during a's import),
+    # then a's coutln runs after b returns.
     (tmp_path / "b.rot").write_text(
         'import "a"\n'
         'coutln("b loaded")\n'
@@ -3317,6 +3318,37 @@ def test_import_cycle_does_not_raise_but_re_runs_main(tmp_path):
     captured = io.StringIO()
     with contextlib.redirect_stdout(captured):
         Compiler(trace=False).run(main.read_text(), source_path=str(main))
-    # Re-entry of `a` happens during b's import; the outer `a` then runs
-    # its own `coutln` after b returns. Result: "a loaded" appears twice.
-    assert captured.getvalue() == "a loaded\nb loaded\na loaded\n"
+    # No re-entry of main: `a loaded` appears exactly once, after b returns.
+    assert captured.getvalue() == "b loaded\na loaded\n"
+
+
+def test_import_cycle_main_seeded_before_body_so_binding_uses_partial(tmp_path):
+    # Companion to test_import_cycle_does_not_re_run_main: the main file's
+    # path is registered in the import cache BEFORE its body runs, so if
+    # main has a top-level statement above its `import "b"`, that statement's
+    # side effects run only once (no re-entry). Confirms the cache marker
+    # is the path, and that bindings set before the cyclic import are
+    # available when the cycle resolves (b's `import "a"` returns immediately,
+    # so b can use a's pre-import bindings via the shared global env).
+    (tmp_path / "b.rot").write_text(
+        'import "a"\n'
+        'coutln(greeting)\n'  # reads `greeting` set above main's `import "b"`
+    )
+    main = tmp_path / "a.rot"
+    main.write_text(
+        'greeting = "hi from a"\n'
+        'import "b"\n'
+        'coutln("a done")\n'
+    )
+
+    import contextlib
+    import io
+    from rot.compiler import Compiler
+
+    captured = io.StringIO()
+    with contextlib.redirect_stdout(captured):
+        Compiler(trace=False).run(main.read_text(), source_path=str(main))
+    # Order: a sets `greeting`, then imports b. b's `import "a"` no-ops
+    # (cycle detected). b reads the shared global `greeting` and prints it.
+    # Control returns to a, which prints `"a done"`.
+    assert captured.getvalue() == "hi from a\na done\n"
