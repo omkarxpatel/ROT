@@ -74,26 +74,38 @@ def start_repl() -> None:
 
 def _needs_more(source: str) -> bool:
     """Heuristic: input needs continuation if `{` / `[` / `(` are unbalanced
-    outside string literals. Doesn't handle every edge case (comments, raw
-    string content tricks) but covers the cases the REPL hits in practice."""
+    outside string literals, OR if a string literal is still open at the end
+    of the buffer. Doesn't handle every edge case but covers the cases the
+    REPL hits in practice."""
     depth = 0
     in_string = False
     i = 0
     while i < len(source):
         ch = source[i]
+        if in_string:
+            # Inside a string — only `\` (escape) and unescaped `"` (close)
+            # matter. Everything else is content, including braces.
+            if ch == "\\" and i + 1 < len(source):
+                i += 2
+                continue
+            if ch == '"':
+                in_string = False
+            i += 1
+            continue
+        # Outside a string.
         if ch == "\\" and i + 1 < len(source):
-            # Skip escaped char in/out of strings — safe either way.
             i += 2
             continue
         if ch == '"':
-            in_string = not in_string
-        elif not in_string:
-            if ch in "{[(":
-                depth += 1
-            elif ch in "}])":
-                depth -= 1
+            in_string = True
+            i += 1
+            continue
+        if ch in "{[(":
+            depth += 1
+        elif ch in "}])":
+            depth -= 1
         i += 1
-    return depth > 0
+    return depth > 0 or in_string
 
 
 def _execute_with_echo(interp: Interpreter, program: ast.Program) -> None:

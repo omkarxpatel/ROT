@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.19.1 — REPL multi-line string and f-string input
+
+### Fixed
+- **C11, C12**: `rot> "hello` (unterminated string literal) used to be parsed and errored immediately, making multi-line strings impossible to enter at the REPL. Same for `rot> f"...` (f-strings). `_needs_more` now tracks an in-string state across the buffer: every unescaped `"` toggles `in_string`, and the function returns `True` (request continuation) if a string is still open at end-of-buffer. Braces inside a string are no longer counted toward depth. F-strings use the same toggle because their opening character is also `"`. Tests in `tests/test_repl.py`: `test_repl_unterminated_string_requests_continuation`, `test_repl_unterminated_fstring_requests_continuation`, `test_repl_needs_more_returns_true_for_open_string`, `test_repl_needs_more_returns_false_for_closed_string`, `test_repl_needs_more_handles_escaped_quote_in_string`, `test_repl_needs_more_returns_true_for_open_fstring`, `test_repl_needs_more_ignores_braces_inside_string`, `test_repl_needs_more_ignores_closing_brace_inside_string`.
+
 ## v2.18.6 — user-instance type names wrapped to avoid primitive collision
 
 ### Fixed
