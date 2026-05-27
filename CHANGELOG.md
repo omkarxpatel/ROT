@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.24.1 — test backfill: CLI
+
+### Added
+- `tests/test_cli.py` (10 tests). Drives `python -m rot` via subprocess to cover the gaps identified by the v2.13.0 bug audit (T82-T89): `--version` prints `rot <__version__>`, missing-file exits non-zero with the path in stderr, non-`.rot` extension is rejected, `--no-run` validates without running, `--trace` emits the tokenizer/parser headers and token kinds, a RotError in source exits 1 with the v2.22.7 rustc-style block on stderr, the default (no-file) and explicit `--repl` modes both start the REPL and exit cleanly on EOF, PermissionError on a 0o000 source file produces a clean error (v2.14.8 — skipped on Windows), and a UTF-8 BOM at the start of a source file is silently accepted (v2.20.5).
+
 ## v2.23.0 — remove the standalone emitter
 
 ### Removed
