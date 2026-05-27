@@ -2,6 +2,20 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.16 — refresh README for v2.25.x feature surface
+
+### Changed
+- [`README.md`](README.md) rewritten. Was at v2.0.0 phrasing; now covers
+  the v2.25.x state: `let`, `finally`, slicing, f-string format specs,
+  rustc-style errors, immutable builtins, info-leak hardening,
+  35+ builtins, the 628-test suite, the paper, and the `web/` site.
+- Highlights table summarizing the headline features.
+- Repo-layout map updated (no more `emitter.py`; `paper/`, `web/`,
+  `BUG_REPORT.md` added).
+
+### Notes
+- Documentation-only patch. No language code changed.
+
 ## v2.25.15 — expand `web/` into a full project site
 
 ### Added
