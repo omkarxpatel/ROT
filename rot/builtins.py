@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import random
+import sys
 from typing import Any
 
 from .errors import InterpreterError
@@ -438,6 +439,151 @@ def _assert(*args: Any) -> None:
         raise InterpreterError(msg)
 
 
+# ==== v2.25.8: additional builtins ==========================================
+
+def _builtin_sum(*args: Any) -> Any:
+    """Sum a numeric list. Mirrors Python's sum(), but rejects non-numeric
+    elements with a clear rot-styled error rather than the default
+    TypeError ('+' between int and str)."""
+    _arity("sum", args, 1)
+    xs = args[0]
+    if not isinstance(xs, list):
+        raise InterpreterError(
+            f"sum: expected list, got {type(xs).__name__}"
+        )
+    total: Any = 0
+    for i, x in enumerate(xs):
+        if not isinstance(x, (int, float)) or isinstance(x, bool):
+            # Reject bools explicitly: Python's bool <: int means True/False
+            # would silently coerce to 1/0 and surprise users (see B28 for
+            # the same rationale on `range`).
+            raise InterpreterError(
+                f"sum: element {i} is {type(x).__name__}, not a number"
+            )
+        total += x
+    return total
+
+
+def _builtin_sorted(*args: Any) -> list:
+    """Return a NEW sorted list (input untouched). Raises a clean error
+    on mixed types or non-comparable elements rather than Python's
+    `TypeError: '<' not supported between ...`."""
+    _arity("sorted", args, 1)
+    xs = args[0]
+    if not isinstance(xs, list):
+        raise InterpreterError(
+            f"sorted: expected list, got {type(xs).__name__}"
+        )
+    try:
+        return sorted(xs)
+    except TypeError as e:
+        raise InterpreterError(f"sorted: {e}")
+
+
+def _builtin_reversed(*args: Any) -> list:
+    """Return a NEW reversed list (input untouched)."""
+    _arity("reversed", args, 1)
+    xs = args[0]
+    if not isinstance(xs, list):
+        raise InterpreterError(
+            f"reversed: expected list, got {type(xs).__name__}"
+        )
+    return list(reversed(xs))
+
+
+def _builtin_keys(*args: Any) -> list:
+    """Return dict keys as a real ROT list (not a Python view object).
+    I37 flagged that `d.keys()` leaks a `dict_keys` view through; the
+    free-function form here returns a proper list."""
+    _arity("keys", args, 1)
+    d = args[0]
+    if not isinstance(d, dict):
+        raise InterpreterError(
+            f"keys: expected dict, got {type(d).__name__}"
+        )
+    return list(d.keys())
+
+
+def _builtin_values(*args: Any) -> list:
+    _arity("values", args, 1)
+    d = args[0]
+    if not isinstance(d, dict):
+        raise InterpreterError(
+            f"values: expected dict, got {type(d).__name__}"
+        )
+    return list(d.values())
+
+
+def _builtin_items(*args: Any) -> list:
+    """Return key/value pairs as a list of two-element lists. (Tuples
+    aren't a ROT type, so we use nested lists.) Iterates cleanly in a
+    `for kv in items(d) { ... }` loop."""
+    _arity("items", args, 1)
+    d = args[0]
+    if not isinstance(d, dict):
+        raise InterpreterError(
+            f"items: expected dict, got {type(d).__name__}"
+        )
+    return [[k, v] for k, v in d.items()]
+
+
+def _builtin_chr(*args: Any) -> str:
+    """Convert a Unicode codepoint to its single-character string."""
+    _arity("chr", args, 1)
+    n = args[0]
+    if isinstance(n, bool) or not isinstance(n, int):
+        raise InterpreterError(
+            f"chr: expected int, got {type(n).__name__}"
+        )
+    try:
+        return chr(n)
+    except (ValueError, OverflowError) as e:
+        raise InterpreterError(f"chr: {e}")
+
+
+def _builtin_ord(*args: Any) -> int:
+    """Return the Unicode codepoint of a single-character string."""
+    _arity("ord", args, 1)
+    s = args[0]
+    if not isinstance(s, str):
+        raise InterpreterError(
+            f"ord: expected single-character string, got {type(s).__name__}"
+        )
+    if len(s) != 1:
+        raise InterpreterError(
+            f"ord: expected single-character string, got length {len(s)}"
+        )
+    return ord(s)
+
+
+def _builtin_seed(*args: Any) -> None:
+    """Seed the RNG used by `rand_int` / `rand_float`. Deterministic
+    tests can pin a seed to get reproducible random output."""
+    _arity("seed", args, 1)
+    n = args[0]
+    if isinstance(n, bool) or not isinstance(n, int):
+        raise InterpreterError(
+            f"seed: expected int, got {type(n).__name__}"
+        )
+    random.seed(n)
+
+
+def _builtin_exit(*args: Any) -> None:
+    """Terminate the process with an integer exit code. `exit()` with
+    no args defaults to 0. Raises Python's SystemExit; the CLI lets
+    that propagate (it's BaseException, not InterpreterError) so the
+    process exits cleanly with the requested code."""
+    _arity("exit", args, (0, 1))
+    if args:
+        code = args[0]
+        if isinstance(code, bool) or not isinstance(code, int):
+            raise InterpreterError(
+                f"exit: expected int code, got {type(code).__name__}"
+            )
+        sys.exit(int(code))
+    sys.exit(0)
+
+
 # ==== Registry ==============================================================
 
 BUILTINS: dict[str, Any] = {
@@ -445,14 +591,23 @@ BUILTINS: dict[str, Any] = {
     "str": _builtin_str,
     "num": _builtin_num,
     "len": len,
+    "chr": _builtin_chr,
+    "ord": _builtin_ord,
     # I/O
     "input": _builtin_input,
     "read_file": _read_file,
     "write_file": _write_file,
+    "exit": _builtin_exit,
     # Collections
     "range": _builtin_range,
     "append": _builtin_append,
     "pop": _builtin_pop,
+    "sum": _builtin_sum,
+    "sorted": _builtin_sorted,
+    "reversed": _builtin_reversed,
+    "keys": _builtin_keys,
+    "values": _builtin_values,
+    "items": _builtin_items,
     # Math
     "abs": abs,
     "min": _builtin_min,
@@ -476,6 +631,7 @@ BUILTINS: dict[str, Any] = {
     # Random
     "rand_int": _rand_int,
     "rand_float": _rand_float,
+    "seed": _builtin_seed,
     # Assertions
     "assert": _assert,
 }

@@ -2,6 +2,20 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.25.8 — builtins: sum, sorted, reversed, keys, values, items, chr, ord, seed, exit (B62, B63)
+
+### Added
+- 10 new builtins:
+  - `sum(list)` — sum of a numeric list; rejects non-numeric elements (and bools) with a clean error rather than letting Python's `int + str` TypeError leak.
+  - `sorted(list)` — returns a NEW sorted list; the input is untouched. Mixed-type sorts surface a clean `sorted: ...` error.
+  - `reversed(list)` — returns a NEW reversed list.
+  - `keys(dict)`, `values(dict)`, `items(dict)` — return real ROT lists (not Python `dict_keys`/`dict_values`/`dict_items` views — addresses the I37 view-leak path for users who prefer free-function syntax). `items(d)` yields a list of 2-lists `[[k, v] | ...]` since tuples aren't a ROT type.
+  - `chr(int)` / `ord(str)` — Unicode codepoint conversion. `chr` rejects non-int / bool / out-of-range; `ord` rejects non-string / empty / multi-character.
+  - `seed(int)` — seed the RNG used by `rand_int` / `rand_float`. Lets tests pin deterministic random output.
+  - `exit(code?)` — terminate the process with an integer code (default 0). Raises Python's `SystemExit` so the CLI propagates the code cleanly.
+- `print` was intentionally NOT added — the v2.22.6 Python-ism hint already steers users from `print` toward `cout` / `coutln`. Tests pin that hint behavior; shadowing it with a real `print` would break the discovery flow.
+- 30 new tests covering basic happy paths and type/arity error messages for every new builtin.
+
 ## v2.25.7 — parser: `super` reserved with a helpful error (I23, I26)
 
 ### Added

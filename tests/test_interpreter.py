@@ -3534,3 +3534,207 @@ def test_import_cycle_main_seeded_before_body_so_binding_uses_partial(tmp_path):
     # (cycle detected). b reads the shared global `greeting` and prints it.
     # Control returns to a, which prints `"a done"`.
     assert captured.getvalue() == "hi from a\na done\n"
+
+
+# ==== v2.25.8: new builtins (sum, sorted, reversed, keys, values, items,
+#               chr, ord, seed, exit) ==========================================
+
+
+def test_sum_of_int_list():
+    assert _run("coutln(sum([1 | 2 | 3 | 4]))") == "10\n"
+
+
+def test_sum_of_mixed_int_float_list():
+    # 1 + 2.5 + 3 = 6.5 (Python's int+float coercion, fine here).
+    assert _run("coutln(sum([1 | 2.5 | 3]))") == "6.5\n"
+
+
+def test_sum_of_empty_list_is_zero():
+    assert _run("coutln(sum([]))") == "0\n"
+
+
+def test_sum_rejects_non_list():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln(sum("hi"))')
+    assert "expected list" in str(exc_info.value)
+
+
+def test_sum_rejects_non_numeric_element():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln(sum([1 | "two" | 3]))')
+    assert "not a number" in str(exc_info.value)
+
+
+def test_sum_rejects_bool_element():
+    # bools could silently coerce to 0/1; reject explicitly.
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("coutln(sum([1 | true | 2]))")
+    assert "not a number" in str(exc_info.value)
+
+
+def test_sorted_returns_new_list_does_not_mutate_original():
+    src = (
+        'xs = [3 | 1 | 4 | 1 | 5]\n'
+        'ys = sorted(xs)\n'
+        'coutln(xs)\n'
+        'coutln(ys)'
+    )
+    out = _run(src)
+    # Original unchanged.
+    assert "[3 | 1 | 4 | 1 | 5]" in out
+    # New list sorted.
+    assert "[1 | 1 | 3 | 4 | 5]" in out
+
+
+def test_sorted_strings():
+    assert _run('coutln(sorted(["b" | "a" | "c"]))') == "[a | b | c]\n"
+
+
+def test_sorted_mixed_types_errors_cleanly():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln(sorted([1 | "a" | 2]))')
+    assert "sorted:" in str(exc_info.value)
+
+
+def test_reversed_returns_new_list():
+    src = (
+        'xs = [1 | 2 | 3]\n'
+        'ys = reversed(xs)\n'
+        'coutln(xs)\n'
+        'coutln(ys)'
+    )
+    out = _run(src)
+    assert "[1 | 2 | 3]" in out
+    assert "[3 | 2 | 1]" in out
+
+
+def test_reversed_empty_list():
+    assert _run("coutln(reversed([]))") == "[]\n"
+
+
+def test_keys_returns_list_not_dict_keys_view():
+    # I37: ensure the result is a real ROT list (type() reports "list").
+    out = _run('d = {"a": 1 | "b": 2}\ncoutln(type(keys(d)))')
+    assert out == "list\n"
+
+
+def test_keys_values_items_basic():
+    src = (
+        'd = {"a": 1 | "b": 2}\n'
+        'coutln(keys(d))\n'
+        'coutln(values(d))\n'
+        'coutln(items(d))'
+    )
+    out = _run(src).splitlines()
+    # Insertion-ordered (Python 3.7+ dict). Keys are strings — rendered
+    # with quotes by _stringify_key only for DICTS, but `keys()` returns a
+    # plain list so strings render unquoted.
+    assert out[0] == "[a | b]"
+    assert out[1] == "[1 | 2]"
+    # items returns [[k, v]| [k2, v2]]
+    assert out[2] == "[[a | 1] | [b | 2]]"
+
+
+def test_items_iteration_pattern():
+    # The common usage: for kv in items(d) { ... }. Each kv is a 2-list.
+    src = (
+        'd = {"a": 1 | "b": 2}\n'
+        'for kv in items(d) { coutln(kv[0] + ":" + str(kv[1])) }'
+    )
+    assert _run(src) == "a:1\nb:2\n"
+
+
+def test_chr_basic():
+    assert _run("coutln(chr(65))") == "A\n"
+    assert _run("coutln(chr(97))") == "a\n"
+
+
+def test_chr_unicode():
+    # snowman codepoint 9731.
+    assert _run("coutln(chr(9731))") == "☃\n"
+
+
+def test_chr_rejects_non_int():
+    with pytest.raises(InterpreterError):
+        _run('coutln(chr("A"))')
+
+
+def test_chr_rejects_bool():
+    with pytest.raises(InterpreterError):
+        _run("coutln(chr(true))")
+
+
+def test_chr_out_of_range_errors_cleanly():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run("coutln(chr(2000000))")
+    assert "chr:" in str(exc_info.value)
+
+
+def test_ord_basic():
+    assert _run('coutln(ord("A"))') == "65\n"
+    assert _run('coutln(ord("a"))') == "97\n"
+
+
+def test_ord_rejects_non_string():
+    with pytest.raises(InterpreterError):
+        _run("coutln(ord(65))")
+
+
+def test_ord_rejects_multichar_string():
+    with pytest.raises(InterpreterError) as exc_info:
+        _run('coutln(ord("AB"))')
+    assert "single-character" in str(exc_info.value) or "length" in str(exc_info.value)
+
+
+def test_ord_rejects_empty_string():
+    with pytest.raises(InterpreterError):
+        _run('coutln(ord(""))')
+
+
+def test_chr_ord_roundtrip():
+    src = (
+        'x = ord("Z")\n'
+        'coutln(chr(x))'
+    )
+    assert _run(src) == "Z\n"
+
+
+def test_seed_makes_rand_int_deterministic():
+    # Two runs with the same seed should produce the same value.
+    src = (
+        'seed(42)\n'
+        'a = rand_int(1 | 1000000)\n'
+        'seed(42)\n'
+        'b = rand_int(1 | 1000000)\n'
+        'coutln(a == b)'
+    )
+    assert _run(src) == "true\n"
+
+
+def test_seed_rejects_non_int():
+    with pytest.raises(InterpreterError):
+        _run('seed("hi")')
+
+
+def test_exit_zero_exits_process():
+    # exit() raises SystemExit (BaseException). Pytest will surface it
+    # as the value 0.
+    with pytest.raises(SystemExit) as exc_info:
+        _run("exit()")
+    assert exc_info.value.code == 0
+
+
+def test_exit_with_code_exits_with_that_code():
+    with pytest.raises(SystemExit) as exc_info:
+        _run("exit(2)")
+    assert exc_info.value.code == 2
+
+
+def test_exit_rejects_non_int_code():
+    with pytest.raises(InterpreterError):
+        _run('exit("oops")')
+
+
+def test_exit_rejects_too_many_args():
+    with pytest.raises(InterpreterError):
+        _run("exit(1 | 2)")
