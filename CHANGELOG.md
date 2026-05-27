@@ -2,6 +2,11 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.16.3 — catch variable scoped to the catch block
+
+### Fixed
+- **I12, I13**: `try { ... } catch (e) { ... }` used to bind `e` in the enclosing scope via the chain-walking `set`. That silently clobbered any existing outer `e` (notably the math constant `e ~= 2.718`) and leaked the binding past the end of the catch block. Now the catch body runs in a fresh `Environment` whose parent is the current scope: the catch variable is `set_local`'d into that env and disappears when the catch ends. Reads inside the catch still see and chain-walk-mutate outer names (closure mutation untouched). Tests: `test_catch_var_does_not_clobber_outer_binding`, `test_catch_var_does_not_leak_to_enclosing_scope`, `test_catch_var_local_to_catch_body_only`.
+
 ## v2.16.2 — nested class declarations bind locally
 
 ### Fixed

@@ -368,14 +368,12 @@ class Interpreter:
             try:
                 self._execute_block(stmt.try_block)
             except _ThrowSignal as signal:
-                self.env.set(stmt.catch_var, signal.value)
-                self._execute_block(stmt.catch_block)
+                self._execute_catch(stmt, signal.value)
             except Exception as e:
                 # Captures InterpreterError, ZeroDivisionError, KeyError, etc.
                 # Control-flow signals (_Return / _Break / _Continue / _Throw)
                 # subclass BaseException, so they aren't caught here.
-                self.env.set(stmt.catch_var, str(e))
-                self._execute_block(stmt.catch_block)
+                self._execute_catch(stmt, str(e))
             return
         if isinstance(stmt, ast.IndexAssign):
             target = self._evaluate(stmt.target)
@@ -437,6 +435,21 @@ class Interpreter:
     def _execute_block(self, block: ast.Block) -> None:
         for stmt in block.statements:
             self._execute_statement(stmt)
+
+    def _execute_catch(self, stmt: ast.TryCatch, value: Any) -> None:
+        """Run the catch block in a fresh local scope so the catch variable
+        doesn't leak into the enclosing scope and doesn't clobber an existing
+        outer binding (e.g. the math constant `e` after `catch (e)`).
+        The new env's parent is the current env, so the catch body can still
+        read and chain-walk-mutate enclosing names."""
+        catch_env = Environment(parent=self.env)
+        catch_env.set_local(stmt.catch_var, value)
+        prior = self.env
+        self.env = catch_env
+        try:
+            self._execute_block(stmt.catch_block)
+        finally:
+            self.env = prior
 
     def _evaluate(self, expr: ast.Expression) -> Any:
         if isinstance(expr, ast.NumberLit):

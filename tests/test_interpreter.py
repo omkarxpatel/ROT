@@ -779,6 +779,45 @@ def test_nested_funct_does_not_clobber_outer_funct():
     assert _run(src) == "inner\nouter\n"
 
 
+def test_catch_var_does_not_clobber_outer_binding():
+    # I12: `catch (e)` used to bind `e` via chain-walking `set`, which would
+    # find any existing outer `e` (including the math constant) and rebind it.
+    # Now the catch block runs in a fresh env so `e` is scoped to the catch.
+    src = (
+        'try { throw "x" } catch (e) { coutln("inner: " + e) }\n'
+        'coutln(e)\n'  # math constant `e` ~= 2.718, untouched
+    )
+    out = _run(src)
+    assert out.startswith("inner: x\n2.71828")
+
+
+def test_catch_var_does_not_leak_to_enclosing_scope():
+    # I13: previously, after `try {...} catch (e) {}`, `e` would remain bound
+    # in the enclosing scope. Now the catch's binding is local to the catch.
+    src = (
+        'try { throw "boom" } catch (myerr) { coutln(myerr) }\n'
+        'try { coutln(myerr) } catch (e) { coutln("caught: " + e) }\n'
+    )
+    out = _run(src)
+    assert out.startswith("boom\ncaught:")
+    # Verify the error message indicates `myerr` is undefined.
+    assert "myerr" in out
+
+
+def test_catch_var_local_to_catch_body_only():
+    # The catch body CAN still see outer variables (chain reads + walking set
+    # still work — it's the BINDING site for the catch var that's local).
+    src = (
+        'outer = 1\n'
+        'try { throw "x" } catch (e) {\n'
+        '    coutln(outer)\n'      # read outer scope works
+        '    outer = 99\n'          # chain-walk mutation still works
+        '}\n'
+        'coutln(outer)\n'
+    )
+    assert _run(src) == "1\n99\n"
+
+
 def test_nested_class_does_not_clobber_outer_class():
     # I16: a nested `class A` inside `funct outer` used to silently overwrite
     # the outer `A`. Same root cause as I15, same fix: ClassDef now binds
