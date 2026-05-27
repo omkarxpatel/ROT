@@ -14,7 +14,7 @@ import {
 import { AstView } from "@/components/ast-view";
 import { EnvView } from "@/components/env-view";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { TokensView } from "@/components/tokens-view";
+import { TokensView, tokenTextColor } from "@/components/tokens-view";
 import type {
   AstNode,
   AstValue,
@@ -149,7 +149,12 @@ function StagedView({
         title="1. Source"
         subtitle={`line ${stmtLine}:${stmtCol}`}
       >
-        <SourceLine line={lineText} col={stmtCol} />
+        <SourceLine
+          line={lineText}
+          col={stmtCol}
+          tokens={stmtTokens}
+          lineNumber={stmtLine}
+        />
       </StageBlock>
 
       <StageArrow stepIndex={stepIndex} delaySec={STAGE_DELAYS.tokens - 0.05} />
@@ -166,6 +171,7 @@ function StagedView({
           runKey={stepIndex}
           baseDelaySec={STAGE_DELAYS.tokens + 0.05}
           staggerSec={0.05}
+          flyFrom="above"
           empty="(no tokens on this line)"
         />
       </StageBlock>
@@ -284,16 +290,49 @@ function StageArrow({
   );
 }
 
-function SourceLine({ line, col }: { line: string; col: number }) {
-  // Show the line text in code-monospace. Caret pointing at the
-  // statement column for orientation.
-  const trimmed = line.length === 0 ? "(empty line)" : line;
+function SourceLine({
+  line,
+  col,
+  tokens,
+  lineNumber,
+}: {
+  line: string;
+  col: number;
+  tokens: RotToken[];
+  lineNumber: number;
+}) {
+  // Render the line text with per-token color spans so it visually
+  // matches both the editor's syntax colors (v2.26.14) and the chip
+  // palette (v2.26.12). When the Tokens stage opens below, chips fall
+  // down from "above" — the user reads their colors as continuations
+  // of the source-line spans.
+  const segments = useMemo(
+    () => splitLineByTokens(line, tokens, lineNumber),
+    [line, tokens, lineNumber],
+  );
+  if (line.length === 0) {
+    return (
+      <pre className="rounded bg-zinc-900/60 px-2 py-1.5 font-mono text-[12.5px] text-muted-foreground">
+        (empty line)
+      </pre>
+    );
+  }
   return (
     <div className="space-y-0.5">
-      <pre className="overflow-x-auto whitespace-pre rounded bg-zinc-900/60 px-2 py-1.5 font-mono text-[12.5px] text-foreground/90">
-        {trimmed}
+      <pre className="overflow-x-auto whitespace-pre rounded bg-zinc-900/60 px-2 py-1.5 font-mono text-[12.5px]">
+        {segments.map((seg, i) =>
+          seg.kind ? (
+            <span key={i} className={tokenTextColor(seg.kind)}>
+              {seg.text}
+            </span>
+          ) : (
+            <span key={i} className="text-foreground/40">
+              {seg.text}
+            </span>
+          ),
+        )}
       </pre>
-      {line.length > 0 && col >= 1 && col <= line.length + 1 && (
+      {col >= 1 && col <= line.length + 1 && (
         <pre
           aria-hidden
           className="overflow-x-auto whitespace-pre px-2 font-mono text-[10px] text-amber-400/80"
@@ -303,6 +342,40 @@ function SourceLine({ line, col }: { line: string; col: number }) {
       )}
     </div>
   );
+}
+
+// Walk the tokens on a line in column order and split the line text
+// into [pre-token whitespace, token text] segments. Token segments
+// carry their `kind` so they can be colored; non-token segments get
+// `kind=null` and render in a muted color.
+function splitLineByTokens(
+  line: string,
+  tokens: RotToken[],
+  lineNumber: number,
+): { text: string; kind: string | null }[] {
+  const onLine = tokens
+    .filter((t) => t.line === lineNumber)
+    .sort((a, b) => a.col - b.col);
+  if (onLine.length === 0) {
+    return [{ text: line, kind: null }];
+  }
+  const out: { text: string; kind: string | null }[] = [];
+  let cursor = 0;
+  for (const tok of onLine) {
+    const start = Math.max(0, tok.col - 1);
+    if (start > cursor) {
+      out.push({ text: line.slice(cursor, start), kind: null });
+    }
+    const end = Math.min(line.length, start + tok.lexeme.length);
+    if (end > start) {
+      out.push({ text: line.slice(start, end), kind: tok.kind });
+    }
+    cursor = Math.max(cursor, end);
+  }
+  if (cursor < line.length) {
+    out.push({ text: line.slice(cursor), kind: null });
+  }
+  return out;
 }
 
 function ExecBlock({

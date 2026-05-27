@@ -20,6 +20,12 @@ interface TokensViewProps {
   // the cap value.
   staggerCap?: number;
   empty?: string;
+  // "below" (default): chips slide up into place — subtle, used for
+  // the persistent Pipeline panel where tokens just appear.
+  // "above": chips fall down from above into place — used by the Step
+  // panel so the chips read as falling out of the Source line above
+  // them.
+  flyFrom?: "below" | "above";
 }
 
 export function TokensView({
@@ -29,6 +35,7 @@ export function TokensView({
   staggerSec = 0.04,
   staggerCap = 60,
   empty,
+  flyFrom = "below",
 }: TokensViewProps) {
   if (tokens.length === 0) {
     return (
@@ -37,12 +44,13 @@ export function TokensView({
       </div>
     );
   }
+  const yStart = flyFrom === "above" ? -28 : 10;
   return (
     <div className="flex flex-wrap gap-1">
       {tokens.map((t, i) => (
         <motion.span
           key={`${runKey}-${i}-${t.line}-${t.col}`}
-          initial={{ opacity: 0, y: 10, scale: 0.85 }}
+          initial={{ opacity: 0, y: yStart, scale: 0.85 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{
             delay: baseDelaySec + Math.min(i, staggerCap) * staggerSec,
@@ -63,6 +71,29 @@ export function TokensView({
       ))}
     </div>
   );
+}
+
+// Text-only color (no chip background/border) for inline source-line
+// colorization. Mirrors `tokenClass` but strips down to the `text-`
+// rule so the colors of the in-source preview match the chip palette.
+export function tokenTextColor(kind: string): string {
+  const cls = tokenClass(kind);
+  switch (cls) {
+    case "chip-string":
+      return "text-amber-300";
+    case "chip-number":
+      return "text-cyan-300";
+    case "chip-literal":
+      return "text-emerald-300";
+    case "chip-identifier":
+      return "text-sky-300";
+    case "chip-operator":
+      return "text-rose-300";
+    case "chip-punct":
+      return "text-zinc-300";
+    default:
+      return "text-purple-300";
+  }
 }
 
 function tokenClass(kind: string): string {

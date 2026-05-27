@@ -2,6 +2,43 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.26.16 — Colored source-line preview + token chips fall from above
+
+### Added
+- The Source stage in the Step Detail panel now renders its line
+  text with per-token color spans. The split is computed from the
+  statement's token list (filtered by `line === stmt_line`) using
+  each token's `col` and `lexeme.length` to find its source range.
+  Token chars carry the same chip color as the chip below — so
+  reading the line `coutln(x + 3)` shows `coutln` in identifier
+  sky, `(` in punctuation zinc, `+` in operator rose, `3` in number
+  cyan, etc.
+- Non-token characters between tokens (whitespace) render at lower
+  opacity so the eye is drawn to the meaningful pieces.
+
+### Changed
+- `TokensView` accepts a `flyFrom: "below" | "above"` prop. The Step
+  panel's Tokens stage passes `"above"` so chips animate from
+  `y = -28, opacity 0` — they appear to fall down from the
+  source-line preview above them. The Pipeline panel's persistent
+  Tokens accordion still uses `"below"` (chips quietly rise from
+  beneath their final position).
+- `tokenTextColor(kind)` exported from `tokens-view.tsx` so any
+  component can reuse the chip palette as plain text colors.
+
+### Notes
+- Combined with v2.26.14 (editor syntax highlighting using the same
+  palette), the lineage is now continuous: editor text, source-line
+  preview, token chips, and AST primary fields all share one color
+  vocabulary. A reader can trace `funct greet`'s purple-on-purple-
+  on-purple chain across all three stages.
+- Token lexemes include the literal source span (including quotes
+  for strings) — `start + lexeme.length` gives the exact source
+  range, so the colorization aligns even for f-strings and escaped
+  characters.
+- Build clean. Type-check clean. No Python changes; 666 tests
+  still passing.
+
 ## v2.26.15 — Scope dive-in / dive-out + call breadcrumb
 
 ### Added
