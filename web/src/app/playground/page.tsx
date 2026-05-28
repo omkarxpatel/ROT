@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Check,
+  Link2,
   Loader2,
   Pause,
   Play,
@@ -57,10 +59,53 @@ const DEFAULT_SPEED_MS = 400;
 const MIN_SPEED_MS = 50;
 const MAX_SPEED_MS = 2000;
 
+// localStorage key used to persist the editor's source across page
+// reloads.
+const LS_SOURCE_KEY = "rot-playground:source";
+
+// Read the initial editor source. Precedence:
+//   1. `?src=<base64>` in the URL — shared link, wins.
+//   2. localStorage — the user's most recent edit.
+//   3. The bundled default example.
+// `example` tracks which dropdown entry to mark as selected; "custom"
+// covers cases where the source came from a URL or localStorage and
+// doesn't match any bundled example.
+function readInitialSource(): { source: string; example: string } {
+  if (typeof window === "undefined") {
+    return { source: DEFAULT_EXAMPLE_SOURCE, example: DEFAULT_EXAMPLE_KEY };
+  }
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const src = params.get("src");
+    if (src) {
+      // base64 → utf-8. atob alone doesn't round-trip non-ASCII; use
+      // the standard decode-via-percent-encoding trick.
+      const decoded = decodeURIComponent(
+        atob(src)
+          .split("")
+          .map((c) => `%${("00" + c.charCodeAt(0).toString(16)).slice(-2)}`)
+          .join(""),
+      );
+      return { source: decoded, example: "custom" };
+    }
+  } catch {
+    // bad ?src= — fall through.
+  }
+  try {
+    const stored = window.localStorage.getItem(LS_SOURCE_KEY);
+    if (stored && stored.length > 0) {
+      return { source: stored, example: "custom" };
+    }
+  } catch {
+    // localStorage blocked — fall through.
+  }
+  return { source: DEFAULT_EXAMPLE_SOURCE, example: DEFAULT_EXAMPLE_KEY };
+}
+
 export default function PlaygroundPage() {
-  const [source, setSource] = useState<string>(DEFAULT_EXAMPLE_SOURCE);
-  const [currentExample, setCurrentExample] =
-    useState<string>(DEFAULT_EXAMPLE_KEY);
+  const [initial] = useState(readInitialSource);
+  const [source, setSource] = useState<string>(initial.source);
+  const [currentExample, setCurrentExample] = useState<string>(initial.example);
   const [mode, setMode] = useState<Mode>("run");
   const [running, setRunning] = useState<boolean>(false);
   const [pipeline, setPipeline] = useState<PipelineState>(EMPTY_PIPELINE);
@@ -83,6 +128,49 @@ export default function PlaygroundPage() {
   useEffect(() => {
     return onRuntimeStatus((s) => setRuntimeStatus(s));
   }, []);
+
+  // Persist source to localStorage with a small debounce so we don't
+  // hit storage on every keystroke. 400ms is short enough to feel
+  // immediate to the user but groups typing bursts.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const id = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(LS_SOURCE_KEY, source);
+      } catch {
+        // storage quota / private mode — silent.
+      }
+    }, 400);
+    return () => window.clearTimeout(id);
+  }, [source]);
+
+  // Share-by-URL: build a `?src=<base64>` link, copy to clipboard,
+  // show a brief "copied" pill on the button.
+  const [shareState, setShareState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
+  const handleShare = useCallback(async () => {
+    try {
+      // utf-8-safe base64: percent-encode each character first, then
+      // btoa the resulting ascii.
+      const encoded = btoa(
+        encodeURIComponent(source).replace(/%([0-9A-F]{2})/g, (_, p1) =>
+          String.fromCharCode(parseInt(p1, 16)),
+        ),
+      );
+      const url = new URL(window.location.href);
+      url.searchParams.set("src", encoded);
+      // Update the address bar so reloads keep the shared source —
+      // history.replaceState avoids polluting the back stack.
+      window.history.replaceState({}, "", url.toString());
+      await navigator.clipboard.writeText(url.toString());
+      setShareState("copied");
+      window.setTimeout(() => setShareState("idle"), 1800);
+    } catch {
+      setShareState("error");
+      window.setTimeout(() => setShareState("idle"), 1800);
+    }
+  }, [source]);
 
   // --- Run mode ---
 
@@ -327,6 +415,8 @@ export default function PlaygroundPage() {
         onStep={handleStep}
         onTogglePlay={togglePlay}
         onReset={handleReset}
+        shareState={shareState}
+        onShare={handleShare}
       />
       <main className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:flex-row">
         {/* Left: editor */}
@@ -414,6 +504,8 @@ interface PlaygroundToolbarProps {
   onStep: () => void;
   onTogglePlay: () => void;
   onReset: () => void;
+  shareState: "idle" | "copied" | "error";
+  onShare: () => void;
 }
 
 function PlaygroundToolbar(props: PlaygroundToolbarProps) {
@@ -434,6 +526,8 @@ function PlaygroundToolbar(props: PlaygroundToolbarProps) {
     onStep,
     onTogglePlay,
     onReset,
+    shareState,
+    onShare,
   } = props;
 
   return (
@@ -446,6 +540,7 @@ function PlaygroundToolbar(props: PlaygroundToolbarProps) {
         <ModeToggle mode={mode} onSwitch={onSwitchMode} />
       </div>
       <div className="flex items-center gap-2">
+        <ShareButton state={shareState} onClick={onShare} />
         <ExamplesDropdown
           currentKey={currentExample}
           onSelect={onSelectExample}
@@ -628,6 +723,39 @@ function SpeedSlider({
       />
       <span className="font-mono tabular-nums">{value}ms</span>
     </label>
+  );
+}
+
+function ShareButton({
+  state,
+  onClick,
+}: {
+  state: "idle" | "copied" | "error";
+  onClick: () => void;
+}) {
+  const copied = state === "copied";
+  const errored = state === "error";
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={onClick}
+      className={cn(
+        "gap-1.5 transition-colors",
+        copied && "border-emerald-500/50 text-emerald-300",
+        errored && "border-destructive/50 text-destructive",
+      )}
+      title="Copy a shareable URL with the current source encoded in the query string"
+    >
+      {copied ? (
+        <Check className="h-3.5 w-3.5" />
+      ) : (
+        <Link2 className="h-3.5 w-3.5" />
+      )}
+      <span className="hidden sm:inline">
+        {copied ? "Copied" : errored ? "Error" : "Share"}
+      </span>
+    </Button>
   );
 }
 

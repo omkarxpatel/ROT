@@ -2,6 +2,35 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.6 — Playground QoL: persist source, share-by-URL
+
+### Added
+- **localStorage persistence**: the editor's source is saved to
+  `localStorage["rot-playground:source"]` 400ms after every edit
+  (debounced). On page load, the source is restored — so refreshing
+  no longer wipes the user's work.
+- **Share-by-URL**: new `Share` button in the toolbar (link icon).
+  Click → builds a URL with the current source encoded as
+  `?src=<base64>`, copies it to the clipboard, and updates the
+  address bar via `history.replaceState`. Recipients opening the
+  link see the same source. UTF-8 safe (uses the
+  `encodeURIComponent`-then-`btoa` round-trip).
+- Button states: `idle` (link icon), `copied` (emerald check icon,
+  1.8s), `error` (red, 1.8s; clipboard blocked or quota issue).
+
+### Changed
+- Initial-source precedence is now: **URL `?src=`** → **localStorage**
+  → bundled default. So a shared link beats a saved draft, and a
+  saved draft beats the fizzbuzz default — sensible recency.
+- When source comes from URL or localStorage, the example dropdown
+  reads `"custom"` rather than the bundled key.
+
+### Notes
+- Both `localStorage` access and `clipboard.writeText` are wrapped
+  in try/catch so private-mode or quota-blocked browsers degrade
+  gracefully.
+- Type-check clean. No Python changes; 740 tests still passing.
+
 ## v2.27.5 — Playground declutter: drop Pipeline panel entirely
 
 ### Premise
