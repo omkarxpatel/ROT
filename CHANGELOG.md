@@ -2,6 +2,70 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.13 — M2: classes (`GET_MEMBER`, `SET_MEMBER` + instances) + compound assigns
+
+### Added
+- `RotClassValue`, `RotInstanceValue`, `RotBoundMethod` dataclasses
+  in [`rot/codegen.py`](rot/codegen.py). Classes are built at
+  compile time (`LOAD_CONST` pushes a `RotClassValue` with each
+  method already compiled as a `RotFunctionValue`); instances are
+  created at runtime when `CALL` is applied to a class.
+- Two new opcodes:
+  - `GET_MEMBER <name>` — pops a target, returns
+    `instance.fields[name]` if present, else a `RotBoundMethod`
+    wrapping the class's matching method. Falls through to an
+    `InterpreterError` for missing members or non-instance
+    targets.
+  - `SET_MEMBER <name>` — pops value + target, writes
+    `instance.fields[name] = value`.
+- `Compiler._compile_class_def` walks `stmt.methods` (each is a
+  `FuncDef`), compiles each body into its own chunk, and packs
+  them into a `RotClassValue.methods` dict.
+- `Compiler` now handles `MemberAccess` (target → `GET_MEMBER`)
+  and `MemberAssign` (target → value → `SET_MEMBER`) — both
+  including their compound forms (`+=`, `-=`, etc.) via a
+  `[target] DUP GET_MEMBER value <op> SET_MEMBER` pattern.
+- **Compound `Assign`** (`x += 1`) is also now codegen'd:
+  `LOAD_NAME, value, <op>, STORE_NAME`. Previously these were
+  silently treated as plain `=`.
+
+### Changed
+- `VM._do_call` grows two branches:
+  - `RotClassValue` → instantiate: create a fresh
+    `RotInstanceValue`, push it onto the caller's stack, optionally
+    invoke `init(*args)` with `this=instance` bound. A new
+    `_init_instance` flag on the saved-caller frame tells
+    `RETURN_VALUE` to discard `init`'s null return (the instance
+    is already on the stack).
+  - `RotBoundMethod` → method call: enter the method's frame with
+    `this` and the args bound; otherwise like a normal function
+    call.
+- `VM._enter_function_frame(func, args, this)` factored out — used
+  by plain functions, methods, and `init`.
+
+### Tests
+- `tests/test_vm.py`: class with init binds fields; class without
+  init takes no args; method calls bind `this` correctly; method
+  return values; setter via `MemberAssign`; missing member error;
+  repr matches tree-walker (`<class Foo>`, `<instance of Foo>`);
+  wrong-init-argc error.
+- `python3 -m rot --vm examples/counter.rot` produces
+  `count is 13` — full Counter class with `init`, `inc()` using
+  `this.count += 1`, and `show()` runs end-to-end through the VM.
+- Tests: 792 → **800 passing**.
+
+### Notes
+- Compound `IndexAssign` (`xs[i] += 1`) still raises
+  `NotImplementedError` — would need a `DUP_TOP_TWO` opcode to
+  duplicate both target and index without re-evaluating side
+  effects. Deferred.
+- Inheritance still not supported — `super` remains a reserved
+  word that errors. Single-inheritance can land alongside the
+  v2.27.x line if useful.
+- StructureView labels (the playground's Parse stage) already
+  cover `Class`, `Method`, `MemberAccess`, etc. so the new
+  codegen surface flows through to the UI without changes.
+
 ## v2.27.12 — M2: `python -m rot --vm` runs programs through the bytecode VM
 
 ### Added

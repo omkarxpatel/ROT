@@ -67,6 +67,18 @@ class Op(IntEnum):
                      # target[index] = value. Same bounds rules as
                      # GET_INDEX.
 
+    # ─── Members ───────────────────────────────────────────────────
+    # Class values are built at compile time (LOAD_CONST'd like
+    # functions). Member access at runtime returns instance fields
+    # directly, or a bound method when the name resolves to one of
+    # the class's methods.
+    GET_MEMBER = 64  # arg: name-pool idx. Pops target, pushes
+                     # target.<name>. For instances: instance.fields
+                     # then class.methods (returning a bound method).
+    SET_MEMBER = 65  # arg: name-pool idx. Pops value, pops target,
+                     # writes target.fields[<name>] = value. Only
+                     # valid on instances.
+
     # ─── Control flow ──────────────────────────────────────────────
     # All jumps target an absolute IP (the index into `Chunk.code`).
     # The compiler emits jumps with a placeholder target (`0`) and

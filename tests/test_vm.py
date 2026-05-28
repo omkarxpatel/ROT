@@ -619,3 +619,118 @@ def test_vm_cli_vm_flag_runs_program(tmp_path, capsys):
         sys.argv = argv_prior
     captured = capsys.readouterr()
     assert captured.out == "10\n"
+
+
+# ─── Classes (v2.27.13) ──────────────────────────────────────────
+
+
+def test_vm_class_with_init_and_field():
+    src = (
+        "class Counter {\n"
+        "  init(start) {\n"
+        "    this.n = start\n"
+        "  }\n"
+        "}\n"
+        "c = Counter(7)\n"
+        "v = c.n\n"
+    )
+    vm = _run(src)
+    assert vm.env["v"] == 7
+
+
+def test_vm_class_with_no_init_takes_no_args():
+    src = (
+        "class Bag {\n"
+        "  set(k | v) { this.k = v }\n"
+        "}\n"
+        "b = Bag()\n"
+    )
+    vm = _run(src)
+    from rot.codegen import RotInstanceValue
+    assert isinstance(vm.env["b"], RotInstanceValue)
+
+
+def test_vm_method_call_binds_this():
+    src = (
+        "class Counter {\n"
+        "  init() { this.n = 0 }\n"
+        "  tick() { this.n = this.n + 1 }\n"
+        "}\n"
+        "c = Counter()\n"
+        "c.tick()\n"
+        "c.tick()\n"
+        "c.tick()\n"
+        "v = c.n\n"
+    )
+    vm = _run(src)
+    assert vm.env["v"] == 3
+
+
+def test_vm_method_can_return_a_value():
+    src = (
+        "class Box {\n"
+        "  init(v) { this.v = v }\n"
+        "  get() { return this.v }\n"
+        "}\n"
+        "b = Box(42)\n"
+        "x = b.get()\n"
+    )
+    vm = _run(src)
+    assert vm.env["x"] == 42
+
+
+def test_vm_class_field_setter_via_member_assign():
+    src = (
+        "class Point {\n"
+        "  init() {}\n"
+        "}\n"
+        "p = Point()\n"
+        "p.x = 5\n"
+        "p.y = 12\n"
+        "sx = p.x\n"
+        "sy = p.y\n"
+    )
+    vm = _run(src)
+    assert vm.env["sx"] == 5
+    assert vm.env["sy"] == 12
+
+
+def test_vm_missing_member_raises():
+    src = (
+        "class A { init() {} }\n"
+        "a = A()\n"
+        "x = a.missing\n"
+    )
+    with pytest.raises(InterpreterError) as ei:
+        _run(src)
+    assert "missing" in str(ei.value)
+
+
+def test_vm_class_repr_matches_tree_walker():
+    src = "class Foo { init() {} }\nf = Foo()\nc = Foo\n"
+    vm = _run(src)
+    from rot.codegen import RotClassValue, RotInstanceValue
+    assert isinstance(vm.env["c"], RotClassValue)
+    assert repr(vm.env["c"]) == "<class Foo>"
+    assert isinstance(vm.env["f"], RotInstanceValue)
+    assert repr(vm.env["f"]) == "<instance of Foo>"
+
+
+def test_vm_wrong_init_argc_raises():
+    src = (
+        "class Two { init(a | b) { this.a = a; this.b = b } }\n"
+        "x = Two(1)\n"
+    )
+    # `;` isn't ROT; rewrite without it.
+    src = (
+        "class Two {\n"
+        "  init(a | b) {\n"
+        "    this.a = a\n"
+        "    this.b = b\n"
+        "  }\n"
+        "}\n"
+        "x = Two(1)\n"
+    )
+    with pytest.raises(InterpreterError) as ei:
+        _run(src)
+    assert "argument" in str(ei.value)

@@ -14,7 +14,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from .codegen import Chunk, RotFunctionValue
+from .codegen import (
+    Chunk,
+    RotBoundMethod,
+    RotClassValue,
+    RotFunctionValue,
+    RotInstanceValue,
+)
 from .errors import InterpreterError
 from .opcodes import Op
 
@@ -41,6 +47,14 @@ def _stringify(value: Any) -> str:
         return "false"
     if isinstance(value, RotFunctionValue):
         return f"<funct {value.name}>"
+    if isinstance(value, RotClassValue):
+        return f"<class {value.name}>"
+    if isinstance(value, RotInstanceValue):
+        return f"<instance of {value.cls.name}>"
+    if isinstance(value, RotBoundMethod):
+        return (
+            f"<bound method {value.instance.cls.name}.{value.method.name}>"
+        )
     return str(value)
 
 
@@ -327,6 +341,21 @@ class VM:
                         f"cannot index-assign {type(target).__name__}"
                     )
                 continue
+            if op == Op.GET_MEMBER:
+                name = self.chunk.names[instr[1]]
+                target = self.stack.pop()
+                self.stack.append(self._get_member(target, name))
+                continue
+            if op == Op.SET_MEMBER:
+                name = self.chunk.names[instr[1]]
+                val = self.stack.pop()
+                target = self.stack.pop()
+                if not isinstance(target, RotInstanceValue):
+                    raise InterpreterError(
+                        f"cannot set member on {type(target).__name__}"
+                    )
+                target.fields[name] = val
+                continue
             if op == Op.CALL:
                 self._do_call(instr[1])
                 continue
@@ -339,6 +368,34 @@ class VM:
             raise InterpreterError(f"unknown opcode {int(op)}")
 
     # ─── Call / return helpers ─────────────────────────────────────
+
+    def _get_member(self, target: Any, name: str) -> Any:
+        """Look up `target.name`. For instances: fields first, then
+        class methods (returning a bound method). Anything else
+        without a member surface raises InterpreterError."""
+        if isinstance(target, RotInstanceValue):
+            if name in target.fields:
+                return target.fields[name]
+            if name in target.cls.methods:
+                return RotBoundMethod(
+                    instance=target,
+                    method=target.cls.methods[name],
+                )
+            raise InterpreterError(
+                f"no member {name!r} on instance of {target.cls.name}"
+            )
+        if isinstance(target, RotClassValue):
+            # Class-level method lookup (e.g. `MyClass.someMethod`)
+            # isn't used by current ROT programs but keeps the
+            # surface symmetric for future tests.
+            if name in target.methods:
+                return target.methods[name]
+            raise InterpreterError(
+                f"no member {name!r} on class {target.name}"
+            )
+        raise InterpreterError(
+            f"cannot access {name!r} on {type(target).__name__}"
+        )
 
     def _do_call(self, argc: int) -> None:
         """Handle the CALL opcode: pop args + function, then either
@@ -359,20 +416,56 @@ class VM:
                     f"function {func.name!r} takes {len(func.params)} "
                     f"argument(s), got {len(args)}"
                 )
-            self._frames.append({
-                "chunk": self.chunk,
-                "ip": self.ip,
-                "stack": self.stack,
-                "env": self.env,
-            })
-            assert func.chunk is not None
-            self.chunk = func.chunk
-            self.ip = 0
-            self.stack = []
-            local_env: dict[str, Any] = {}
-            for name, val in zip(func.params, args):
-                local_env[name] = val
-            self.env = local_env
+            self._enter_function_frame(func, args, this=None)
+            return
+
+        if isinstance(func, RotClassValue):
+            # Instantiate: create an empty instance, run init() if
+            # present, push the instance back onto the caller's
+            # stack. Init returns null (per the implicit-null-return
+            # fall-through) — we discard that and substitute the
+            # instance after the frame returns. Easiest path: just
+            # push the instance NOW; if init runs, we let its
+            # RETURN_VALUE push null onto the local frame's stack,
+            # restore the saved caller stack which already has the
+            # instance, and the null gets pushed on top of it. So we
+            # ALSO need to drop that null. Hand-roll:
+            instance = RotInstanceValue(cls=func, fields={})
+            init = func.methods.get("init")
+            if init is None:
+                if args:
+                    raise InterpreterError(
+                        f"class {func.name!r} has no init() — "
+                        f"called with {len(args)} argument(s)"
+                    )
+                self.stack.append(instance)
+                return
+            if len(args) != len(init.params):
+                raise InterpreterError(
+                    f"init() on class {func.name!r} takes "
+                    f"{len(init.params)} argument(s), got {len(args)}"
+                )
+            # Push instance onto caller's stack so it'll be there
+            # after init returns. Then enter init with this=instance.
+            # init's RETURN_VALUE will append null on top — we need
+            # to swap so the instance is back on top.
+            self.stack.append(instance)
+            self._enter_function_frame(init, args, this=instance)
+            # Mark this frame so RETURN_VALUE knows to keep the
+            # instance and drop the return value.
+            self._frames[-1]["_init_instance"] = True
+            return
+
+        if isinstance(func, RotBoundMethod):
+            method = func.method
+            if len(args) != len(method.params):
+                raise InterpreterError(
+                    f"method {method.name!r} takes {len(method.params)} "
+                    f"argument(s), got {len(args)}"
+                )
+            self._enter_function_frame(
+                method, args, this=func.instance,
+            )
             return
 
         if callable(func):
@@ -394,14 +487,37 @@ class VM:
 
         raise InterpreterError(f"cannot call {type(func).__name__}")
 
+    def _enter_function_frame(
+        self,
+        func: RotFunctionValue,
+        args: list,
+        this: "RotInstanceValue | None",
+    ) -> None:
+        """Snapshot the caller, switch active attrs to `func`'s body
+        chunk + a fresh local env with parameters (and optional
+        `this`) bound."""
+        self._frames.append({
+            "chunk": self.chunk,
+            "ip": self.ip,
+            "stack": self.stack,
+            "env": self.env,
+        })
+        assert func.chunk is not None
+        self.chunk = func.chunk
+        self.ip = 0
+        self.stack = []
+        local_env: dict[str, Any] = {}
+        if this is not None:
+            local_env["this"] = this
+        for name, val in zip(func.params, args):
+            local_env[name] = val
+        self.env = local_env
+
     def _do_return_value(self) -> bool:
         """Handle the RETURN_VALUE opcode. Returns True if the main
         frame just returned (signaling the run loop to halt)."""
         retval = self.stack.pop() if self.stack else None
         if not self._frames:
-            # No saved caller → we were in the main frame. Push the
-            # return value back on so `vm.stack[-1]` reflects it after
-            # halt (some callers inspect this), then signal halt.
             self.stack.append(retval)
             return True
         saved = self._frames.pop()
@@ -409,6 +525,12 @@ class VM:
         self.ip = saved["ip"]
         self.stack = saved["stack"]
         self.env = saved["env"]
+        # Special case: returning from a class's `init` method. The
+        # caller already pushed the new instance onto its stack
+        # before entering init; init's return value (always null
+        # from the implicit fall-through) is discarded.
+        if saved.get("_init_instance"):
+            return False
         self.stack.append(retval)
         return False
 

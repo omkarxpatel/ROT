@@ -47,6 +47,50 @@ class RotFunctionValue:
 
 
 @dataclass
+class RotClassValue:
+    """A compiled class — what `LOAD_CONST` pushes when the VM sees a
+    `ClassDef`. Methods are compiled at class-definition time (each
+    is its own `RotFunctionValue`). Calling a class instantiates it
+    and optionally runs `init`.
+    """
+
+    name: str
+    methods: dict[str, RotFunctionValue] = field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        return f"<class {self.name}>"
+
+
+@dataclass
+class RotInstanceValue:
+    """A class instance created by `CALL`-ing a `RotClassValue`. Holds
+    the class reference (so member lookups can fall through to methods)
+    and a mutable field dict.
+    """
+
+    cls: RotClassValue
+    fields: dict[str, Any] = field(default_factory=dict)
+
+    def __repr__(self) -> str:
+        return f"<instance of {self.cls.name}>"
+
+
+@dataclass
+class RotBoundMethod:
+    """A method already bound to its receiver instance. Returned by
+    `GET_MEMBER` when the name resolves to one of the class's
+    methods. `CALL` on a bound method prepends `this=instance` to
+    the function's local env, then runs the method body.
+    """
+
+    instance: RotInstanceValue
+    method: RotFunctionValue
+
+    def __repr__(self) -> str:
+        return f"<bound method {self.instance.cls.name}.{self.method.name}>"
+
+
+@dataclass
 class Chunk:
     """A compiled program. Holds the bytecode, the constant pool,
     and the name pool. Compact + JSON-serializable for the future
@@ -166,8 +210,22 @@ class Compiler:
             self._emit(Op.POP)
             return
         if isinstance(stmt, ast.Assign):
-            self._compile_expr(stmt.value)
+            assign_op = getattr(stmt, "op", "=")
+            if assign_op == "=":
+                self._compile_expr(stmt.value)
+                idx = self.chunk.add_name(stmt.name)
+                self._emit(Op.STORE_NAME, idx)
+                return
+            # Compound: `x op= value` → LOAD_NAME, value, op, STORE_NAME.
+            bin_op = _BIN_OP_MAP.get(assign_op)
+            if bin_op is None:
+                raise NotImplementedError(
+                    f"codegen: compound assign {assign_op!r} not supported"
+                )
             idx = self.chunk.add_name(stmt.name)
+            self._emit(Op.LOAD_NAME, idx)
+            self._compile_expr(stmt.value)
+            self._emit(bin_op)
             self._emit(Op.STORE_NAME, idx)
             return
         if isinstance(stmt, ast.LetStmt):
@@ -200,6 +258,34 @@ class Compiler:
             return
         if isinstance(stmt, ast.FuncDef):
             self._compile_func_def(stmt)
+            return
+        if isinstance(stmt, ast.ClassDef):
+            self._compile_class_def(stmt)
+            return
+        if isinstance(stmt, ast.MemberAssign):
+            assign_op = getattr(stmt, "op", "=")
+            idx = self.chunk.add_name(stmt.member)
+            if assign_op == "=":
+                self._compile_expr(stmt.target)
+                self._compile_expr(stmt.value)
+                self._emit(Op.SET_MEMBER, idx)
+                return
+            # Compound: `target.member op= value`. Emit:
+            #   [target] DUP [target,target] GET_MEMBER member
+            #   [target, current] [value] op [target, current op value]
+            #   SET_MEMBER member
+            bin_op = _BIN_OP_MAP.get(assign_op)
+            if bin_op is None:
+                raise NotImplementedError(
+                    f"codegen: compound member assign {assign_op!r}"
+                    " not supported"
+                )
+            self._compile_expr(stmt.target)
+            self._emit(Op.DUP)
+            self._emit(Op.GET_MEMBER, idx)
+            self._compile_expr(stmt.value)
+            self._emit(bin_op)
+            self._emit(Op.SET_MEMBER, idx)
             return
         if isinstance(stmt, ast.Return):
             if stmt.value is not None:
@@ -436,6 +522,11 @@ class Compiler:
             self._compile_expr(expr.index)
             self._emit(Op.GET_INDEX)
             return
+        if isinstance(expr, ast.MemberAccess):
+            self._compile_expr(expr.target)
+            idx = self.chunk.add_name(expr.member)
+            self._emit(Op.GET_MEMBER, idx)
+            return
         if isinstance(expr, ast.Call):
             # Stack at the time of CALL: [function, arg1, ..., argN].
             self._compile_expr(expr.callee)
@@ -477,6 +568,28 @@ class Compiler:
         name_idx = self.chunk.add_name(stmt.name)
         self._emit(Op.STORE_NAME, name_idx)
 
+    def _compile_class_def(self, stmt: ast.ClassDef) -> None:
+        """Compile each method into its own `RotFunctionValue`, wrap
+        them into a `RotClassValue`, and store it in the surrounding
+        env via `LOAD_CONST + STORE_NAME` — same shape as a top-level
+        function definition."""
+        methods: dict[str, RotFunctionValue] = {}
+        for member in stmt.methods:
+            body_compiler = Compiler()
+            body_compiler._compile_block(member.body)
+            body_compiler._emit(Op.LOAD_NULL)
+            body_compiler._emit(Op.RETURN_VALUE)
+            methods[member.name] = RotFunctionValue(
+                name=member.name,
+                params=list(member.params),
+                chunk=body_compiler.chunk,
+            )
+        class_val = RotClassValue(name=stmt.name, methods=methods)
+        const_idx = self.chunk.add_const(class_val)
+        self._emit(Op.LOAD_CONST, const_idx)
+        name_idx = self.chunk.add_name(stmt.name)
+        self._emit(Op.STORE_NAME, name_idx)
+
 
 _BIN_OP_MAP: dict[str, Op] = {
     "+": Op.ADD,
@@ -504,7 +617,8 @@ def _instr_to_dict(instr: tuple) -> list:
 def _const_to_dict(value):
     """Convert a constant pool entry to JSON-safe form. Primitives
     pass through; `RotFunctionValue` becomes a dict with the nested
-    chunk dumped recursively."""
+    chunk dumped recursively; `RotClassValue` becomes a dict with
+    its methods recursively dumped."""
     if isinstance(value, RotFunctionValue):
         return {
             "__type__": "RotFunctionValue",
@@ -512,7 +626,23 @@ def _const_to_dict(value):
             "params": list(value.params),
             "chunk": value.chunk.to_dict() if value.chunk is not None else None,
         }
+    if isinstance(value, RotClassValue):
+        return {
+            "__type__": "RotClassValue",
+            "name": value.name,
+            "methods": {
+                mname: _const_to_dict(m) for mname, m in value.methods.items()
+            },
+        }
     return value
 
 
-__all__ = ["Chunk", "Compiler", "RotFunctionValue", "InterpreterError"]
+__all__ = [
+    "Chunk",
+    "Compiler",
+    "RotFunctionValue",
+    "RotClassValue",
+    "RotInstanceValue",
+    "RotBoundMethod",
+    "InterpreterError",
+]

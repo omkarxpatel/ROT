@@ -165,9 +165,9 @@ def test_compile_identifier_loads_by_name():
 
 
 def test_compile_unsupported_statement_raises_not_implemented():
-    # `ClassDef` codegen isn't supported yet (lands later).
+    # `ThrowStmt` isn't supported yet (lands in v2.27.14).
     with pytest.raises(NotImplementedError):
-        _compile("class Foo { init() {} }")
+        _compile('throw "oops"')
 
 
 # ─── Collections (v2.27.7) ───────────────────────────────────────
