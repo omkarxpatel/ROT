@@ -54,15 +54,27 @@ class Chunk:
 
     `code` entries are `(Op, *args)` tuples. Most ops have 0 or 1
     arg; future jump ops will have a single offset arg.
+
+    `lines` is parallel to `code` — `lines[i]` is the 1-indexed
+    source line that produced `code[i]`, or 0 if no source position
+    was tracked (defensive/synthetic emits like fall-through
+    `LOAD_NULL + RETURN_VALUE` at the end of a function body).
     """
 
     code: list[tuple] = field(default_factory=list)
+    lines: list[int] = field(default_factory=list)
     constants: list[Any] = field(default_factory=list)
     names: list[str] = field(default_factory=list)
 
-    def emit(self, op: Op, *args: int) -> int:
-        """Append an instruction and return its offset in `code`."""
+    def emit(self, op: Op, *args: int, line: int = 0) -> int:
+        """Append an instruction and return its offset in `code`.
+
+        `line` is the 1-indexed source line this instruction belongs
+        to — passed in by `Compiler._emit` from
+        `Compiler._current_line`, which is set per-statement.
+        """
         self.code.append((op, *args))
+        self.lines.append(line)
         return len(self.code) - 1
 
     def add_const(self, value: Any) -> int:
@@ -89,10 +101,13 @@ class Chunk:
 
         Instructions become `[op_name, *args]`; constants are
         primitives where possible, dicts for nested function values
-        (with their own chunk dumped recursively).
+        (with their own chunk dumped recursively). `lines` is the
+        per-instruction source-line array — the UI uses it to filter
+        the bytecode pane down to instructions for the active step.
         """
         return {
             "code": [_instr_to_dict(instr) for instr in self.code],
+            "lines": list(self.lines),
             "constants": [_const_to_dict(c) for c in self.constants],
             "names": list(self.names),
         }
@@ -114,25 +129,46 @@ class Compiler:
         # entry: {"start": IP_to_jump_back_to,
         #         "break_jumps": [idxs to patch when loop ends]}.
         self._loop_stack: list[dict] = []
+        # Source line currently being compiled. Set by `_compile_stmt`
+        # from `stmt.line` and stamped onto every emit via `_emit` so
+        # the playground's bytecode pane can filter to the current
+        # statement.
+        self._current_line: int = 0
+
+    def _emit(self, op: Op, *args: int) -> int:
+        """Compile-time emit wrapper. Stamps the current statement's
+        source line onto the instruction so the playground can
+        highlight only this statement's bytecode."""
+        return self.chunk.emit(op, *args, line=self._current_line)
 
     def compile(self, program: ast.Program) -> Chunk:
         for stmt in program.body:
             self._compile_stmt(stmt)
-        self.chunk.emit(Op.RETURN)
+        self._emit(Op.RETURN)
         return self.chunk
 
     # ─── Statements ────────────────────────────────────────────────
 
     def _compile_stmt(self, stmt: ast.Statement) -> None:
+        prior_line = self._current_line
+        stmt_line = getattr(stmt, "line", 0)
+        if stmt_line:
+            self._current_line = stmt_line
+        try:
+            self._compile_stmt_dispatch(stmt)
+        finally:
+            self._current_line = prior_line
+
+    def _compile_stmt_dispatch(self, stmt: ast.Statement) -> None:
         if isinstance(stmt, ast.ExprStmt):
             self._compile_expr(stmt.expr)
             # Discard the value — ROT statements don't propagate values.
-            self.chunk.emit(Op.POP)
+            self._emit(Op.POP)
             return
         if isinstance(stmt, ast.Assign):
             self._compile_expr(stmt.value)
             idx = self.chunk.add_name(stmt.name)
-            self.chunk.emit(Op.STORE_NAME, idx)
+            self._emit(Op.STORE_NAME, idx)
             return
         if isinstance(stmt, ast.LetStmt):
             # For now Let and Assign generate the same bytecode. The
@@ -140,7 +176,7 @@ class Compiler:
             # for closures and is wired in when STORE_LOCAL lands.
             self._compile_expr(stmt.value)
             idx = self.chunk.add_name(stmt.name)
-            self.chunk.emit(Op.STORE_NAME, idx)
+            self._emit(Op.STORE_NAME, idx)
             return
         if isinstance(stmt, ast.IfStmt):
             self._compile_if(stmt)
@@ -154,13 +190,13 @@ class Compiler:
         if isinstance(stmt, ast.BreakStmt):
             if not self._loop_stack:
                 raise InterpreterError("`break` outside of a loop")
-            idx = self.chunk.emit(Op.JUMP, 0)
+            idx = self._emit(Op.JUMP, 0)
             self._loop_stack[-1]["break_jumps"].append(idx)
             return
         if isinstance(stmt, ast.ContinueStmt):
             if not self._loop_stack:
                 raise InterpreterError("`continue` outside of a loop")
-            self.chunk.emit(Op.JUMP, self._loop_stack[-1]["start"])
+            self._emit(Op.JUMP, self._loop_stack[-1]["start"])
             return
         if isinstance(stmt, ast.FuncDef):
             self._compile_func_def(stmt)
@@ -169,8 +205,8 @@ class Compiler:
             if stmt.value is not None:
                 self._compile_expr(stmt.value)
             else:
-                self.chunk.emit(Op.LOAD_NULL)
-            self.chunk.emit(Op.RETURN_VALUE)
+                self._emit(Op.LOAD_NULL)
+            self._emit(Op.RETURN_VALUE)
             return
         if isinstance(stmt, ast.IndexAssign):
             # `xs[i] = v` — currently supports plain `=`. Compound
@@ -184,7 +220,7 @@ class Compiler:
             self._compile_expr(stmt.target)
             self._compile_expr(stmt.index)
             self._compile_expr(stmt.value)
-            self.chunk.emit(Op.SET_INDEX)
+            self._emit(Op.SET_INDEX)
             return
         raise NotImplementedError(
             f"codegen: statement {type(stmt).__name__!r} not yet supported"
@@ -216,17 +252,17 @@ class Compiler:
 
         # First branch (the leading `if`).
         self._compile_expr(stmt.cond)
-        skip_idx = self.chunk.emit(Op.JUMP_IF_FALSE, 0)
+        skip_idx = self._emit(Op.JUMP_IF_FALSE, 0)
         self._compile_block(stmt.then_block)
-        end_jumps.append(self.chunk.emit(Op.JUMP, 0))
+        end_jumps.append(self._emit(Op.JUMP, 0))
         self.chunk.patch_jump(skip_idx, len(self.chunk.code))
 
         # Each elif.
         for branch in stmt.elif_branches:
             self._compile_expr(branch.cond)
-            skip_idx = self.chunk.emit(Op.JUMP_IF_FALSE, 0)
+            skip_idx = self._emit(Op.JUMP_IF_FALSE, 0)
             self._compile_block(branch.body)
-            end_jumps.append(self.chunk.emit(Op.JUMP, 0))
+            end_jumps.append(self._emit(Op.JUMP, 0))
             self.chunk.patch_jump(skip_idx, len(self.chunk.code))
 
         # Optional else.
@@ -257,9 +293,9 @@ class Compiler:
         the tree-walker already implements.
         """
         self._compile_expr(expr.left)
-        self.chunk.emit(Op.DUP)
-        end_idx = self.chunk.emit(jump_on, 0)
-        self.chunk.emit(Op.POP)
+        self._emit(Op.DUP)
+        end_idx = self._emit(jump_on, 0)
+        self._emit(Op.POP)
         self._compile_expr(expr.right)
         self.chunk.patch_jump(end_idx, len(self.chunk.code))
 
@@ -283,11 +319,11 @@ class Compiler:
         on the stack.
         """
         self._compile_expr(stmt.iter)
-        self.chunk.emit(Op.GET_ITER)
+        self._emit(Op.GET_ITER)
         loop_start = len(self.chunk.code)
-        iter_jump_idx = self.chunk.emit(Op.ITER_NEXT, 0)
+        iter_jump_idx = self._emit(Op.ITER_NEXT, 0)
         name_idx = self.chunk.add_name(stmt.var)
-        self.chunk.emit(Op.STORE_NAME, name_idx)
+        self._emit(Op.STORE_NAME, name_idx)
 
         ctx = {"start": loop_start, "break_jumps": []}
         self._loop_stack.append(ctx)
@@ -296,12 +332,12 @@ class Compiler:
         finally:
             self._loop_stack.pop()
 
-        self.chunk.emit(Op.JUMP, loop_start)
+        self._emit(Op.JUMP, loop_start)
         # `end` is the location of the POP — both ITER_NEXT-exhausted
         # and `break` target this IP so the iter gets cleaned up
         # exactly once.
         end_ip = len(self.chunk.code)
-        self.chunk.emit(Op.POP)
+        self._emit(Op.POP)
         self.chunk.patch_jump(iter_jump_idx, end_ip)
         for idx in ctx["break_jumps"]:
             self.chunk.patch_jump(idx, end_ip)
@@ -321,7 +357,7 @@ class Compiler:
         """
         loop_start = len(self.chunk.code)
         self._compile_expr(stmt.cond)
-        skip_idx = self.chunk.emit(Op.JUMP_IF_FALSE, 0)
+        skip_idx = self._emit(Op.JUMP_IF_FALSE, 0)
 
         ctx = {"start": loop_start, "break_jumps": []}
         self._loop_stack.append(ctx)
@@ -330,7 +366,7 @@ class Compiler:
         finally:
             self._loop_stack.pop()
 
-        self.chunk.emit(Op.JUMP, loop_start)
+        self._emit(Op.JUMP, loop_start)
         end_ip = len(self.chunk.code)
         self.chunk.patch_jump(skip_idx, end_ip)
         for idx in ctx["break_jumps"]:
@@ -341,21 +377,21 @@ class Compiler:
     def _compile_expr(self, expr: ast.Expression) -> None:
         if isinstance(expr, ast.NumberLit):
             idx = self.chunk.add_const(expr.value)
-            self.chunk.emit(Op.LOAD_CONST, idx)
+            self._emit(Op.LOAD_CONST, idx)
             return
         if isinstance(expr, ast.StringLit):
             idx = self.chunk.add_const(expr.value)
-            self.chunk.emit(Op.LOAD_CONST, idx)
+            self._emit(Op.LOAD_CONST, idx)
             return
         if isinstance(expr, ast.BoolLit):
-            self.chunk.emit(Op.LOAD_TRUE if expr.value else Op.LOAD_FALSE)
+            self._emit(Op.LOAD_TRUE if expr.value else Op.LOAD_FALSE)
             return
         if isinstance(expr, ast.NullLit):
-            self.chunk.emit(Op.LOAD_NULL)
+            self._emit(Op.LOAD_NULL)
             return
         if isinstance(expr, ast.Identifier):
             idx = self.chunk.add_name(expr.name)
-            self.chunk.emit(Op.LOAD_NAME, idx)
+            self._emit(Op.LOAD_NAME, idx)
             return
         if isinstance(expr, ast.BinaryOp):
             if expr.op == "and":
@@ -371,15 +407,15 @@ class Compiler:
                 raise NotImplementedError(
                     f"codegen: binary op {expr.op!r} not yet supported"
                 )
-            self.chunk.emit(op)
+            self._emit(op)
             return
         if isinstance(expr, ast.UnaryOp):
             self._compile_expr(expr.operand)
             if expr.op == "-":
-                self.chunk.emit(Op.NEG)
+                self._emit(Op.NEG)
                 return
             if expr.op == "not":
-                self.chunk.emit(Op.NOT)
+                self._emit(Op.NOT)
                 return
             raise NotImplementedError(
                 f"codegen: unary op {expr.op!r} not yet supported"
@@ -387,25 +423,25 @@ class Compiler:
         if isinstance(expr, ast.ListLit):
             for elem in expr.elements:
                 self._compile_expr(elem)
-            self.chunk.emit(Op.BUILD_LIST, len(expr.elements))
+            self._emit(Op.BUILD_LIST, len(expr.elements))
             return
         if isinstance(expr, ast.DictLit):
             for (k, v) in expr.pairs:
                 self._compile_expr(k)
                 self._compile_expr(v)
-            self.chunk.emit(Op.BUILD_DICT, len(expr.pairs))
+            self._emit(Op.BUILD_DICT, len(expr.pairs))
             return
         if isinstance(expr, ast.Index):
             self._compile_expr(expr.target)
             self._compile_expr(expr.index)
-            self.chunk.emit(Op.GET_INDEX)
+            self._emit(Op.GET_INDEX)
             return
         if isinstance(expr, ast.Call):
             # Stack at the time of CALL: [function, arg1, ..., argN].
             self._compile_expr(expr.callee)
             for arg in expr.args:
                 self._compile_expr(arg)
-            self.chunk.emit(Op.CALL, len(expr.args))
+            self._emit(Op.CALL, len(expr.args))
             return
         raise NotImplementedError(
             f"codegen: expression {type(expr).__name__!r} not yet supported"
@@ -428,8 +464,8 @@ class Compiler:
         """
         body_compiler = Compiler()
         body_compiler._compile_block(stmt.body)
-        body_compiler.chunk.emit(Op.LOAD_NULL)
-        body_compiler.chunk.emit(Op.RETURN_VALUE)
+        body_compiler._emit(Op.LOAD_NULL)
+        body_compiler._emit(Op.RETURN_VALUE)
 
         func_val = RotFunctionValue(
             name=stmt.name,
@@ -437,9 +473,9 @@ class Compiler:
             chunk=body_compiler.chunk,
         )
         const_idx = self.chunk.add_const(func_val)
-        self.chunk.emit(Op.LOAD_CONST, const_idx)
+        self._emit(Op.LOAD_CONST, const_idx)
         name_idx = self.chunk.add_name(stmt.name)
-        self.chunk.emit(Op.STORE_NAME, name_idx)
+        self._emit(Op.STORE_NAME, name_idx)
 
 
 _BIN_OP_MAP: dict[str, Op] = {

@@ -13,13 +13,22 @@ import { cn } from "@/lib/utils";
 
 interface BytecodeViewProps {
   chunk: RotChunkDump | null;
+  // Optional 1-indexed source line to highlight. When set,
+  // instructions with `lines[i] === highlightLine` get an amber
+  // background; others dim. Used by the playground in Animate mode
+  // to show "which bytecode runs THIS statement."
+  highlightLine?: number | null;
   empty?: string;
 }
 
 // Renders a compiled `Chunk` as a numbered list of opcodes plus the
 // constant pool and name pool. Nested function-value constants
 // render with an expandable disclosure showing their own chunk.
-export function BytecodeView({ chunk, empty }: BytecodeViewProps) {
+export function BytecodeView({
+  chunk,
+  highlightLine,
+  empty,
+}: BytecodeViewProps) {
   if (!chunk) {
     return (
       <div className="text-xs text-muted-foreground">
@@ -29,28 +38,61 @@ export function BytecodeView({ chunk, empty }: BytecodeViewProps) {
   }
   return (
     <div className="space-y-3">
-      <CodeListing chunk={chunk} />
+      <CodeListing chunk={chunk} highlightLine={highlightLine ?? null} />
       {chunk.constants.length > 0 && <ConstantsPool constants={chunk.constants} />}
       {chunk.names.length > 0 && <NamesPool names={chunk.names} />}
     </div>
   );
 }
 
-function CodeListing({ chunk }: { chunk: RotChunkDump }) {
+function CodeListing({
+  chunk,
+  highlightLine,
+}: {
+  chunk: RotChunkDump;
+  highlightLine: number | null;
+}) {
+  // If we're highlighting AND at least one instruction matches the
+  // line, dim the rest. If nothing matches (function chunks have
+  // their own line space), keep them all normal.
+  const anyMatch =
+    highlightLine != null &&
+    chunk.lines.some((l) => l === highlightLine);
   return (
     <div>
-      <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Code
+      <div className="mb-1 flex items-baseline gap-2 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <span>Code</span>
+        {anyMatch && highlightLine && (
+          <span className="font-mono text-[9.5px] font-normal normal-case text-amber-400/80">
+            highlighting line {highlightLine}
+          </span>
+        )}
       </div>
       <pre className="overflow-x-auto whitespace-pre rounded bg-zinc-900/60 px-3 py-2 font-mono text-[12.5px] leading-relaxed">
-        {chunk.code.map((instr, i) => (
-          <div key={i} className="flex items-baseline gap-3">
-            <span className="w-10 shrink-0 text-right text-zinc-500">
-              {i.toString().padStart(3, "0")}
-            </span>
-            <InstrLine instr={instr} chunk={chunk} />
-          </div>
-        ))}
+        {chunk.code.map((instr, i) => {
+          const line = chunk.lines[i] ?? 0;
+          const matches = anyMatch && line === highlightLine;
+          return (
+            <div
+              key={i}
+              className={cn(
+                "flex items-baseline gap-3 rounded px-1 transition-colors duration-300",
+                matches && "bg-amber-500/15",
+                anyMatch && !matches && "opacity-40",
+              )}
+            >
+              <span className="w-10 shrink-0 text-right text-zinc-500">
+                {i.toString().padStart(3, "0")}
+              </span>
+              <InstrLine instr={instr} chunk={chunk} />
+              {line > 0 && (
+                <span className="ml-auto pl-2 text-[10px] text-zinc-600">
+                  L{line}
+                </span>
+              )}
+            </div>
+          );
+        })}
       </pre>
     </div>
   );

@@ -2,6 +2,55 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.11 — M2: per-instruction line attribution + statement-scoped Bytecode highlight
+
+### Added
+- `Chunk.lines: list[int]` — parallel to `code`. Each entry is the
+  1-indexed source line that produced the instruction; `0` means
+  "no source position" (synthetic emits like the defensive
+  fall-through `LOAD_NULL + RETURN_VALUE` at the end of a function
+  body).
+- `Compiler._current_line` + `_emit()` wrapper. `_compile_stmt`
+  sets `_current_line = stmt.line` before dispatching and restores
+  it on exit, so every instruction the dispatch emits inherits
+  that line.
+- `Chunk.to_dict()` now includes the `lines` array.
+- `BytecodeView` accepts a `highlightLine?: number | null` prop.
+  When set and at least one instruction matches that line, the
+  matching rows get an amber-tinted background and a `highlighting
+  line N` chip in the header; non-matching rows dim to 40%
+  opacity. Every row gets a small `L<n>` annotation on the right
+  showing its source line.
+
+### Changed
+- Every `self.chunk.emit(...)` call in `rot/codegen.py` was
+  routed through `self._emit(...)` — about 35 sites — so line
+  attribution applies uniformly. Function bodies (compiled via
+  their own `body_compiler`) use the same wrapper, so their
+  inner instructions carry the body's source lines.
+- Playground page passes the active snapshot's
+  `statement_line` (the same value used by the editor's amber
+  line highlight) to `BytecodeView.highlightLine`. Step through
+  the program and the bytecode pane's amber band moves with you.
+
+### Tests
+- `tests/test_codegen.py`: lines array parallel to code; lines
+  inside a function body use the body's source lines (not the
+  caller's); `to_dict` exposes the array.
+- Tests: 786 → **789 passing**.
+
+### Notes
+- This is what unlocks the original HANDOFF promise that the
+  bytecode pane shows what each statement compiled to. Now you
+  can step `funct fac(n) { if (n <= 1) { return 1 } return n *
+  fac(n - 1) }`, expand the `<funct fac>` chunk, and watch the
+  amber band move across the recursive-call instructions as you
+  step into deeper recursion.
+- The annotation `L0` (line zero) on a few instructions is
+  expected — those are the defensive fall-through emits that
+  don't correspond to user source. Could suppress them in a
+  follow-up if they read as noise.
+
 ## v2.27.10 — M2: bytecode bridge + Bytecode pane in the playground
 
 ### Added

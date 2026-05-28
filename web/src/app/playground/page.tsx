@@ -529,6 +529,7 @@ export default function PlaygroundPage() {
                   {!bytecodeError && (
                     <BytecodeView
                       chunk={bytecode}
+                      highlightLine={highlightLine}
                       empty="(no chunk yet)"
                     />
                   )}

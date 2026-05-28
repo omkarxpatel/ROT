@@ -111,6 +111,10 @@ export type RotInstr = [string, ...RotBytecodeArg[]];
 
 export interface RotChunkDump {
   code: RotInstr[];
+  // Parallel to `code` — `lines[i]` is the 1-indexed source line that
+  // produced `code[i]`. 0 means "no position" (synthetic instructions
+  // like fall-through `RETURN_VALUE` at the end of a function body).
+  lines: number[];
   constants: RotConstant[];
   names: string[];
 }

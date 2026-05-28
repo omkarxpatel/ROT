@@ -359,6 +359,41 @@ def test_chunk_to_dict_json_serializable():
     assert decoded["code"][0] == ["LOAD_CONST", 0]
 
 
+# ─── Per-instruction line attribution (v2.27.11) ─────────────────
+
+
+def test_chunk_lines_parallel_to_code():
+    chunk = _compile("x = 1\ny = 2")
+    # The chunk should have one line entry per instruction.
+    assert len(chunk.lines) == len(chunk.code)
+    # Each Assign produces 2 emits (LOAD_CONST, STORE_NAME). Lines 1
+    # and 2 should appear on the appropriate instructions; the
+    # trailing RETURN inherits the last statement's line (line 2).
+    # Instructions: LOAD_CONST(1), STORE_NAME(1), LOAD_CONST(2),
+    # STORE_NAME(2), RETURN(2)
+    assert chunk.lines[:4] == [1, 1, 2, 2]
+
+
+def test_chunk_lines_inside_function_use_body_lines():
+    chunk = _compile("funct foo() {\n  return 7\n}")
+    func_val = chunk.constants[0]
+    # The function's body chunk: LOAD_CONST 7 + RETURN_VALUE should
+    # both carry line 2 (the `return 7` line). The defensive
+    # fall-through LOAD_NULL + RETURN_VALUE has no source position
+    # (line 0).
+    assert func_val.chunk.lines[0] == 2
+    assert func_val.chunk.lines[1] == 2
+    assert func_val.chunk.lines[2] == 0
+    assert func_val.chunk.lines[3] == 0
+
+
+def test_chunk_to_dict_includes_lines_array():
+    chunk = _compile("x = 1")
+    d = chunk.to_dict()
+    assert "lines" in d
+    assert d["lines"] == list(chunk.lines)
+
+
 # ─── Comparison ops (v2.27.1) ────────────────────────────────────
 
 
