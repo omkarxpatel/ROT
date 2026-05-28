@@ -390,3 +390,90 @@ def test_vm_set_index_out_of_range_raises():
 def test_vm_nested_list_indexing():
     vm = _run("g = [[1 | 2] | [3 | 4]]\ny = g[1][0]")
     assert vm.env["y"] == 3
+
+
+# ─── For loops (v2.27.8) ─────────────────────────────────────────
+
+
+def test_vm_for_loop_iterates_list():
+    vm = _run("total = 0\nfor x in [1 | 2 | 3] { total = total + x }")
+    assert vm.env["total"] == 6
+
+
+def test_vm_for_loop_binds_var_to_each_element():
+    vm = _run("last = 0\nfor n in [10 | 20 | 30 | 40] { last = n }")
+    assert vm.env["last"] == 40
+
+
+def test_vm_for_loop_over_empty_list_skips_body():
+    vm = _run("ran = false\nfor x in [] { ran = true }")
+    assert vm.env["ran"] is False
+
+
+def test_vm_for_loop_over_string_iterates_chars():
+    vm = _run('out = ""\nfor c in "abc" { out = out + c }')
+    assert vm.env["out"] == "abc"
+
+
+def test_vm_for_loop_over_dict_iterates_keys():
+    # `for k in dict` iterates keys (Python semantics). Hard to
+    # collect them in the VM without `append` builtin yet, so just
+    # count them.
+    src = (
+        'd = {"a": 1 | "b": 2}\n'
+        "count = 0\n"
+        "for k in d {\n"
+        "  count = count + 1\n"
+        "}\n"
+    )
+    vm = _run(src)
+    assert vm.env["count"] == 2
+
+
+def test_vm_for_loop_break_exits_early():
+    src = (
+        "found = -1\n"
+        "for x in [1 | 2 | 3 | 4 | 5] {\n"
+        "  if (x == 3) {\n"
+        "    found = x\n"
+        "    break\n"
+        "  }\n"
+        "}\n"
+    )
+    vm = _run(src)
+    assert vm.env["found"] == 3
+
+
+def test_vm_for_loop_continue_skips_iteration():
+    src = (
+        "kept = 0\n"
+        "for x in [1 | 2 | 3 | 4 | 5] {\n"
+        "  if (x == 3) { continue }\n"
+        "  kept = kept + x\n"
+        "}\n"
+    )
+    vm = _run(src)
+    # 1 + 2 + 4 + 5 = 12
+    assert vm.env["kept"] == 12
+
+
+def test_vm_for_loop_over_non_iterable_raises():
+    with pytest.raises(InterpreterError) as ei:
+        _run("for x in 42 { y = x }")
+    assert "iterate" in str(ei.value)
+
+
+def test_vm_nested_for_loops():
+    src = (
+        "total = 0\n"
+        "for i in [1 | 2] {\n"
+        "  for j in [10 | 20 | 30] {\n"
+        "    total = total + i * j\n"
+        "  }\n"
+        "}\n"
+    )
+    # i=1: 10 + 20 + 30 = 60
+    # i=2: 20 + 40 + 60 = 120
+    # total = 180
+    vm = _run(src)
+    assert vm.env["total"] == 180

@@ -112,6 +112,9 @@ class Compiler:
         if isinstance(stmt, ast.WhileStmt):
             self._compile_while(stmt)
             return
+        if isinstance(stmt, ast.ForStmt):
+            self._compile_for(stmt)
+            return
         if isinstance(stmt, ast.BreakStmt):
             if not self._loop_stack:
                 raise InterpreterError("`break` outside of a loop")
@@ -213,6 +216,49 @@ class Compiler:
         self.chunk.emit(Op.POP)
         self._compile_expr(expr.right)
         self.chunk.patch_jump(end_idx, len(self.chunk.code))
+
+    def _compile_for(self, stmt: ast.ForStmt) -> None:
+        """Emit a `for x in <iter> { body }` loop:
+
+            compile iter expression
+            GET_ITER                         # iter on stack
+          loop_start:
+            ITER_NEXT → end                  # peek iter; if exhausted, jump
+                                             # to end (iter stays on stack)
+            STORE_NAME x                     # bind the next value to x
+            body...
+            JUMP            → loop_start
+          end:
+            POP                              # discard the now-exhausted iter
+
+        `break` inside the body jumps to `end` (the POP at end cleans
+        up the iter for both paths). `continue` jumps to `loop_start`
+        which re-runs `ITER_NEXT` correctly because the iter is still
+        on the stack.
+        """
+        self._compile_expr(stmt.iter)
+        self.chunk.emit(Op.GET_ITER)
+        loop_start = len(self.chunk.code)
+        iter_jump_idx = self.chunk.emit(Op.ITER_NEXT, 0)
+        name_idx = self.chunk.add_name(stmt.var)
+        self.chunk.emit(Op.STORE_NAME, name_idx)
+
+        ctx = {"start": loop_start, "break_jumps": []}
+        self._loop_stack.append(ctx)
+        try:
+            self._compile_block(stmt.body)
+        finally:
+            self._loop_stack.pop()
+
+        self.chunk.emit(Op.JUMP, loop_start)
+        # `end` is the location of the POP — both ITER_NEXT-exhausted
+        # and `break` target this IP so the iter gets cleaned up
+        # exactly once.
+        end_ip = len(self.chunk.code)
+        self.chunk.emit(Op.POP)
+        self.chunk.patch_jump(iter_jump_idx, end_ip)
+        for idx in ctx["break_jumps"]:
+            self.chunk.patch_jump(idx, end_ip)
 
     def _compile_while(self, stmt: ast.WhileStmt) -> None:
         """Emit a back-edge loop:

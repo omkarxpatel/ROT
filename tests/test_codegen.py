@@ -165,9 +165,9 @@ def test_compile_identifier_loads_by_name():
 
 
 def test_compile_unsupported_statement_raises_not_implemented():
-    # `ForStmt` isn't supported yet (lands in v2.27.8).
+    # `FuncDef` codegen isn't supported yet (lands in v2.27.9).
     with pytest.raises(NotImplementedError):
-        _compile("for x in [1 | 2] { y = x }")
+        _compile("funct foo() { return 1 }")
 
 
 # ─── Collections (v2.27.7) ───────────────────────────────────────
@@ -233,6 +233,39 @@ def test_compile_index_assign_emits_set_index():
         Op.SET_INDEX,
         Op.RETURN,
     ]
+
+
+# ─── For loops (v2.27.8) ─────────────────────────────────────────
+
+
+def test_compile_for_loop_emits_get_iter_iter_next_pop():
+    chunk = _compile("for x in [1 | 2] { y = x }")
+    ops = [instr[0] for instr in chunk.code]
+    # iter expr (BUILD_LIST), GET_ITER, ITER_NEXT, STORE_NAME x,
+    # body (LOAD_NAME x, STORE_NAME y), JUMP back, POP (cleanup),
+    # RETURN.
+    assert Op.GET_ITER in ops
+    assert Op.ITER_NEXT in ops
+    # ITER_NEXT's target should be the POP that cleans up the iter.
+    iter_next_idx = next(
+        i for i, instr in enumerate(chunk.code) if instr[0] == Op.ITER_NEXT
+    )
+    target = chunk.code[iter_next_idx][1]
+    assert chunk.code[target][0] == Op.POP
+
+
+def test_compile_for_break_jumps_to_pop_cleanup():
+    chunk = _compile("for x in [1 | 2] { break }")
+    # break emits a JUMP. Its target should be the POP that cleans
+    # up the iter at end-of-loop.
+    jumps = [
+        (i, instr) for i, instr in enumerate(chunk.code) if instr[0] == Op.JUMP
+    ]
+    # The break's JUMP (target > current ip) vs the back-edge (target < ip).
+    forward_jumps = [(i, j) for i, j in jumps if j[1] > i]
+    assert len(forward_jumps) == 1
+    break_target = forward_jumps[0][1][1]
+    assert chunk.code[break_target][0] == Op.POP
 
 
 # ─── Comparison ops (v2.27.1) ────────────────────────────────────

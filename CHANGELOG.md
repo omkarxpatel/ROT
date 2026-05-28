@@ -2,6 +2,52 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.8 — M2: `for x in <iter>` loops (`GET_ITER`, `ITER_NEXT`)
+
+### Added
+- Two iterator opcodes:
+  - `GET_ITER` — pops a value, calls Python `iter()` on it, pushes
+    the resulting iterator. Non-iterables → `InterpreterError`
+    matching the tree-walker's surface ("cannot iterate over X").
+  - `ITER_NEXT <target>` — PEEKs the iterator on top of the stack.
+    If exhausted, JUMPs to `target` (the iter stays on the stack —
+    the loop's end cleanup site pops it). Else pushes the next
+    value, keeping the iter underneath.
+- `Compiler._compile_for` emits:
+
+      compile iter
+      GET_ITER                      # iter on stack
+    loop_start:
+      ITER_NEXT → end
+      STORE_NAME var
+      body…
+      JUMP → loop_start
+    end:
+      POP                           # discard exhausted iter
+
+  - `break` JUMPs straight to `end` — the POP cleans up the iter
+    on both the exhausted and the broken-out paths.
+  - `continue` JUMPs back to `loop_start`, where `ITER_NEXT`
+    correctly re-advances the iter.
+
+### Tests
+- `tests/test_codegen.py`: ForStmt emits `GET_ITER` + `ITER_NEXT` +
+  trailing POP cleanup; break's forward JUMP targets that POP.
+- `tests/test_vm.py`: for over list, over string (per-char), over
+  dict (iterates keys, Python semantics), over empty list (no
+  body), non-iterable → error, `break` exits early, `continue`
+  skips an iteration, nested for loops compute the right cross
+  product.
+- Tests: 759 → **770 passing**.
+
+### Notes
+- Works for any Python iterable (lists, dicts, strings, ranges,
+  generators) since `iter()` does the heavy lifting. Same as the
+  tree-walker.
+- `break` / `continue` are unified across `while` and `for`
+  because the iter is on the stack throughout the body — neither
+  branch needs to know which kind of loop they're in.
+
 ## v2.27.7 — M2: collections (`BUILD_LIST`, `BUILD_DICT`, `GET_INDEX`, `SET_INDEX`)
 
 ### Added

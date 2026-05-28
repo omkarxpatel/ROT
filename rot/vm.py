@@ -197,6 +197,25 @@ class VM:
                 if val:
                     self.ip = instr[1]
                 continue
+            if op == Op.GET_ITER:
+                target = self.stack.pop()
+                try:
+                    self.stack.append(iter(target))
+                except TypeError:
+                    raise InterpreterError(
+                        f"cannot iterate over {type(target).__name__}"
+                    )
+                continue
+            if op == Op.ITER_NEXT:
+                target_ip = instr[1]
+                iterator = self.stack[-1]
+                try:
+                    value = next(iterator)
+                except StopIteration:
+                    self.ip = target_ip
+                    continue
+                self.stack.append(value)
+                continue
             if op == Op.BUILD_LIST:
                 n = instr[1]
                 if n == 0:

@@ -78,6 +78,17 @@ class Op(IntEnum):
     JUMP_IF_TRUE = 52    # arg: target IP. Pops the top value; if truthy,
                          # jumps to `target`.
 
+    # ─── Iteration ─────────────────────────────────────────────────
+    GET_ITER = 70        # Pops a value, calls `iter()` on it, pushes the
+                         # iterator. Used by `for x in <expr> { ... }`.
+                         # TypeError on a non-iterable becomes an
+                         # InterpreterError.
+    ITER_NEXT = 71       # arg: target IP. PEEKs the iterator on top of
+                         # the stack. If exhausted, JUMPs to `target`
+                         # (the iter stays on the stack — the loop's
+                         # end cleanup site pops it). Else pushes the
+                         # next value, keeping the iter underneath.
+
     # ─── Halt ──────────────────────────────────────────────────────
     RETURN = 90      # Halt execution. Top of stack (if any) is the
                      # program's "result" — for a whole program that's
