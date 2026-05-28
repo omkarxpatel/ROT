@@ -252,21 +252,11 @@ export default function PlaygroundPage() {
     setEditorJumpTo({ line, col, key: jumpCounter.current });
   }, []);
 
-  // Editor's hover-range highlight (sky-blue tint over the line span)
-  // driven by mouse hover on AST nodes in the Step panel.
-  const [editorHoverRange, setEditorHoverRange] = useState<{
-    startLine: number;
-    endLine: number;
-  } | null>(null);
-
-  // Editor cursor — drives the inverse hover: when the user moves
-  // the cursor, the Step panel's AST stage highlights the matching
-  // node. Stored as a plain {line, col} so React batches updates
-  // on selection-set events.
-  const [editorCursor, setEditorCursor] = useState<{
-    line: number;
-    col: number;
-  } | null>(null);
+  // (v2.27.4) Removed editor hover-range and editor cursor state —
+  // they were tied to the AST tree view in Step Detail, which has
+  // been replaced by the legible Structure view. The Editor still
+  // accepts those props (defensive defaults of null) but the page
+  // no longer sets them.
 
   const displayOutput = mode === "animate" ? animateOutput : pipeline.output;
   const displayError = mode === "animate" ? animateError : pipeline.error;
@@ -355,10 +345,6 @@ export default function PlaygroundPage() {
               onChange={setSource}
               highlightLine={highlightLine}
               jumpTo={editorJumpTo}
-              hoverRange={editorHoverRange}
-              onCursorChange={(line, col) =>
-                setEditorCursor({ line, col })
-              }
             />
           </div>
         </section>
@@ -390,10 +376,8 @@ export default function PlaygroundPage() {
                 stepIndex={stepIndex}
                 totalSteps={snapshots.length}
                 onJumpToSource={handleJumpToSource}
-                onAstHover={setEditorHoverRange}
                 playing={playing}
                 speedMs={speedMs}
-                editorCursor={editorCursor}
               />
             </div>
           )}

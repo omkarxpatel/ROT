@@ -2,6 +2,64 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.4 — Step Detail redesign: three phases, drop Tokens, AST tree → Structure view
+
+### Premise
+- The four-stage Step Detail was clutter. The Tokens chip strip
+  was visually noisy and duplicated info already in the colored
+  source preview. The AST tree was dense and not legible —
+  unfamiliar labels (`ExprStmt`, `BinaryOp`, `Identifier`), deep
+  nesting, structural fields that didn't add meaning.
+
+### Changed
+- Step Detail now shows **three phases**: **Read · Parse · Run**.
+  Tokens stage and the AST tree are gone.
+  - **Read** — the source line with per-token semantic coloring,
+    a caret marker at the statement's column, click-to-jump on
+    every token (replaces the separate chip strip).
+  - **Parse** — the parsed statement rendered as **pretty-printed
+    code**: keywords, names, numbers, strings, operators colored
+    the same as the editor + token chips. Multi-line blocks
+    (if / while / for / funct) get indented; one-liners read
+    as the source itself. A small label header names the kind
+    ("Assignment", "Function call", "Conditional", etc.).
+  - **Run** — unchanged: the explainer, env diff with dots,
+    printed-output block.
+- Stage delays compressed accordingly. The "natural total" is now
+  ~1.0s (was ~1.4s) — fewer stages, snappier reveal.
+- The Read stage's source-line tokens are now clickable to jump
+  the editor cursor (replaces the click-on-chip mechanism from
+  v2.26.23).
+
+### Added
+- `web/src/components/structure-view.tsx` — `StructureView`
+  renders an AST statement as colored, indented code. Supports
+  every ROT statement: `Assign`, `LetStmt`, `ExprStmt`, `IfStmt`
+  (with elif and else), `WhileStmt`, `ForStmt`, `FuncDef`,
+  `ClassDef`, `Return`, `ThrowStmt`, `BreakStmt`, `ContinueStmt`,
+  `ImportStmt`, `TryCatch`, `IndexAssign`, `MemberAssign`.
+  Inline expressions cover all literal types, `Identifier`,
+  `BinaryOp`, `UnaryOp`, `Call`, `Index`, `Slice`,
+  `MemberAccess`, `ListLit`, `DictLit`.
+
+### Removed
+- The Tokens stage block from Step Detail.
+- The AST tree (`AstView`) from Step Detail.
+- The `editorCursor` + `editorHoverRange` state in the playground
+  page — both were tied to AST-tree interactions that no longer
+  exist. The `Editor`'s `onCursorChange` / `hoverRange` props
+  remain (unused for now, harmless defaults).
+- The `onAstHover` prop on `StepPanel`. `onLeafReveal`, `nodePulses`,
+  `cursorTarget`, and AST-pulse state inside `StagedView` are gone.
+- `AstView` itself stays — still used by the bottom-right Pipeline
+  panel in run mode for whole-program structure browsing.
+
+### Notes
+- Type-check clean. No Python changes; 740 tests still passing.
+- The 4-stage version is preserved in v2.26.0 history if you want
+  to compare. The new design optimizes for *legibility per step*
+  rather than maximum phase enumeration.
+
 ## v2.27.3 — M2: `and` / `or` short-circuit + `while` + `break` / `continue`
 
 ### Added
