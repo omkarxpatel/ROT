@@ -101,6 +101,21 @@ class Op(IntEnum):
                          # end cleanup site pops it). Else pushes the
                          # next value, keeping the iter underneath.
 
+    # ─── Exceptions ────────────────────────────────────────────────
+    # The handler stack lives on the VM. BEGIN_TRY pushes a handler;
+    # END_TRY pops one on the normal path; RAISE pops the topmost and
+    # unwinds frames + the value stack to the depths it recorded,
+    # then jumps to the handler's catch IP.
+    BEGIN_TRY = 75   # arg: catch IP. Pushes a handler on the VM's
+                     # `_handlers` stack with the current frame depth
+                     # and value-stack depth captured.
+    END_TRY = 76     # Pops the topmost handler (normal-path exit
+                     # from a try block).
+    RAISE = 77       # Pops a value, raises it as a throw. The VM
+                     # dispatch loop catches the internal signal,
+                     # finds the topmost handler, unwinds, binds
+                     # the value at the catch IP.
+
     # ─── Function calls ────────────────────────────────────────────
     CALL = 80            # arg: argc. Stack layout at the moment of
                          # dispatch: [..., function, arg1, ..., argN].

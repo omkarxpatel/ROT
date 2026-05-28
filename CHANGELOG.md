@@ -2,6 +2,67 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.14 — M2: `try` / `catch` / `throw` in the VM
+
+### Added
+- Three new opcodes:
+  - `BEGIN_TRY <catch_ip>` — pushes a handler onto `VM._handlers`
+    with the current `(frame_depth, stack_depth, catch_ip)`.
+  - `END_TRY` — pops the topmost handler. Emitted on the normal
+    completion path of a try block.
+  - `RAISE` — pops a value off the stack and raises an internal
+    `_VMThrowSignal(value)` Python exception that the dispatch
+    loop catches.
+- `Compiler._compile_try_catch(stmt)` emits the standard
+  `BEGIN_TRY → body → END_TRY → JUMP end / catch_ip → STORE_NAME
+  var → catch body / end` pattern.
+- `Compiler` handles `ThrowStmt` — compile value, emit `RAISE`.
+- VM machinery:
+  - `_VMThrowSignal` Python exception class.
+  - `VM._handlers` stack alongside `VM._frames`.
+  - `VM._handle_throw(value)` unwinds frames until the topmost
+    handler's `frame_depth` is matched, truncates the value stack
+    to the handler's `stack_depth`, pushes the thrown value, and
+    jumps to the catch IP. Returns False if no handler matched
+    (uncaught), which the run loop converts to
+    `InterpreterError("uncaught throw: …")`.
+  - `_do_return_value` pops handlers belonging to the frame that's
+    being returned from — so a `BEGIN_TRY` left dangling by a
+    mid-try `return` doesn't leak.
+- `VM.run` was refactored into a thin outer loop + new
+  `_run_one_instruction()` helper so each instruction sits inside
+  a try/except. The helper returns True only for `Op.RETURN`
+  (program halt); everything else returns False to continue. The
+  ~35 `continue` statements in the previous dispatch became
+  `return False`.
+
+### Codegen scope
+- `TryCatch` with a `finally_block` still raises
+  `NotImplementedError`. Implementing finally correctly under
+  uncaught propagation (and across return / break / continue)
+  requires another pass — deferred.
+- Throws now work across function-call boundaries: `try { bad() }
+  catch (e) { ... }` correctly unwinds the frame stack to the
+  handler's frame.
+
+### Tests
+- `tests/test_vm.py` (8 new): try caught locally, throw across a
+  function call, uncaught throw → `InterpreterError`, nested
+  try (inner catches; outer catches when inner re-throws), throw
+  of a non-string value, finally → NotImplementedError, wrong-
+  init-argc parity (kept).
+- `python3 -m rot --vm /tmp/throw.rot` runs end-to-end and prints
+  the caught value plus the after-catch line.
+- Tests: 800 → **807 passing**.
+
+### Notes
+- Closures still don't capture outer-function locals (the
+  globals-fallback covers most realistic programs). Land alongside
+  `STORE_LOCAL` in a later Z.
+- The four big M2 features still to ship: `Slice` codegen, `Import`
+  codegen, closures, and VM step mode (opcode-level snapshots
+  flowing through the playground's Step Detail).
+
 ## v2.27.13 — M2: classes (`GET_MEMBER`, `SET_MEMBER` + instances) + compound assigns
 
 ### Added

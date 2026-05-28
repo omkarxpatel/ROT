@@ -25,6 +25,18 @@ from .errors import InterpreterError
 from .opcodes import Op
 
 
+class _VMThrowSignal(Exception):
+    """Internal Python exception that carries a ROT-thrown value
+    through the VM's dispatch loop. Caught at the run-loop level,
+    which finds the topmost handler and routes execution to its
+    catch block. Uncaught signals are converted to InterpreterError
+    so the CLI / playground see them as regular runtime errors."""
+
+    def __init__(self, value):
+        super().__init__("rot throw")
+        self.value = value
+
+
 def _plus(a: Any, b: Any) -> Any:
     """Mirror `Interpreter`'s `+`: string-coerce when either side is a
     string. Otherwise plain numeric addition (and Python raises
@@ -92,280 +104,314 @@ class VM:
         # caller's chunk / ip / stack / env at the moment of CALL.
         # On RETURN_VALUE we pop one of these and restore the attrs.
         self._frames: list[dict] = []
+        # Exception-handler stack. BEGIN_TRY pushes, END_TRY
+        # pops normally, _handle_throw pops one when unwinding.
+        # Each entry: {catch_ip, frame_depth, stack_depth}.
+        self._handlers: list[dict] = []
 
     def run(self) -> None:
+        """Drive the dispatch loop. Wraps each instruction in a
+        try/except so that BEGIN_TRY/END_TRY/RAISE form a real
+        try/catch mechanism — uncaught signals surface as
+        `InterpreterError("uncaught throw: ...")`."""
         while self.ip < len(self.chunk.code):
-            instr = self.chunk.code[self.ip]
-            self.ip += 1
-            op = instr[0]
+            try:
+                if self._run_one_instruction():
+                    return
+            except _VMThrowSignal as signal:
+                if not self._handle_throw(signal.value):
+                    raise InterpreterError(
+                        f"uncaught throw: {_stringify(signal.value)}"
+                    )
 
-            if op == Op.LOAD_CONST:
-                self.stack.append(self.chunk.constants[instr[1]])
-                continue
-            if op == Op.LOAD_NULL:
-                self.stack.append(None)
-                continue
-            if op == Op.LOAD_TRUE:
-                self.stack.append(True)
-                continue
-            if op == Op.LOAD_FALSE:
-                self.stack.append(False)
-                continue
-            if op == Op.POP:
-                self.stack.pop()
-                continue
-            if op == Op.DUP:
-                self.stack.append(self.stack[-1])
-                continue
-            if op == Op.LOAD_NAME:
-                name = self.chunk.names[instr[1]]
-                if name in self.env:
-                    self.stack.append(self.env[name])
-                elif self.env is not self._globals and name in self._globals:
-                    self.stack.append(self._globals[name])
-                else:
-                    raise InterpreterError(f"name {name!r} is not defined")
-                continue
-            if op == Op.STORE_NAME:
-                name = self.chunk.names[instr[1]]
-                self.env[name] = self.stack.pop()
-                continue
-            if op == Op.ADD:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                try:
-                    self.stack.append(_plus(a, b))
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.SUB:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                try:
-                    self.stack.append(a - b)
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.MUL:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                try:
-                    self.stack.append(a * b)
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.DIV:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                try:
-                    self.stack.append(a / b)
-                except ZeroDivisionError:
-                    raise InterpreterError("division by zero")
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.MOD:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                try:
-                    self.stack.append(a % b)
-                except ZeroDivisionError:
-                    raise InterpreterError("modulo by zero")
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.NEG:
-                a = self.stack.pop()
-                try:
-                    self.stack.append(-a)
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.EQ:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                self.stack.append(a == b)
-                continue
-            if op == Op.NE:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                self.stack.append(a != b)
-                continue
-            if op == Op.LT:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                try:
-                    self.stack.append(a < b)
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.LE:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                try:
-                    self.stack.append(a <= b)
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.GT:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                try:
-                    self.stack.append(a > b)
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.GE:
-                b = self.stack.pop()
-                a = self.stack.pop()
-                try:
-                    self.stack.append(a >= b)
-                except TypeError as e:
-                    raise InterpreterError(str(e))
-                continue
-            if op == Op.NOT:
-                a = self.stack.pop()
-                self.stack.append(not a)
-                continue
-            if op == Op.JUMP:
+    def _run_one_instruction(self) -> bool:
+        """Dispatch one bytecode instruction. Returns True only
+        when Op.RETURN halts the VM; False otherwise."""
+        instr = self.chunk.code[self.ip]
+        self.ip += 1
+        op = instr[0]
+
+        if op == Op.LOAD_CONST:
+            self.stack.append(self.chunk.constants[instr[1]])
+            return False
+        if op == Op.LOAD_NULL:
+            self.stack.append(None)
+            return False
+        if op == Op.LOAD_TRUE:
+            self.stack.append(True)
+            return False
+        if op == Op.LOAD_FALSE:
+            self.stack.append(False)
+            return False
+        if op == Op.POP:
+            self.stack.pop()
+            return False
+        if op == Op.DUP:
+            self.stack.append(self.stack[-1])
+            return False
+        if op == Op.LOAD_NAME:
+            name = self.chunk.names[instr[1]]
+            if name in self.env:
+                self.stack.append(self.env[name])
+            elif self.env is not self._globals and name in self._globals:
+                self.stack.append(self._globals[name])
+            else:
+                raise InterpreterError(f"name {name!r} is not defined")
+            return False
+        if op == Op.STORE_NAME:
+            name = self.chunk.names[instr[1]]
+            self.env[name] = self.stack.pop()
+            return False
+        if op == Op.ADD:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            try:
+                self.stack.append(_plus(a, b))
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.SUB:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            try:
+                self.stack.append(a - b)
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.MUL:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            try:
+                self.stack.append(a * b)
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.DIV:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            try:
+                self.stack.append(a / b)
+            except ZeroDivisionError:
+                raise InterpreterError("division by zero")
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.MOD:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            try:
+                self.stack.append(a % b)
+            except ZeroDivisionError:
+                raise InterpreterError("modulo by zero")
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.NEG:
+            a = self.stack.pop()
+            try:
+                self.stack.append(-a)
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.EQ:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            self.stack.append(a == b)
+            return False
+        if op == Op.NE:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            self.stack.append(a != b)
+            return False
+        if op == Op.LT:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            try:
+                self.stack.append(a < b)
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.LE:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            try:
+                self.stack.append(a <= b)
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.GT:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            try:
+                self.stack.append(a > b)
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.GE:
+            b = self.stack.pop()
+            a = self.stack.pop()
+            try:
+                self.stack.append(a >= b)
+            except TypeError as e:
+                raise InterpreterError(str(e))
+            return False
+        if op == Op.NOT:
+            a = self.stack.pop()
+            self.stack.append(not a)
+            return False
+        if op == Op.JUMP:
+            self.ip = instr[1]
+            return False
+        if op == Op.JUMP_IF_FALSE:
+            val = self.stack.pop()
+            if not val:
                 self.ip = instr[1]
-                continue
-            if op == Op.JUMP_IF_FALSE:
-                val = self.stack.pop()
-                if not val:
-                    self.ip = instr[1]
-                continue
-            if op == Op.JUMP_IF_TRUE:
-                val = self.stack.pop()
-                if val:
-                    self.ip = instr[1]
-                continue
-            if op == Op.GET_ITER:
-                target = self.stack.pop()
-                try:
-                    self.stack.append(iter(target))
-                except TypeError:
+            return False
+        if op == Op.JUMP_IF_TRUE:
+            val = self.stack.pop()
+            if val:
+                self.ip = instr[1]
+            return False
+        if op == Op.GET_ITER:
+            target = self.stack.pop()
+            try:
+                self.stack.append(iter(target))
+            except TypeError:
+                raise InterpreterError(
+                    f"cannot iterate over {type(target).__name__}"
+                )
+            return False
+        if op == Op.ITER_NEXT:
+            target_ip = instr[1]
+            iterator = self.stack[-1]
+            try:
+                value = next(iterator)
+            except StopIteration:
+                self.ip = target_ip
+                return False
+            self.stack.append(value)
+            return False
+        if op == Op.BUILD_LIST:
+            n = instr[1]
+            if n == 0:
+                self.stack.append([])
+            else:
+                items = self.stack[-n:]
+                del self.stack[-n:]
+                self.stack.append(list(items))
+            return False
+        if op == Op.BUILD_DICT:
+            n = instr[1]
+            if n == 0:
+                self.stack.append({})
+            else:
+                flat = self.stack[-2 * n:]
+                del self.stack[-2 * n:]
+                d: dict = {}
+                for i in range(0, len(flat), 2):
+                    d[flat[i]] = flat[i + 1]
+                self.stack.append(d)
+            return False
+        if op == Op.GET_INDEX:
+            idx = self.stack.pop()
+            target = self.stack.pop()
+            if isinstance(target, list):
+                if not isinstance(idx, int) or isinstance(idx, bool):
                     raise InterpreterError(
-                        f"cannot iterate over {type(target).__name__}"
+                        "list indices must be integers"
                     )
-                continue
-            if op == Op.ITER_NEXT:
-                target_ip = instr[1]
-                iterator = self.stack[-1]
-                try:
-                    value = next(iterator)
-                except StopIteration:
-                    self.ip = target_ip
-                    continue
-                self.stack.append(value)
-                continue
-            if op == Op.BUILD_LIST:
-                n = instr[1]
-                if n == 0:
-                    self.stack.append([])
-                else:
-                    items = self.stack[-n:]
-                    del self.stack[-n:]
-                    self.stack.append(list(items))
-                continue
-            if op == Op.BUILD_DICT:
-                n = instr[1]
-                if n == 0:
-                    self.stack.append({})
-                else:
-                    flat = self.stack[-2 * n:]
-                    del self.stack[-2 * n:]
-                    d: dict = {}
-                    for i in range(0, len(flat), 2):
-                        d[flat[i]] = flat[i + 1]
-                    self.stack.append(d)
-                continue
-            if op == Op.GET_INDEX:
-                idx = self.stack.pop()
-                target = self.stack.pop()
-                if isinstance(target, list):
-                    if not isinstance(idx, int) or isinstance(idx, bool):
-                        raise InterpreterError(
-                            "list indices must be integers"
-                        )
-                    n = len(target)
-                    real = idx + n if idx < 0 else idx
-                    if real < 0 or real >= n:
-                        raise InterpreterError(
-                            f"list index out of range (index {idx}, length {n})"
-                        )
-                    self.stack.append(target[real])
-                elif isinstance(target, dict):
-                    if idx not in target:
-                        raise InterpreterError(
-                            f"dict key not found: {idx!r}"
-                        )
-                    self.stack.append(target[idx])
-                elif isinstance(target, str):
-                    if not isinstance(idx, int) or isinstance(idx, bool):
-                        raise InterpreterError(
-                            "string indices must be integers"
-                        )
-                    n = len(target)
-                    real = idx + n if idx < 0 else idx
-                    if real < 0 or real >= n:
-                        raise InterpreterError(
-                            f"string index out of range"
-                        )
-                    self.stack.append(target[real])
-                else:
+                n = len(target)
+                real = idx + n if idx < 0 else idx
+                if real < 0 or real >= n:
                     raise InterpreterError(
-                        f"cannot index {type(target).__name__}"
+                        f"list index out of range (index {idx}, length {n})"
                     )
-                continue
-            if op == Op.SET_INDEX:
-                val = self.stack.pop()
-                idx = self.stack.pop()
-                target = self.stack.pop()
-                if isinstance(target, list):
-                    if not isinstance(idx, int) or isinstance(idx, bool):
-                        raise InterpreterError(
-                            "list indices must be integers"
-                        )
-                    n = len(target)
-                    real = idx + n if idx < 0 else idx
-                    if real < 0 or real >= n:
-                        raise InterpreterError(
-                            f"list index out of range (index {idx}, length {n})"
-                        )
-                    target[real] = val
-                elif isinstance(target, dict):
-                    target[idx] = val
-                else:
+                self.stack.append(target[real])
+            elif isinstance(target, dict):
+                if idx not in target:
                     raise InterpreterError(
-                        f"cannot index-assign {type(target).__name__}"
+                        f"dict key not found: {idx!r}"
                     )
-                continue
-            if op == Op.GET_MEMBER:
-                name = self.chunk.names[instr[1]]
-                target = self.stack.pop()
-                self.stack.append(self._get_member(target, name))
-                continue
-            if op == Op.SET_MEMBER:
-                name = self.chunk.names[instr[1]]
-                val = self.stack.pop()
-                target = self.stack.pop()
-                if not isinstance(target, RotInstanceValue):
+                self.stack.append(target[idx])
+            elif isinstance(target, str):
+                if not isinstance(idx, int) or isinstance(idx, bool):
                     raise InterpreterError(
-                        f"cannot set member on {type(target).__name__}"
+                        "string indices must be integers"
                     )
-                target.fields[name] = val
-                continue
-            if op == Op.CALL:
-                self._do_call(instr[1])
-                continue
-            if op == Op.RETURN_VALUE:
-                if self._do_return_value():
-                    return  # main frame returned — halt
-                continue
-            if op == Op.RETURN:
-                return
-            raise InterpreterError(f"unknown opcode {int(op)}")
+                n = len(target)
+                real = idx + n if idx < 0 else idx
+                if real < 0 or real >= n:
+                    raise InterpreterError(
+                        f"string index out of range"
+                    )
+                self.stack.append(target[real])
+            else:
+                raise InterpreterError(
+                    f"cannot index {type(target).__name__}"
+                )
+            return False
+        if op == Op.SET_INDEX:
+            val = self.stack.pop()
+            idx = self.stack.pop()
+            target = self.stack.pop()
+            if isinstance(target, list):
+                if not isinstance(idx, int) or isinstance(idx, bool):
+                    raise InterpreterError(
+                        "list indices must be integers"
+                    )
+                n = len(target)
+                real = idx + n if idx < 0 else idx
+                if real < 0 or real >= n:
+                    raise InterpreterError(
+                        f"list index out of range (index {idx}, length {n})"
+                    )
+                target[real] = val
+            elif isinstance(target, dict):
+                target[idx] = val
+            else:
+                raise InterpreterError(
+                    f"cannot index-assign {type(target).__name__}"
+                )
+            return False
+        if op == Op.GET_MEMBER:
+            name = self.chunk.names[instr[1]]
+            target = self.stack.pop()
+            self.stack.append(self._get_member(target, name))
+            return False
+        if op == Op.SET_MEMBER:
+            name = self.chunk.names[instr[1]]
+            val = self.stack.pop()
+            target = self.stack.pop()
+            if not isinstance(target, RotInstanceValue):
+                raise InterpreterError(
+                    f"cannot set member on {type(target).__name__}"
+                )
+            target.fields[name] = val
+            return False
+        if op == Op.CALL:
+            self._do_call(instr[1])
+            return False
+        if op == Op.RETURN_VALUE:
+            if self._do_return_value():
+                return True  # main frame returned — halt
+            return False
+        if op == Op.BEGIN_TRY:
+            self._handlers.append({
+                "catch_ip": instr[1],
+                "frame_depth": len(self._frames),
+                "stack_depth": len(self.stack),
+            })
+            return False
+        if op == Op.END_TRY:
+            if self._handlers:
+                self._handlers.pop()
+            return False
+        if op == Op.RAISE:
+            value = self.stack.pop()
+            raise _VMThrowSignal(value)
+        if op == Op.RETURN:
+            return True
+        raise InterpreterError(f"unknown opcode {int(op)}")
 
     # ─── Call / return helpers ─────────────────────────────────────
 
@@ -525,6 +571,15 @@ class VM:
         self.ip = saved["ip"]
         self.stack = saved["stack"]
         self.env = saved["env"]
+        # Drop any handlers that belonged to the frame we just left.
+        # They were pushed inside the function and aren't reachable
+        # anymore. (BEGIN_TRY without a matching END_TRY in a
+        # function that returns mid-try would otherwise leak.)
+        while (
+            self._handlers
+            and self._handlers[-1]["frame_depth"] > len(self._frames)
+        ):
+            self._handlers.pop()
         # Special case: returning from a class's `init` method. The
         # caller already pushed the new instance onto its stack
         # before entering init; init's return value (always null
@@ -533,6 +588,29 @@ class VM:
             return False
         self.stack.append(retval)
         return False
+
+    def _handle_throw(self, value: Any) -> bool:
+        """Unwind to the topmost handler and resume at its catch IP.
+        Returns True if a handler was found (execution continues),
+        False if uncaught (run loop converts to InterpreterError)."""
+        if not self._handlers:
+            return False
+        handler = self._handlers.pop()
+        # Unwind frames until we're back at the handler's frame.
+        while len(self._frames) > handler["frame_depth"]:
+            saved = self._frames.pop()
+            self.chunk = saved["chunk"]
+            self.ip = saved["ip"]
+            self.stack = saved["stack"]
+            self.env = saved["env"]
+        # Truncate the value stack to its depth at BEGIN_TRY so any
+        # partial values the try body pushed are cleaned up.
+        del self.stack[handler["stack_depth"]:]
+        # The catch block starts with STORE_NAME catch_var which
+        # will pop this value and bind it.
+        self.stack.append(value)
+        self.ip = handler["catch_ip"]
+        return True
 
 
 __all__ = ["VM"]

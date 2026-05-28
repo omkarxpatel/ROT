@@ -716,6 +716,102 @@ def test_vm_class_repr_matches_tree_walker():
     assert repr(vm.env["f"]) == "<instance of Foo>"
 
 
+# ─── try / catch / throw (v2.27.14) ──────────────────────────────
+
+
+def test_vm_throw_caught_by_try():
+    src = (
+        'msg = ""\n'
+        'try {\n'
+        '  throw "boom"\n'
+        '} catch (e) {\n'
+        '  msg = e\n'
+        '}\n'
+    )
+    vm = _run(src)
+    assert vm.env["msg"] == "boom"
+
+
+def test_vm_throw_propagates_across_function_call():
+    src = (
+        'funct bad() { throw "oops" }\n'
+        'caught = "no"\n'
+        'try {\n'
+        '  bad()\n'
+        '} catch (e) {\n'
+        '  caught = e\n'
+        '}\n'
+    )
+    vm = _run(src)
+    assert vm.env["caught"] == "oops"
+
+
+def test_vm_uncaught_throw_surfaces_as_interpreter_error():
+    with pytest.raises(InterpreterError) as ei:
+        _run('throw "lost"')
+    assert "uncaught throw" in str(ei.value)
+    assert "lost" in str(ei.value)
+
+
+def test_vm_throw_inside_nested_try_caught_by_inner():
+    src = (
+        "n = -1\n"
+        "try {\n"
+        '  try {\n'
+        '    throw "inner"\n'
+        '  } catch (e) {\n'
+        '    n = 1\n'
+        '  }\n'
+        '} catch (e) {\n'
+        '  n = 2\n'
+        '}\n'
+    )
+    vm = _run(src)
+    assert vm.env["n"] == 1
+
+
+def test_vm_throw_inside_nested_try_propagates_to_outer():
+    src = (
+        "n = -1\n"
+        "try {\n"
+        "  try {\n"
+        '    throw "inner"\n'
+        "  } catch (e) {\n"
+        "    throw e\n"
+        "  }\n"
+        "} catch (e) {\n"
+        "  n = 99\n"
+        "}\n"
+    )
+    vm = _run(src)
+    assert vm.env["n"] == 99
+
+
+def test_vm_throw_a_number_or_dict_value():
+    # ROT throws can carry any value, not just strings.
+    src = (
+        "v = 0\n"
+        "try {\n"
+        "  throw 42\n"
+        "} catch (e) {\n"
+        "  v = e + 1\n"
+        "}\n"
+    )
+    vm = _run(src)
+    assert vm.env["v"] == 43
+
+
+def test_vm_try_finally_not_yet_supported_raises():
+    # Codegen rejects finally clauses until a later Z. Confirm the
+    # error path is at least clean.
+    with pytest.raises(NotImplementedError):
+        Compiler().compile(
+            Parser(Lexer().tokenize(
+                'try { throw "x" } catch (e) {} finally { x = 1 }'
+            )).parse()
+        )
+
+
 def test_vm_wrong_init_argc_raises():
     src = (
         "class Two { init(a | b) { this.a = a; this.b = b } }\n"

@@ -294,6 +294,13 @@ class Compiler:
                 self._emit(Op.LOAD_NULL)
             self._emit(Op.RETURN_VALUE)
             return
+        if isinstance(stmt, ast.TryCatch):
+            self._compile_try_catch(stmt)
+            return
+        if isinstance(stmt, ast.ThrowStmt):
+            self._compile_expr(stmt.value)
+            self._emit(Op.RAISE)
+            return
         if isinstance(stmt, ast.IndexAssign):
             # `xs[i] = v` — currently supports plain `=`. Compound
             # assigns (`xs[i] += 1`) will land alongside the
@@ -567,6 +574,38 @@ class Compiler:
         self._emit(Op.LOAD_CONST, const_idx)
         name_idx = self.chunk.add_name(stmt.name)
         self._emit(Op.STORE_NAME, name_idx)
+
+    def _compile_try_catch(self, stmt: ast.TryCatch) -> None:
+        """Emit:
+
+            BEGIN_TRY → catch_ip
+            ... try body ...
+            END_TRY
+            JUMP   → end
+          catch_ip:
+            STORE_NAME catch_var       (the thrown value is on top)
+            ... catch body ...
+          end:
+
+        `finally` blocks need careful unwinding to run on uncaught
+        propagation too — deferred. If the AST has one, raise.
+        """
+        if stmt.finally_block is not None:
+            raise NotImplementedError(
+                "codegen: try/finally not yet supported in the VM"
+            )
+        begin_idx = self._emit(Op.BEGIN_TRY, 0)
+        self._compile_block(stmt.try_block)
+        self._emit(Op.END_TRY)
+        end_jump_idx = self._emit(Op.JUMP, 0)
+        # catch entry point
+        catch_ip = len(self.chunk.code)
+        self.chunk.patch_jump(begin_idx, catch_ip)
+        name_idx = self.chunk.add_name(stmt.catch_var)
+        self._emit(Op.STORE_NAME, name_idx)
+        self._compile_block(stmt.catch_block)
+        end_ip = len(self.chunk.code)
+        self.chunk.patch_jump(end_jump_idx, end_ip)
 
     def _compile_class_def(self, stmt: ast.ClassDef) -> None:
         """Compile each method into its own `RotFunctionValue`, wrap

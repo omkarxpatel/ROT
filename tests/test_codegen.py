@@ -165,9 +165,10 @@ def test_compile_identifier_loads_by_name():
 
 
 def test_compile_unsupported_statement_raises_not_implemented():
-    # `ThrowStmt` isn't supported yet (lands in v2.27.14).
+    # `Slice` isn't codegen'd yet — most other statements/expressions
+    # are now covered after v2.27.0–.14.
     with pytest.raises(NotImplementedError):
-        _compile('throw "oops"')
+        _compile("xs = [1 | 2 | 3]\ny = xs[1:3]")
 
 
 # ─── Collections (v2.27.7) ───────────────────────────────────────
