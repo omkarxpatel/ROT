@@ -2,6 +2,37 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.16 — hotfix: hydration mismatch when loading a `?src=…` shared link
+
+### Premise
+- v2.27.6's `readInitialSource()` was called from `useState(readInitialSource)`
+  — a lazy initializer that runs once per side. On the server, `window`
+  is undefined, so it returned the bundled fizzbuzz default and
+  `currentExample = "fizzbuzz"`. On the client, it read
+  `window.location.search`, decoded `?src=`, and returned
+  `currentExample = "custom"`. Next.js's hydration check saw the
+  `Source (fizzbuzz.rot)` server text vs `Source (custom.rot)`
+  client text and threw a hydration mismatch error, regenerating
+  the tree.
+
+### Fixed
+- Initial render now uses `DEFAULT_EXAMPLE_SOURCE` /
+  `DEFAULT_EXAMPLE_KEY` on **both** server and client — deterministic
+  across the SSR boundary.
+- A `useEffect` on mount calls `readClientStoredSource()` (browser-
+  only, no SSR check needed since effects don't run on the server)
+  and swaps in the URL- or localStorage-derived source if present.
+- Renamed the helper from `readInitialSource` →
+  `readClientStoredSource` to make its browser-only contract
+  explicit and dropped the `typeof window` guard since it's now
+  unreachable.
+
+### Notes
+- The user will briefly see fizzbuzz before the useEffect swaps in
+  the shared source — usually a single frame. Acceptable tradeoff
+  vs a hydration error and full client re-render.
+- No Python changes. 807 tests still passing.
+
 ## v2.27.15 — hotfix: stop the Step Detail panel from auto-scrolling during Play
 
 ### Premise

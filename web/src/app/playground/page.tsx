@@ -66,17 +66,12 @@ const MAX_SPEED_MS = 2000;
 // reloads.
 const LS_SOURCE_KEY = "rot-playground:source";
 
-// Read the initial editor source. Precedence:
-//   1. `?src=<base64>` in the URL — shared link, wins.
-//   2. localStorage — the user's most recent edit.
-//   3. The bundled default example.
-// `example` tracks which dropdown entry to mark as selected; "custom"
-// covers cases where the source came from a URL or localStorage and
-// doesn't match any bundled example.
-function readInitialSource(): { source: string; example: string } {
-  if (typeof window === "undefined") {
-    return { source: DEFAULT_EXAMPLE_SOURCE, example: DEFAULT_EXAMPLE_KEY };
-  }
+// Read URL + localStorage for an alternate initial source. Returns
+// null when neither is set — the page should fall back to the
+// bundled default. Browser-only (called from useEffect).
+function readClientStoredSource():
+  | { source: string; example: string }
+  | null {
   try {
     const params = new URLSearchParams(window.location.search);
     const src = params.get("src");
@@ -102,13 +97,29 @@ function readInitialSource(): { source: string; example: string } {
   } catch {
     // localStorage blocked — fall through.
   }
-  return { source: DEFAULT_EXAMPLE_SOURCE, example: DEFAULT_EXAMPLE_KEY };
+  return null;
 }
 
 export default function PlaygroundPage() {
-  const [initial] = useState(readInitialSource);
-  const [source, setSource] = useState<string>(initial.source);
-  const [currentExample, setCurrentExample] = useState<string>(initial.example);
+  // First render must be deterministic across server and client to
+  // avoid a hydration mismatch: SSR has no `window`, so the URL +
+  // localStorage check below was returning DEFAULT on the server
+  // and the URL-derived value on the client. We now initialize to
+  // the bundled default on BOTH, then swap in a useEffect after
+  // mount.
+  const [source, setSource] = useState<string>(DEFAULT_EXAMPLE_SOURCE);
+  const [currentExample, setCurrentExample] = useState<string>(
+    DEFAULT_EXAMPLE_KEY,
+  );
+  // After mount, check URL / localStorage and switch source if
+  // there's a saved or shared one. Runs once (empty deps).
+  useEffect(() => {
+    const found = readClientStoredSource();
+    if (!found) return;
+    setSource(found.source);
+    setCurrentExample(found.example);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [mode, setMode] = useState<Mode>("run");
   const [running, setRunning] = useState<boolean>(false);
   const [pipeline, setPipeline] = useState<PipelineState>(EMPTY_PIPELINE);
