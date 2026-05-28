@@ -76,6 +76,20 @@ export function StepPanel({
       ? Math.max(0.2, Math.min(1, speedMs / NATURAL_TOTAL_MS))
       : 1;
 
+  // Scroll the Step Detail panel back to the top on every step
+  // change. Without this, if the user manually scrolled down to
+  // peek at the Run stage and then let Play continue, the panel
+  // would stay scrolled down — they'd never see Read / Parse on
+  // the next snapshot. Reach into Radix's ScrollArea viewport via
+  // the data-attribute Radix tags it with.
+  const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const viewport = scrollAreaRef.current?.querySelector<HTMLElement>(
+      "[data-radix-scroll-area-viewport]",
+    );
+    viewport?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [stepIndex]);
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-border/60 px-3 py-2">
@@ -139,7 +153,7 @@ export function StepPanel({
           </div>
         )}
       </div>
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
         <div className="p-3">
           {snapshot ? (
             <StagedView

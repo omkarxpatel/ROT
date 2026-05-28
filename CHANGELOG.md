@@ -2,6 +2,31 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.17 — Step Detail scrolls to top on every step
+
+### Premise
+- After v2.27.15 removed the auto-scroll bleed, the panel no
+  longer dragged itself down. But the opposite problem appeared:
+  if the user manually scrolled down to peek at the Run phase
+  during a step, then let Play continue, the panel stayed
+  scrolled down forever — the user never saw Read / Parse on
+  the next snapshot.
+
+### Fixed
+- `StepPanel` now snaps the Radix `ScrollArea`'s viewport back to
+  the top each time `stepIndex` changes. Implementation reaches
+  into the viewport via the `data-radix-scroll-area-viewport`
+  attribute (the standard Radix tag), calls
+  `viewport.scrollTo({ top: 0, behavior: "smooth" })`.
+
+### Notes
+- The scroll is *internal* to the Step Detail card — only
+  affects the panel's own scroll, not the right column or page.
+- The user can still scroll down mid-step to read more of the
+  Run phase; the next step click smoothly returns them to the
+  Read phase.
+- No Python changes. 807 tests still passing.
+
 ## v2.27.16 — hotfix: hydration mismatch when loading a `?src=…` shared link
 
 ### Premise
