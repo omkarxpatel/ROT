@@ -2,6 +2,61 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.10 — M2: bytecode bridge + Bytecode pane in the playground
+
+### Added
+- `Chunk.to_dict()` in [`rot/codegen.py`](rot/codegen.py) — JSON-safe
+  dump of a compiled chunk. Instructions become `[op_name, *args]`,
+  constants pass through (primitives) or expand to `RotFunctionValue`
+  dicts with the nested chunk dumped recursively.
+- `rot_compile_to_chunk(source)` Python function in the Pyodide
+  bridge ([`web/src/lib/pyodide-runtime.ts`](web/src/lib/pyodide-runtime.ts))
+  — lex / parse / compile the source via the new `Compiler`, return
+  `{chunk, error, timings}` as a JSON string. `NotImplementedError`
+  from codegen surfaces with the original message so the UI can
+  show "ClassDef not yet supported in the VM" etc.
+- `compileToChunk(source)` TS API plus `RotChunkDump`,
+  `RotInstr`, `RotConstant`, `RotFunctionDump`, `RotCompileResult`
+  types.
+- `web/src/components/bytecode-view.tsx` — `BytecodeView` renders
+  a chunk as a numbered code listing with the constants pool and
+  names pool. Opcodes are colored by category (loads sky, stores
+  amber, arithmetic rose, comparison purple, control-flow emerald,
+  calls/returns amber-200, collections cyan, etc.). Argument
+  annotations show the resolved value inline:
+  `LOAD_CONST 0 (1)` or `STORE_NAME 0 (x)`. Function constants
+  are expandable disclosures that recurse into the nested chunk.
+
+### Changed
+- Playground's right column (Animate mode only) now has an
+  opt-in **Bytecode** card between Step Detail and the Timeline.
+  Header is a hide/show toggle, default `hide`. Opening it
+  triggers a `compileToChunk(source)` call and re-runs on every
+  source change while open.
+- The card shows "Compiling…" while loading, a destructive-styled
+  block on codegen errors, or the rendered chunk on success.
+
+### Tests
+- `tests/test_codegen.py`: `Chunk.to_dict()` shape for a basic
+  program, function-constant nesting (a `RotFunctionValue`'s
+  chunk dumps recursively), and round-trip JSON serialization
+  (catches any non-serializable slip-through).
+- Tests: 783 → **786 passing**.
+
+### Notes
+- The pane is **whole-program** for now — no per-statement
+  filtering. Adding `line` attribution per instruction in the
+  compiler is what unlocks "highlight the bytecode for this
+  snapshot" in a later Z.
+- Codegen surfaces remain incomplete: `ClassDef`, `TryCatch`,
+  `ThrowStmt`, `ImportStmt`, `MemberAccess`, `MemberAssign`, and
+  `Slice` still raise `NotImplementedError`. The Bytecode pane
+  shows the codegen-stage error cleanly when the user enters a
+  program that hits one.
+- Five Z's done in this batch: v2.27.6 (persist/share), v2.27.7
+  (collections), v2.27.8 (for loops), v2.27.9 (function calls),
+  v2.27.10 (bytecode bridge + UI).
+
 ## v2.27.9 — M2: function calls (`CALL`, `RETURN_VALUE`) + frame stack
 
 ### Premise

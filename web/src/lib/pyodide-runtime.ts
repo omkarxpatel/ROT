@@ -103,6 +103,38 @@ export interface RotStepResult {
   };
 }
 
+// --- Bytecode (v2.27.10) ---
+
+export type RotBytecodeArg = number | string | boolean | null;
+
+export type RotInstr = [string, ...RotBytecodeArg[]];
+
+export interface RotChunkDump {
+  code: RotInstr[];
+  constants: RotConstant[];
+  names: string[];
+}
+
+export type RotConstant =
+  | string
+  | number
+  | boolean
+  | null
+  | RotFunctionDump;
+
+export interface RotFunctionDump {
+  __type__: "RotFunctionValue";
+  name: string;
+  params: string[];
+  chunk: RotChunkDump | null;
+}
+
+export interface RotCompileResult {
+  chunk: RotChunkDump | null;
+  error: RotError | null;
+  timings: { lexMs: number; parseMs: number; compileMs: number };
+}
+
 export interface RotRuntimeStatus {
   state: "idle" | "loading" | "ready" | "error";
   message?: string;
@@ -266,6 +298,59 @@ def _error_dict(exc, source):
         "formatted": exc.format(source, "<playground>") if isinstance(exc, RotError) else f"error: {exc}",
         "stage": _stage_from_exc(exc),
     }
+
+
+def rot_compile_to_chunk(source):
+    """Lex / parse / compile \`source\` to bytecode. Returns a JSON
+    string with:
+        - chunk:   {code, constants, names} or null on failure
+        - error:   null or {message, line, col, formatted, stage}
+        - timings: {lexMs, parseMs, compileMs}
+    """
+    from rot.codegen import Compiler as _Compiler
+    result = {
+        "chunk": None,
+        "error": None,
+        "timings": {"lexMs": 0.0, "parseMs": 0.0, "compileMs": 0.0},
+    }
+    t0 = time.perf_counter()
+    try:
+        tokens = Lexer().tokenize(source)
+    except Exception as e:
+        result["timings"]["lexMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["lexMs"] = (time.perf_counter() - t0) * 1000
+    t0 = time.perf_counter()
+    try:
+        program = Parser(tokens).parse()
+    except Exception as e:
+        result["timings"]["parseMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["parseMs"] = (time.perf_counter() - t0) * 1000
+    t0 = time.perf_counter()
+    try:
+        chunk = _Compiler().compile(program)
+    except NotImplementedError as e:
+        result["timings"]["compileMs"] = (time.perf_counter() - t0) * 1000
+        # Codegen doesn't cover every statement type yet; surface the
+        # gap as an "interpret"-stage error so the UI can show it.
+        result["error"] = {
+            "message": str(e),
+            "line": 0,
+            "col": 0,
+            "formatted": f"codegen: {e}",
+            "stage": "interpret",
+        }
+        return _json.dumps(result)
+    except Exception as e:
+        result["timings"]["compileMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["compileMs"] = (time.perf_counter() - t0) * 1000
+    result["chunk"] = chunk.to_dict()
+    return _json.dumps(result)
 
 
 def rot_step(source):
@@ -536,6 +621,50 @@ export async function compileAndStep(source: string): Promise<RotStepResult> {
   } catch (e) {
     return {
       ...EMPTY_STEP_RESULT,
+      error: {
+        message: `json decode failed: ${e instanceof Error ? e.message : String(e)}`,
+        line: 0,
+        col: 0,
+        formatted: `error: json decode failed`,
+        stage: "internal",
+      },
+    };
+  }
+}
+
+const EMPTY_COMPILE_RESULT: RotCompileResult = {
+  chunk: null,
+  error: null,
+  timings: { lexMs: 0, parseMs: 0, compileMs: 0 },
+};
+
+export async function compileToChunk(
+  source: string,
+): Promise<RotCompileResult> {
+  let pyodide: PyodideInterface;
+  try {
+    pyodide = await loadRotRuntime();
+  } catch (e) {
+    return {
+      ...EMPTY_COMPILE_RESULT,
+      error: {
+        message: e instanceof Error ? e.message : String(e),
+        line: 0,
+        col: 0,
+        formatted: `error: ${e instanceof Error ? e.message : String(e)}`,
+        stage: "internal",
+      },
+    };
+  }
+  pyodide.globals.set("__rot_source__", source);
+  const jsonStr = pyodide.runPython(
+    `rot_compile_to_chunk(__rot_source__)`,
+  ) as string;
+  try {
+    return JSON.parse(jsonStr) as RotCompileResult;
+  } catch (e) {
+    return {
+      ...EMPTY_COMPILE_RESULT,
       error: {
         message: `json decode failed: ${e instanceof Error ? e.message : String(e)}`,
         line: 0,

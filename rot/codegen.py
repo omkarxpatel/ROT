@@ -83,6 +83,20 @@ class Chunk:
         self.names.append(name)
         return len(self.names) - 1
 
+    def to_dict(self) -> dict:
+        """JSON-safe dump of the chunk. Used by the playground bridge
+        to expose compiled bytecode to the browser side.
+
+        Instructions become `[op_name, *args]`; constants are
+        primitives where possible, dicts for nested function values
+        (with their own chunk dumped recursively).
+        """
+        return {
+            "code": [_instr_to_dict(instr) for instr in self.code],
+            "constants": [_const_to_dict(c) for c in self.constants],
+            "names": list(self.names),
+        }
+
     def patch_jump(self, idx: int, target: int) -> None:
         """Replace the placeholder target on a previously-emitted jump
         with `target` (an absolute IP). Used by control-flow codegen
@@ -443,4 +457,26 @@ _BIN_OP_MAP: dict[str, Op] = {
 }
 
 
-__all__ = ["Chunk", "Compiler", "InterpreterError"]
+def _instr_to_dict(instr: tuple) -> list:
+    """Convert an opcode tuple `(Op, *args)` into a JSON-safe list
+    `[op_name, *args]`."""
+    op = instr[0]
+    name = op.name if hasattr(op, "name") else str(op)
+    return [name, *instr[1:]]
+
+
+def _const_to_dict(value):
+    """Convert a constant pool entry to JSON-safe form. Primitives
+    pass through; `RotFunctionValue` becomes a dict with the nested
+    chunk dumped recursively."""
+    if isinstance(value, RotFunctionValue):
+        return {
+            "__type__": "RotFunctionValue",
+            "name": value.name,
+            "params": list(value.params),
+            "chunk": value.chunk.to_dict() if value.chunk is not None else None,
+        }
+    return value
+
+
+__all__ = ["Chunk", "Compiler", "RotFunctionValue", "InterpreterError"]

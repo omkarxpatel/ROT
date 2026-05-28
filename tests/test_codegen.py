@@ -318,6 +318,47 @@ def test_compile_return_with_value_and_without():
     assert b.chunk.code[1] == (Op.RETURN_VALUE,)
 
 
+# ─── Chunk.to_dict() — JSON dump for the playground bridge ───────
+
+
+def test_chunk_to_dict_basic_program():
+    chunk = _compile("x = 1")
+    d = chunk.to_dict()
+    assert d["code"] == [
+        ["LOAD_CONST", 0],
+        ["STORE_NAME", 0],
+        ["RETURN"],
+    ]
+    assert d["constants"] == [1]
+    assert d["names"] == ["x"]
+
+
+def test_chunk_to_dict_function_constant_nests_chunk():
+    chunk = _compile("funct foo() { return 1 }")
+    d = chunk.to_dict()
+    # The single constant is a RotFunctionValue dump.
+    fn = d["constants"][0]
+    assert isinstance(fn, dict)
+    assert fn["__type__"] == "RotFunctionValue"
+    assert fn["name"] == "foo"
+    assert fn["params"] == []
+    # And its own chunk dumps recursively.
+    assert isinstance(fn["chunk"], dict)
+    assert fn["chunk"]["code"][0] == ["LOAD_CONST", 0]
+    assert fn["chunk"]["constants"] == [1]
+
+
+def test_chunk_to_dict_json_serializable():
+    # Round-trip through JSON — catches any non-serializable
+    # constant slipping through (e.g. raw Op enum instances).
+    import json
+    chunk = _compile("funct add(a | b) { return a + b }\nx = add(2 | 3)")
+    blob = json.dumps(chunk.to_dict())
+    # And it should decode back.
+    decoded = json.loads(blob)
+    assert decoded["code"][0] == ["LOAD_CONST", 0]
+
+
 # ─── Comparison ops (v2.27.1) ────────────────────────────────────
 
 

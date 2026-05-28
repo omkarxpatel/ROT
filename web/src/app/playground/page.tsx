@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { BytecodeView } from "@/components/bytecode-view";
 import { Editor } from "@/components/editor";
 import { ExamplesDropdown } from "@/components/examples-dropdown";
 import { OutputPanel } from "@/components/output-panel";
@@ -25,9 +26,11 @@ import {
 import {
   compileAndRun,
   compileAndStep,
+  compileToChunk,
   getRuntimeStatus,
   onRuntimeStatus,
   type AstNode,
+  type RotChunkDump,
   type RotError,
   type RotRuntimeStatus,
   type RotSnapshot,
@@ -341,6 +344,29 @@ export default function PlaygroundPage() {
   // accepts those props (defensive defaults of null) but the page
   // no longer sets them.
 
+  // Bytecode pane (v2.27.10). Hidden by default. When the user
+  // clicks "show bytecode" we compile the current source to a
+  // chunk via the new bridge and render it below Step Detail.
+  // Re-compiles on source change while the pane is open.
+  const [showBytecode, setShowBytecode] = useState<boolean>(false);
+  const [bytecode, setBytecode] = useState<RotChunkDump | null>(null);
+  const [bytecodeError, setBytecodeError] = useState<RotError | null>(null);
+  const [bytecodeLoading, setBytecodeLoading] = useState<boolean>(false);
+  useEffect(() => {
+    if (!showBytecode) return;
+    let cancelled = false;
+    setBytecodeLoading(true);
+    compileToChunk(source).then((result) => {
+      if (cancelled) return;
+      setBytecode(result.chunk);
+      setBytecodeError(result.error);
+      setBytecodeLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showBytecode, source]);
+
   const displayOutput = mode === "animate" ? animateOutput : pipeline.output;
   const displayError = mode === "animate" ? animateError : pipeline.error;
   const displayRunning =
@@ -464,6 +490,50 @@ export default function PlaygroundPage() {
                 playing={playing}
                 speedMs={speedMs}
               />
+            </div>
+          )}
+          {/* Animate-mode bytecode pane — opt-in via the toggle in the
+              card header. Compiled-on-demand from the current source. */}
+          {mode === "animate" && (
+            <div className="flex flex-col overflow-hidden rounded-lg border bg-card">
+              <button
+                type="button"
+                onClick={() => setShowBytecode((v) => !v)}
+                className="flex items-center justify-between gap-3 border-b border-border/60 px-3 py-2 text-xs uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                aria-expanded={showBytecode}
+              >
+                <span className="flex items-center gap-1.5">
+                  Bytecode
+                  {bytecodeError && (
+                    <span className="rounded border border-destructive/40 bg-destructive/10 px-1 py-0.5 text-[9px] normal-case text-destructive">
+                      error
+                    </span>
+                  )}
+                </span>
+                <span className="text-[10px] normal-case">
+                  {showBytecode ? "hide" : "show"}
+                </span>
+              </button>
+              {showBytecode && (
+                <div className="max-h-[28vh] overflow-auto p-3">
+                  {bytecodeLoading && !bytecode && (
+                    <div className="text-xs text-muted-foreground">
+                      Compiling...
+                    </div>
+                  )}
+                  {bytecodeError && (
+                    <pre className="whitespace-pre-wrap rounded border border-destructive/40 bg-destructive/10 p-2 font-mono text-[12px] text-destructive">
+                      {bytecodeError.formatted}
+                    </pre>
+                  )}
+                  {!bytecodeError && (
+                    <BytecodeView
+                      chunk={bytecode}
+                      empty="(no chunk yet)"
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
           {/* Animate-mode timeline strip — only when snapshots exist.
