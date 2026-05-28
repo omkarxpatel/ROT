@@ -2,6 +2,36 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.18 — handoff: full rewrite covering v2.26.0 → v2.27.17
+
+### Changed
+- [`HANDOFF.md`](HANDOFF.md) fully rewritten to replace the
+  v2.25.17-era snapshot. Now captures:
+  - **What shipped in M1** (v2.26.0–.29 + redesign in v2.27.4–.6):
+    step-mode interpreter, three-phase Step Detail panel,
+    localStorage + share-by-URL, snapshot timeline, keyboard nav,
+    pause-on-error, deep stepping, line-pulse decoration.
+  - **What shipped in M2** (v2.27.0–.14): ~35-opcode bytecode set,
+    `Chunk` / `Compiler` / `VM` modules, function calls with
+    frame stack, classes with `init` + bound methods,
+    try/catch/throw, per-instruction line attribution,
+    `python -m rot --vm` CLI flag, Bytecode pane in the playground.
+  - **Recent UX hotfixes** (v2.27.15–.17): auto-scroll bleed
+    removed, hydration mismatch fixed, scroll-to-top per step.
+  - **Open issues**: user's "precode does not show fizzbuzz"
+    report (unclear which UI element), VM step mode not yet
+    exposed in the playground (the headline next-up), VM gaps
+    (Slice / Import / finally / closures), no frozen builtins.
+  - **Next-up ranked**: VM step mode in the playground first,
+    then clarify + address the precode issue, then finish M2
+    codegen surface, then polish + content.
+
+### Notes
+- Documentation-only patch. No code changed. 807 tests still
+  passing.
+- The handoff is self-sufficient by design — a fresh session can
+  read it and have full context.
+
 ## v2.27.17 — Step Detail scrolls to top on every step
 
 ### Premise

@@ -4,472 +4,335 @@ A snapshot of project state, conventions, and the next strategic direction for a
 
 ## TL;DR
 
-ROT is at **v2.25.17**, 628 tests passing, all CI green. The language is feature-complete enough as a small Python-flavored interpreter: `let`, `finally`, slicing, f-string format specs, rustc-style errors, 35+ builtins, ROT-style output, info-leak hardening, immutable builtins. The v2.13.0 audit's ~600 findings were worked through by 12 sequential agents across v2.14 → v2.25; most are fixed.
+ROT is at **v2.27.17**, **807 tests passing**, all CI green.
 
-**The next chapter is the language's identity.** ROT becomes *"the language whose playground IS a compiler textbook"* — write any program, watch every transformation animated step by step. See characters group into tokens, tokens form an AST, AST lower to bytecode opcodes, opcodes execute on a stack. Cross-linked, narratable, runnable in any browser.
+- **Milestone 1 shipped** (v2.26.0–.29 + polish): generator-based step-mode interpreter, fully redesigned playground with three phases (Read · Parse · Run), localStorage persistence, share-by-URL, snapshot timeline, error-as-snapshot, deep stepping into function bodies / loops / branches, keyboard navigation, pause-on-error.
+- **Milestone 2 is well underway** (v2.27.0–.17): bytecode opcode set + Chunk + Compiler + stack VM. Covers literals, variables, arithmetic, comparisons, logical short-circuit, if/elif/else, while loops, for loops, break/continue, lists/dicts/indexing, function calls with frame stack, classes with `init`/methods/`this`, compound assigns, try/catch/throw. `python -m rot --vm file.rot` runs `examples/fizzbuzz.rot` and `examples/counter.rot` end-to-end through the bytecode path. The Bytecode pane in the playground (opt-in) shows the compiled chunk with per-statement instruction highlighting that follows the active snapshot.
 
-**Start at Milestone 1: convert the interpreter to a generator-based step mode.** Details in [§ Milestone 1 — deep dive](#milestone-1--deep-dive) below. Every later milestone depends on it.
+**Where to pick up.** Several natural directions, in order of likely impact — see [§ Where to go next](#where-to-go-next) for the ranked list.
 
 ---
 
-## The vision
+## What changed since the last handoff (v2.25.17 → v2.27.17)
 
-ROT is small enough to read in an afternoon (~3,800 LOC across [`rot/`](rot/)), robust enough to pass 628 tests, and visualizable enough to make compilation tangible. The combination is distinctive:
+### Milestone 1 (v2.26.0–.29) — step-mode interpreter + playground redesign
 
-- **Godbolt** shows source → assembly, but it's static.
-- **AST viewers** exist for many languages, but they show one stage in isolation.
-- **Crafting Interpreters** (Nystrom) teaches compilation in text, but it's not interactive.
-- Nobody has packaged *"compilation as a live animated explainer for any user input."*
+Foundation work (v2.26.0–.4 — interpreter backend):
 
-That's the niche. Tagline candidates:
+- [`rot/interpreter.py`](rot/interpreter.py) gained `Snapshot` and `EnvFrame` dataclasses and `iter_execute(program) -> Iterator[Snapshot]`. The fast `execute()` path is unchanged (`_step_mode=False`).
+- `Environment._env_snapshot()` walks the scope chain and returns frames outermost-first. The 5 construction sites are labeled (`builtins`, `global`, `function`, `method`, `catch`).
+- `cout` / `coutln` route through a per-interpreter `_capture_buffer` when step mode is engaged. Each snapshot carries its statement's output.
+- Errors become `Snapshot.error` instead of raises; iteration halts after the failing statement.
+- Pyodide bridge exposes `rot_step(source)` returning JSON-safe snapshots via `Snapshot.to_dict()` / `EnvFrame.to_dict()`.
 
-- "Watch your code compile."
-- "A language built to be read, not just run."
-- "The compiler that explains itself."
+Playground UI (v2.26.5–.8):
 
-The playground (already at [`web/`](web/)) becomes the canonical surface. Running ROT outside the playground stays valid; running it INSIDE the playground is the demo.
+- `Animate` mode added. Toolbar exposes Step / Play (with pause) / Reset / a speed slider (50ms–2000ms).
+- A dedicated `StepPanel` in the right column. Animations are loud (per user request): per-binding slot-machine values, line-pulse decoration in the editor on each step, dive-in / dive-out for function-call frames.
+- Call breadcrumb (`global › funct greet`), loop-iter badge, ✓ done pill / halted pill at end.
 
-## What ROT is (today)
+Polish line (v2.26.9–.29):
 
-- **Surface:** C++/Python-flavored hybrid. `funct` for `def`, `cout`/`coutln` for `print`, `|` as parameter/arg separator, `this` not `self`, `//` comments, C-style braces.
-- **Pipeline:** source → hand-rolled char-by-char lexer → recursive-descent parser (Pratt for expressions) → AST → tree-walking interpreter. No `exec()` since v2.0.0. The standalone emitter that briefly produced Python source was removed in v2.23.0.
-- **Repo:** https://github.com/omkarxpatel/ROT
-- **CI:** GitHub Actions, `pytest` across Python 3.9 / 3.10 / 3.11 / 3.12.
-- **Version:** see [`rot/__init__.py`](rot/__init__.py); currently `2.25.17`.
+- Cache-bust hotfix for the Pyodide bridge (URLs now carry `?v=${ROT_VERSION}`).
+- Source-line preview colored per-token; token chips fall from above into place; AST-leaf reveals trigger a pulse on the matching token chip.
+- AST node → env binding pulse when a new/changed binding appears (closes the parse → execute visual chain).
+- Editor gets ROT-specific syntax highlighting matching the same chip palette.
+- Iteration counter for loops via `Snapshot.loop_iter` / `loop_total`.
+- Output panel streams new text one char at a time with an emerald-fading flash.
+- Deep stepping: snapshots fire for every statement that runs, including inside function bodies, loops, branches.
+- Keyboard shortcuts: `→` step forward, `←` step backward, `Space` Play/Pause, `Cmd/Ctrl+Enter` Run/Step.
+
+### M1 finish — Step Detail redesign (v2.27.4 → .6)
+
+After feedback that the four-stage Step Detail was clutter, the panel was redesigned:
+
+- **Three phases now: Read · Parse · Run.** No Tokens chip strip, no dense AST tree.
+- The Parse stage uses a new `StructureView` component that pretty-prints the AST as colored, indented source-like code — handles every statement (`Assign`, `LetStmt`, `IfStmt`, `WhileStmt`, `ForStmt`, `FuncDef`, `ClassDef`, `TryCatch`, `IndexAssign`, `MemberAssign`, …) and every expression (`BinaryOp`, `Call`, `MemberAccess`, `Index`, `ListLit`, `DictLit`, …).
+- Run mode dropped the Pipeline panel entirely. Right column is just Output. AST tree and Tokens accordion items were deleted; `pipeline-panel.tsx` and `ast-view.tsx` are gone.
+- localStorage persistence (the editor's source survives refresh).
+- Share-by-URL: a Share button copies a `?src=<base64>` link.
+
+### Milestone 2 — bytecode VM (v2.27.0–.14)
+
+Three new files in `rot/`:
+
+```
+rot/opcodes.py    Op(IntEnum) — ~35 opcodes
+rot/codegen.py    Chunk + Compiler + RotFunctionValue / RotClassValue /
+                  RotInstanceValue / RotBoundMethod runtime types
+rot/vm.py         stack-based VM with frame stack, handler stack,
+                  globals dict, dispatch loop
+tests/test_codegen.py   ~30 tests
+tests/test_vm.py        ~50 tests
+```
+
+Opcode set shipped:
+
+- **Stack:** `LOAD_CONST`, `LOAD_NULL`, `LOAD_TRUE`, `LOAD_FALSE`, `POP`, `DUP`
+- **Variables:** `LOAD_NAME`, `STORE_NAME`
+- **Arithmetic:** `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `NEG`
+- **Comparison:** `EQ`, `NE`, `LT`, `LE`, `GT`, `GE`
+- **Boolean:** `NOT`
+- **Control flow:** `JUMP`, `JUMP_IF_FALSE`, `JUMP_IF_TRUE`
+- **Iteration:** `GET_ITER`, `ITER_NEXT`
+- **Collections:** `BUILD_LIST`, `BUILD_DICT`, `GET_INDEX`, `SET_INDEX`
+- **Members:** `GET_MEMBER`, `SET_MEMBER`
+- **Exceptions:** `BEGIN_TRY`, `END_TRY`, `RAISE`
+- **Function calls:** `CALL`, `RETURN_VALUE`
+- **Halt:** `RETURN`
+
+`Compiler` covers everything the VM has opcodes for, plus compound assigns (`x += 1`, `this.x += 1`). CLI `python -m rot --vm <file>` is wired and verified against `examples/fizzbuzz.rot` and `examples/counter.rot`.
+
+The Pyodide bridge exposes `rot_compile_to_chunk(source)` → JSON dump with per-instruction source-line attribution (`Chunk.lines` parallel to `Chunk.code`). The playground has an opt-in **Bytecode** card under Step Detail (Animate mode only) showing the compiled chunk with the matching-line instructions amber-highlighted, others dimmed.
+
+---
 
 ## Project layout
 
 ```
-rot/                  the language package (~3,800 LOC)
-├── __init__.py       __version__
+rot/                  the language package (~5,000 LOC after M2)
+├── __init__.py       __version__ = "2.27.17"
 ├── __main__.py       `python -m rot` entry
-├── cli.py            argparse CLI; default starts REPL
-├── compiler.py       orchestrates lex → parse → interpret
+├── cli.py            argparse CLI; supports `--vm`, `--trace`, `--no-run`, `--repl`
+├── compiler.py       orchestrates lex → parse → interpret (tree-walker path)
 ├── lexer.py          hand-rolled char-by-char tokenizer
 ├── token.py          Token dataclass (lexeme, kind, line, col)
-├── keywords.py       KEYWORDS dict (incl. let, finally, super)
+├── keywords.py       KEYWORDS dict
 ├── ast.py            AST node dataclasses; every node carries line/col
 ├── syntax.py         recursive-descent parser; Pratt for expressions
-├── interpreter.py    tree-walking interpreter + Environment + RotClass/Instance/BoundMethod
+├── interpreter.py    tree-walking interpreter (reference engine)
 ├── builtins.py       standard library (35+ builtins)
 ├── repl.py           interactive REPL with multi-line + persistent history
-└── errors.py         RotError + rustc-style rendering
-tests/                628 tests (per-layer + end-to-end + CLI + REPL + compiler)
+├── errors.py         RotError + rustc-style rendering
+├── opcodes.py        Op(IntEnum) for the bytecode VM           [NEW M2]
+├── codegen.py        AST → bytecode Compiler + Chunk + value types  [NEW M2]
+└── vm.py             stack-based bytecode VM                   [NEW M2]
+tests/                807 tests total
+├── test_*.py         per-layer tests (lexer, syntax, interpreter, ...)
+├── test_codegen.py   M2 codegen tests                          [NEW]
+└── test_vm.py        M2 VM tests                               [NEW]
 examples/             7 .rot programs with .expected golden outputs
 paper/                10-page LaTeX design retrospective (main.pdf included)
 web/                  Next.js 15 + Pyodide site: landing / docs / playground / paper PDF
-ARCHITECTURE.md       deep design doc
+  src/
+    app/playground/page.tsx                — the playground entry point
+    components/
+      editor.tsx               CodeMirror w/ syntax-highlight + line-highlight
+      output-panel.tsx         Output panel with type-on streaming
+      step-panel.tsx           the 3-phase Read·Parse·Run card (animate mode)
+      structure-view.tsx       pretty-printed AST in the Parse stage
+      env-view.tsx             env diff w/ slot-machine values
+      bytecode-view.tsx        opt-in Bytecode pane
+      snapshot-timeline.tsx    scrubbable strip of step dots
+      tokens-view.tsx          re-exports tokenTextColor helper
+    lib/
+      pyodide-runtime.ts       bridge: compileAndRun / compileAndStep / compileToChunk
+ARCHITECTURE.md       deep design doc (somewhat stale on M2)
 CHANGELOG.md          per-release notes (newest first)
-BUG_REPORT.md         v2.13.0 audit (~600 findings; most fixed in v2.14-v2.25)
+BUG_REPORT.md         v2.13.0 audit
 HANDOFF.md            this file
 ```
 
-## What ROT can do (as of v2.25.17)
+---
 
-- Variables; compound assignment (`+= -= *= /= %=`)
-- **`let name = expr`** (v2.16.6) — fresh-local binding. Bare `=` chain-walks per the v2.10.0 closure-mutation design.
-- Numbers (int, float), strings with escapes, booleans (`true`/`false`), `null`
-- Arithmetic, comparison, logical (`and`/`or`/`not`), modulo, unary `-`
-- Conditionals: `if` / `elseif` / **`else if`** (v2.25.4) / `else`
-- Loops: `while`, `for x in iter`, `break`, `continue` (lexically scoped to enclosing function since v2.15.1)
-- Functions (`funct`), recursion, closures that mutate enclosing scope (or use `let` to shadow)
-- Classes (`class`, `this`, `init`, methods, fields)
-- Lists `[a | b | c]`, dicts `{k: v | k2: v2}`, member access `obj.attr`
-- **Slicing** `xs[a:b:c]` (v2.25.9). Negative bounds wrap; reverse with `[::-1]`.
-- Error handling: `try` / `catch` / **`finally`** (v2.25.5) / `throw`
-- **f-string format specs** `f"{pi:.2f}"`, `f"{n:>5}"` (v2.25.10)
-- Module system: `import "path"` (relative, cached, cycle-safe since v2.25.3)
-- Interactive REPL (`python -m rot`)
-- **rustc-style errors** (v2.22.7) — source line + caret + Python-ism hints (`print` → "did you mean 'cout'?")
-- **Immutable builtins** (v2.16.5) — `pi = 3.0` is rejected; use `let pi = 3.0` to shadow
-- **35+ builtins**: I/O (`cout`, `coutln`, `input`, `read_file`, `write_file`), conversion (`str`, `num`, `chr`, `ord`), math (`abs`, `min`, `max`, `pow`, `sqrt`, `floor`, `ceil`, `round`, `pi`, `e`), collections (`len`, `range`, `append`, `pop`, `sum`, `sorted`, `reversed`, `keys`, `values`, `items`), introspection (`type`, `is_num`/`is_str`/`is_list`/`is_dict`/`is_bool`/`is_null`/`is_func`), random (`rand_int`, `rand_float`, `seed`), control (`assert`, `exit`).
+## What `python -m rot --vm` covers (M2 surface)
 
-## How we got here
+```rot
+// All of this works via the VM:
 
-The v2.13.0 codebase was audited: ~600 findings in [`BUG_REPORT.md`](BUG_REPORT.md) across lexer, parser, interpreter, builtins, emitter drift, CLI/REPL, and test coverage. **Twelve sequential agents** worked through the findings, each owning a minor version (`Y`) with one patch (`Z`) per fix. 81 commits, 81 tags, tests 201 → 628. Headline outputs:
+x = 1
+y = 2 + 3
+s = "hi " + x
+b = (1 < 2) and not false
 
-- Python-error leaks wrapped (v2.14.x — 12 fixes)
-- Break/continue function-boundary escape fixed (v2.15.x)
-- `let` keyword + scoping discipline (v2.16.x)
-- Compound-assign error wrapping (v2.17.x)
-- Info-leak hardening — dunder filter, RotClass.get_member (v2.18.x)
-- REPL hardening — `_needs_more`, Ctrl-C, exit/history (v2.19.x)
-- Lexer fixes — state reset, CR/CRLF, BOM, friendly errors (v2.20.x)
-- ROT-style output — `_stringify` for collections, `RotInstance.__str__`, type(class) (v2.21.x)
-- Source locations on AST + rustc-style rendering (v2.22.x)
-- Emitter deletion (v2.23.0)
-- Test coverage backfill — test_cli, test_compiler, test_repl (v2.24.x)
-- Missing features — `else if`, `try/catch/finally`, slicing, format specs, `super` reserved, 10 new builtins (v2.25.x)
+if (x > 0) { coutln(x) }
+elseif (x == 0) { coutln("zero") }
+else { coutln("negative") }
 
-Plus:
-- Paper draft (v2.25.13): 10-page LaTeX in [`paper/`](paper/) — design retrospective. **Final paper is meant to ship near end of project; don't keep updating it unless asked.**
-- Web playground (v2.25.14): Next.js + Pyodide site in [`web/`](web/), runs ROT in-browser.
-- Expanded site (v2.25.15): landing / docs / playground / paper PDF — same `web/` directory.
+while (x < 5) {
+    if (x == 3) { break }
+    x += 1
+}
 
-## The pipeline today (3 stages visualized)
+for n in [10 | 20 | 30] {
+    cout(n)
+}
 
-The playground currently shows three stages:
+funct fac(n) {
+    if (n <= 1) { return 1 }
+    return n * fac(n - 1)
+}
+coutln(fac(5))           // 120
 
-```
-[Source] → [Tokens] → [AST] → [Execution output]
+class Counter {
+    init(start) { this.n = start }
+    tick() { this.n += 1 }
+}
+c = Counter(10)
+c.tick()
+coutln(c.n)              // 11
+
+try {
+    throw "boom"
+} catch (e) {
+    coutln("caught: " + e)
+}
 ```
 
-For a 2-line program `x = 5\ncoutln(x + 3)`:
+What `--vm` does **not** yet cover:
 
-1. **Lexer** ([`rot/lexer.py`](rot/lexer.py)): 15 tokens, color-coded chips in the Tokens pane.
-2. **Parser** ([`rot/syntax.py`](rot/syntax.py)): `Program(body=[Assign("x", NumberLit(5)), ExprStmt(Call(Identifier("coutln"), [BinaryOp("+", Identifier("x"), NumberLit(3))]))])`. Rendered as a collapsible tree.
-3. **Interpreter** ([`rot/interpreter.py`](rot/interpreter.py)): walks the AST recursively. Output `8` appears in the Output pane.
+- **`Slice`** expressions (`xs[1:3]`) — codegen raises `NotImplementedError`.
+- **`Import`** statements — codegen raises.
+- **`finally` block** on `try` — codegen raises.
+- **Closures** — a function's free names resolve to globals only; there's no upvalue mechanism for capturing enclosing-function locals.
+- **`super`** — same status as the tree-walker (reserved, errors).
+- **Compound `IndexAssign`** (`xs[i] += 1`) — needs a `DUP_TOP_TWO` opcode.
 
-The visualization is static — user clicks Run, all three panes populate at once.
-
-## The pipeline tomorrow (5 stages, animated, cross-linked)
-
-```
-[Source] → [Tokens] → [AST] → [Bytecode] → [Execution]
-```
-
-Two new stages (**Bytecode** between AST and Execution; **Execution** becomes a stack-machine animation, not just output). Plus:
-
-- **Animation:** stage transitions animate. Tokens fly in. AST grows. Opcodes emit. VM pointer walks.
-- **Cross-linking:** hover any artifact in any pane → highlights the corresponding pieces in every other pane. Click `8` in output → highlights the `+` in source, the `BinaryOp` in AST, the `ADD` opcode in bytecode.
-- **Explainer copy:** as each stage runs, a side panel writes one or two sentences explaining what's happening ("the lexer reads characters and groups them into tokens; identifiers, keywords, numbers, operators").
-- **Step controls:** play, pause, step forward, step backward, speed slider.
-
-That's the headline experience. Recruiters / educators / curious people see compilation made legible.
-
-## Roadmap — 4 milestones
-
-Each milestone is shippable on its own and produces a demo-able artifact.
-
-### Milestone 1 — Step-mode interpreter + live env pane (~2 weeks)
-*Foundation.* Generator-based interpreter; playground env pane.
-
-### Milestone 2 — Bytecode compiler + VM + bytecode pane (~3 weeks) — **the headline**
-The new compilation stage. ~30 opcodes; stack-based VM. Bytecode pane in the playground.
-
-### Milestone 3 — Cross-link everything (~2 weeks)
-All UI work. Hover any token/AST node/opcode/output value → highlight every related artifact across panes.
-
-### Milestone 4 — Time travel + provenance (~2 weeks)
-Record state diffs in the VM; step backward. Provenance: every value remembers its source span and the opcodes that produced it.
-
-**Total to "watch your code compile":** ~9 weeks part-time. The first demo-able win (Milestone 1) is ~2 weeks.
+The tree-walker covers all of these — `python -m rot file.rot` (no `--vm`) is the default and handles them.
 
 ---
 
-## Milestone 1 — deep dive
+## Current playground layout
 
-**Goal.** Convert the tree-walking interpreter from a "run to completion" model to a "step one statement at a time" model. Add a live environment pane to the playground that updates after each step.
+After the cleanup pass:
 
-**Why this first.**
+**Run mode (default):**
 
-1. Smallest delta. No new module — just a generator-based rewrite of `_execute_statement` and `_evaluate`.
-2. Foundation for every later milestone. Milestone 2 (bytecode VM) needs to step too. Milestone 4 (time travel) needs snapshots. Milestone 3 (cross-linking) needs to know what's currently executing.
-3. First demo-able win. Even just env-pane-live-updates makes the playground noticeably more interesting.
+- Left: editor (source + line numbers + ROT syntax-highlight, persists to localStorage).
+- Right: Output panel, full height. No Pipeline. Press Run → output appears.
 
-### Generator API design
+**Animate mode:**
 
-Today:
+- Left: editor (with the amber-pulsing current-line decoration).
+- Right column:
+  - Output panel (top, smaller). Streams text per `cout`/`coutln`.
+  - **Step Detail** card (middle, biggest). Three phases per snapshot:
+    - **Read** — the source line, colored per-token, click any token to jump the editor cursor.
+    - **Parse** — pretty-printed code via `StructureView`, with a small label header naming the statement kind ("Assignment", "Function call", "Conditional", …).
+    - **Run** — explainer + env diff (slot-machine values, emerald/amber dots), printed-output block.
+  - **Bytecode** card (optional, toggleable). Shows the compiled chunk with instructions highlighted on the active snapshot's source line.
+  - Snapshot Timeline (bottom). Click any dot to jump.
 
-```python
-class Interpreter:
-    def execute(self, program: ast.Program) -> None:
-        for stmt in program.body:
-            self._execute_statement(stmt)
-```
+Toolbar carries: mode toggle (Run / Animate), Share button, examples dropdown, Run or Step / Play / Pause / Reset / Speed slider.
 
-After Milestone 1:
-
-```python
-class Interpreter:
-    def execute(self, program: ast.Program) -> None:
-        # Fast path: run to completion, no snapshots. Unchanged for CLI.
-        for stmt in program.body:
-            self._execute_statement(stmt)
-
-    def iter_execute(self, program: ast.Program) -> Iterator[Snapshot]:
-        # Step mode: yield a snapshot after each top-level statement.
-        # Used by the playground.
-        for stmt in program.body:
-            self._execute_statement(stmt)
-            yield self._snapshot(stmt)
-```
-
-For Milestone 1, **statement-level granularity is enough**. Expression-level stepping (yielding between operands of a `BinaryOp`) can come in Milestone 3 or 4 — much more involved (turns `_evaluate` into a generator-coroutine and requires a stack of generators), and only useful once we have the bytecode VM where each opcode is the natural step granularity.
-
-### Snapshot shape
-
-```python
-@dataclass
-class Snapshot:
-    """State of the interpreter after executing one statement."""
-    statement_line: int
-    statement_col: int
-    statement_kind: str        # "Assign", "Call", "IfStmt", etc.
-    env: list[EnvFrame]        # outermost to innermost
-    output_since_last: str     # captured stdout since previous snapshot
-    error: str | None = None   # if execution halted with an error
-
-@dataclass
-class EnvFrame:
-    scope_kind: str            # "global", "function", "method", "block"
-    scope_label: str           # e.g. "global" or "funct foo" or "method Counter.tick"
-    bindings: dict[str, Any]   # variable name -> rot value
-```
-
-Returned outermost-first. Builtins env is implicit (frozen, doesn't change) and excluded from snapshots.
-
-### Output capture
-
-Today `cout` and `coutln` print to `sys.stdout` directly. For step mode, the interpreter should own a `StringIO` buffer that `cout`/`coutln` write to instead. Between snapshots, drain the buffer into `output_since_last`.
-
-Implementation: add a `self._capture_buffer: io.StringIO | None = None` to the interpreter. Modify `_builtin_cout` and `_builtin_coutln` to write to it if set, else to `sys.stdout`. `iter_execute` sets it on entry, drains it per statement, clears on exit.
-
-Alternative: `contextlib.redirect_stdout` in `iter_execute`. Cleaner but slightly less control. Either works.
-
-### Playground UI changes (in [`web/src/app/playground/page.tsx`](web/src/app/playground/page.tsx))
-
-- **New toggle:** "Run" / "Animate" mode. Default to Run for fast execution; user clicks Animate to switch to step mode.
-- **In Animate mode:** the Run button becomes "Step" (one statement) plus "Play" (auto-step at speed N). Add a speed slider (50ms–2000ms per step).
-- **New pane: Env.** Renders the scope stack. Each scope is a card showing variable name → value. Recent changes flash green for one step (new binding) or yellow (mutation).
-- **Source highlight:** the currently-executing statement's span (`line`, `col`) is highlighted in the CodeMirror editor. Use a CodeMirror decoration.
-
-The Pyodide bridge in [`web/src/lib/pyodide-runtime.ts`](web/src/lib/pyodide-runtime.ts) needs a new entry point:
-
-```python
-def rot_step(source):
-    """Generator function that yields snapshots dict-by-dict."""
-    tokens = Lexer().tokenize(source)
-    program = Parser(tokens).parse()
-    interp = Interpreter()
-    interp._capture_buffer = io.StringIO()
-    for snapshot in interp.iter_execute(program):
-        yield {
-            "statement_line": snapshot.statement_line,
-            "statement_col": snapshot.statement_col,
-            "statement_kind": snapshot.statement_kind,
-            "env": [{"scope_kind": f.scope_kind, "scope_label": f.scope_label, "bindings": dict(f.bindings)} for f in snapshot.env],
-            "output_since_last": snapshot.output_since_last,
-            "error": snapshot.error,
-        }
-```
-
-JS side calls this as a Python async generator and pumps it one yield at a time.
-
-### Test plan
-
-In [`tests/test_interpreter.py`](tests/test_interpreter.py), new section:
-
-- `test_iter_execute_yields_one_snapshot_per_statement`
-- `test_iter_execute_snapshots_show_progressive_env`
-- `test_iter_execute_captures_output_per_statement`
-- `test_iter_execute_handles_control_flow_through_function_call`
-- `test_iter_execute_handles_loops_yield_per_iteration_body`  # if for/while bodies should snapshot per statement inside
-- `test_iter_execute_error_in_middle_yields_error_snapshot`
-- `test_execute_unchanged_after_iter_execute_added` (regression: the fast path still passes all existing tests)
-
-### Suggested Z bumps
-
-The convention from v2.14.x–v2.25.x: one fix per Z, commit + tag per Z, run tests before each commit, no `--no-verify`, no force-push, all conventions in [`/Users/omkar/CLAUDE.md`](file:///Users/omkar/CLAUDE.md) apply.
-
-A reasonable Z breakdown for Milestone 1:
-
-- **v2.26.0** — Schema: `Snapshot` and `EnvFrame` dataclasses + `Interpreter.iter_execute` skeleton (yields empty snapshots; fast path unchanged). Y bump to v2.26 marks the strategic shift; subsequent fixes within Milestone 1 are patches.
-- **v2.26.1** — Env snapshot serializer (`_env_snapshot` method on Environment). Walks the chain, returns the structured list.
-- **v2.26.2** — Output capture via `self._capture_buffer`. Modify `_builtin_cout`/`_builtin_coutln`.
-- **v2.26.3** — Wire snapshots: `iter_execute` calls `_snapshot(stmt)` and yields it. Tests confirm statement-by-statement state.
-- **v2.26.4** — Pyodide bridge: `rot_step(source)` Python generator + JS-side async iterator wrapper.
-- **v2.26.5** — Playground: Animate-mode toggle + Step button + speed slider.
-- **v2.26.6** — Playground: Env pane rendering (scope stack + binding cards).
-- **v2.26.7** — Playground: source-highlight of currently-executing statement (CodeMirror decoration).
-- **v2.26.8** — Polish: explainer copy ("the interpreter just bound `x = 5`"), recently-changed visual cues (green/yellow flashes).
-
-### Acceptance criteria
-
-When Milestone 1 is done:
-
-1. `python -m pytest tests/` still passes (all 628 + new tests).
-2. `python -m rot examples/fizzbuzz.rot` produces identical output to before.
-3. In the playground, the user can:
-   - Toggle Animate mode.
-   - Click Step. The first statement runs. The Env pane shows a single scope ("global") with one binding (e.g. `x = 5`). The output pane shows no output yet.
-   - Click Step again. The second statement runs. Output pane appends `8`.
-   - Click Play. Steps auto-advance.
-   - See the source-highlight move from line 1 to line 2 as steps proceed.
-
-### What's NOT in Milestone 1
-
-- Bytecode pane — that's Milestone 2.
-- Step backward / time travel — that's Milestone 4.
-- Cross-pane hover highlighting — that's Milestone 3.
-- Expression-level stepping — possibly Milestone 3 or 4.
-- Explainer text for every concept — minimal text in M1; expanded in M3.
+Keyboard: `→` / `←` step, `Space` play/pause, `Cmd-Enter` run-or-step.
 
 ---
 
-## Milestone 2 — bytecode VM (sketch)
+## Recent UX hotfixes (v2.27.15–.17)
 
-The headline. Adds a new stage between AST and Execution.
-
-**Files to create:**
-- [`rot/codegen.py`](rot/codegen.py) — AST → bytecode compiler.
-- [`rot/vm.py`](rot/vm.py) — stack-based VM that runs bytecode.
-- [`rot/opcodes.py`](rot/opcodes.py) (optional) — opcode enum.
-
-**Files to modify:**
-- [`rot/compiler.py`](rot/compiler.py) — `Compiler` should optionally run via VM instead of tree-walker. Add `Compiler(use_vm=True)` flag.
-- [`rot/cli.py`](rot/cli.py) — optional `--vm` flag to switch engines.
-
-**Proposed opcode set (~30):**
-
-```
-# Stack manipulation
-LOAD_CONST <idx>       push constant from pool
-LOAD_NULL              push null
-LOAD_TRUE              push true
-LOAD_FALSE             push false
-POP                    pop top of stack
-DUP                    duplicate top
-SWAP                   swap top two
-
-# Variables
-LOAD_NAME <name>       push value bound to name (env chain walk)
-STORE_NAME <name>      pop, bind name (chain-walking)
-STORE_LOCAL <name>     pop, bind name (always local)  # for `let`
-
-# Arithmetic / comparison
-ADD, SUB, MUL, DIV, MOD, NEG, NOT
-EQ, NE, LT, LE, GT, GE
-AND, OR  # short-circuit; emitted with JUMP_IF_FALSE+POP+rhs+...
-
-# Control flow
-JUMP <offset>          unconditional
-JUMP_IF_FALSE <offset>
-JUMP_IF_TRUE <offset>
-CALL <argc>            call top-of-stack-but-one with argc args (popped above)
-RETURN                 return from current frame; top of stack is value
-RETURN_NONE            return null
-
-# Aggregate types
-BUILD_LIST <count>
-BUILD_DICT <count>
-GET_INDEX              pop index, pop target, push target[index]
-SET_INDEX              pop value, pop index, pop target, target[index] = value
-GET_MEMBER <name>      pop target, push target.name
-SET_MEMBER <name>      pop value, pop target, target.name = value
-
-# Control flow signals
-RAISE                  pop value, raise as throw
-BEGIN_TRY <handler_offset>
-END_TRY
-```
-
-That's ~30. Exact count and naming TBD during M2 design; *Crafting Interpreters* Part III is the textbook reference and worth a re-read at that point.
-
-**Compiler architecture:** `codegen.py` defines a `Compiler` class that walks the AST and emits opcodes into a `Chunk` (bytecode list + constant pool + line-mapping). One method per AST node type. Functions are compiled into their own `Chunk` and stored as constants.
-
-**VM loop:** `vm.py` defines a `VM` class with an instruction pointer, a stack, an environment chain, and a frame stack for function calls. Main loop: `while ip < len(code): dispatch(code[ip])`.
-
-**Bytecode pane in the playground:** new pane showing `<offset> <opcode> <args>` per line. Instruction pointer highlights as VM executes. Stack visualization alongside (small panel showing the top N values).
-
-**Tree-walker stays.** It's the reference; tests cover both engines. CI runs both.
-
-**Effort:** ~3 weeks part-time including tests for both engines and the bytecode pane UI.
+- **v2.27.15:** removed `BindingRow.scrollIntoView` + replaced `SnapshotTimeline`'s `scrollIntoView` with `container.scrollTo({left})`. Both were dragging the Step Detail panel during Play.
+- **v2.27.16:** fixed hydration mismatch when loading a `?src=…` shared link. The lazy `useState(readInitialSource)` initializer was returning fizzbuzz on the server and the URL-decoded source on the client. Moved the URL/localStorage check to a `useEffect`.
+- **v2.27.17:** Step Detail now scrolls its viewport back to the top on every step change. Without this, a user who scrolled down to peek at Run would never see Read / Parse on the next snapshot.
 
 ---
 
-## Milestone 3 — cross-link everything (sketch)
+## Open issues / known gaps
 
-All UI work. Every artifact in every pane needs to know its provenance:
-
-- A token knows its character range in source and which AST node it became part of.
-- An AST node knows its token range and which opcode(s) it lowered to.
-- An opcode knows its source AST node and (when executed) which output it produced.
-- An output line knows the opcode(s) and AST nodes that produced it.
-
-Implementation: each artifact carries IDs. A central "selection bus" — when one artifact is hovered, every pane queries the bus for matching IDs and highlights them.
-
-**Effort:** ~2 weeks part-time. No language changes; pure web work.
+- **"Precode does not show the fizzbuzz that automatically shows in source."** The user reported this near the end of the session, just before asking for this handoff. Unclear which element they meant by "precode" — best guess is the Step Detail panel's Source/Parse preview before the first Step has been taken (currently shows the `OnboardingMessage`, not the source). Worth clarifying with the user; if confirmed, the fix is to render a preview of the program's source (or the first statement's pretty-printed form) before any snapshot exists. See [`web/src/components/step-panel.tsx`](web/src/components/step-panel.tsx) — `OnboardingMessage` is the function to either replace or extend.
+- **VM step mode is not yet exposed in the playground.** The Bytecode pane is static-per-source — opcodes don't animate as the VM executes. The tree-walker still drives Step Detail. Wiring `rot_step_vm(source)` (opcode-level snapshots, with IP marker + stack visualization) is the original "watch the stack machine execute opcode-by-opcode" promise from HANDOFF and is the natural next big lift.
+- **VM `finally`, `Slice`, `Import`, closures** — all raise `NotImplementedError` at codegen time. Tree-walker handles them. The `try { ... } finally { ... }` correctness under uncaught propagation / return / break / continue is what blocks finally — needs proper exception-flow handling.
+- **VM doesn't freeze builtins.** A user program can `cout = 5` and clobber the builtin (the tree-walker rejects this). Probably ship a frozen-globals layer when polishing M2.
+- **`compileToChunk` doesn't carry trace timings to the UI yet** — only `compileAndRun` and `compileAndStep` do. The Bytecode pane shows a "Compiling..." indicator but no timings.
+- **Hover / click-through cross-linking** between StructureView and the editor / Bytecode pane is gone (was on the AST tree before v2.27.4's redesign). Could be added back targeting the new StructureView lines if pedagogically valuable.
 
 ---
 
-## Milestone 4 — time travel + provenance (sketch)
+## Where to go next
 
-The VM records a state diff per opcode. The playground gains a Rewind button. Scrubbable timeline.
+Ranked by likely impact for a new session, picking up at v2.27.17:
 
-Provenance is the deeper feature: every runtime value is wrapped in `(value, origin)` where origin is the AST node + opcode that produced it. Hover an output value, see its full computation history.
+### 1. VM step mode in the playground (M2's headline)
 
-**Effort:** ~2 weeks part-time.
+The bytecode VM works end-to-end via the CLI. The playground exposes the *static* chunk. The next big win is to add opcode-level animation to the playground:
+
+- Add `Interpreter`-equivalent step mode to `VM` — yield a snapshot after each opcode (similar to `Snapshot` but with `chunk_offset`, `stack`, `frame_stack_depth`, `current_op`). Or just expose a `step()` iterator on `VM`.
+- Pyodide bridge: `rot_step_vm(source)` returning a stream of opcode-level snapshots.
+- UI: replace or augment the `BytecodeView`'s static highlight with an IP marker that moves; add a tiny stack visualization (the top N values).
+- Add a mode toggle: "Tree-walker step" vs "VM step" — let the user choose granularity.
+
+This delivers the original HANDOFF promise that the playground shows compilation lower from AST → bytecode → execute, animated.
+
+### 2. Address the "precode does not show fizzbuzz" report
+
+Quick clarification with the user, then a small `OnboardingMessage` change to preview the source (or the first AST node's pretty-printed form) so the playground feels alive before the first step.
+
+### 3. Finish M2's codegen surface
+
+- `Slice` codegen + opcodes (`BUILD_SLICE`?).
+- `Import` codegen — needs a `_loaded_modules` cache in the VM mirroring the tree-walker.
+- Closures — `STORE_LOCAL` + upvalue cells. Big enough for its own Y if done properly.
+- `finally` blocks — exception-flow correctness.
+- Compound `IndexAssign` via `DUP_TOP_TWO`.
+
+After this, the VM has 1:1 surface parity with the tree-walker and could be the default execution path.
+
+### 4. Polish + content
+
+- Cross-engine parity tests — run every example via both engines, diff their stdout.
+- The "compound member assign" path in `codegen.py` uses `_BIN_OP_MAP.get(stmt.op)` which doesn't cover non-arithmetic ops; harmless today but worth a sanity check if `<<=` etc. were ever added.
+- Examples gallery — more demonstrations. Particularly: a small program that exercises every M2 feature in one file, for parity testing.
+- Documentation site updates — the `web/` `/docs` page is somewhat stale on M2.
+- Paper update — the paper hasn't been touched since v2.25.13. Per user pref, paper is a final artifact near end of project — don't update it yet.
+
+### 5. Smaller polish ideas (from past brainstorms)
+
+- Snapshot diff between two pinned steps.
+- Skip-to-next-output / skip-to-next-error buttons.
+- Per-binding sparkline for numeric values across steps.
+- Source-line gutter dots colored by execution.
+- WASM ROT VM (eliminate the Pyodide 10MB cold-load).
+- VS Code extension (syntax highlighting + run-on-save).
 
 ---
 
-## User conventions / preferences
-
-The user (Omkar) is the project owner. The following are durable preferences observed across the v2.13 → v2.25 sweep. Honor them without re-asking.
+## User conventions / preferences (still apply)
 
 - **Bump the version on every code change.** Patch (`Z`) for bug fixes and docs. Minor (`Y`) for new features. Major (`X`) for breaking changes. Update [`rot/__init__.py`](rot/__init__.py) `__version__` per commit.
-- **Commit per change.** Don't batch unrelated changes. Each commit gets its own [`CHANGELOG.md`](CHANGELOG.md) entry at the top.
-- **Tag every commit.** `git tag v2.X.Y` after each commit. Always push tags.
-- **Action-oriented.** "okay" or "go" means "execute the plan." If it's clearly the right next step, just do it.
-- **Y-per-agent scheme for large sweeps.** When dispatching parallel/sequential agents to work through a batch, each agent owns one `Y` (minor version) and each fix is a `Z` (patch) within it. Cluster bugs by type, not by file.
-- **Style preference:** concise prose, structured tables, real code examples over abstractions.
-- **Tooling preference:** avoid over-engineering. Flat `rot/` package (no `src/`). Add tooling only when forced.
-- **No emojis in files.** Per global [`/Users/omkar/CLAUDE.md`](file:///Users/omkar/CLAUDE.md).
+- **Commit per change.** Each commit gets its own [`CHANGELOG.md`](CHANGELOG.md) entry at the top.
+- **Tag every commit.** `git tag v2.X.Y`.
+- **Run tests before each commit.** `python3 -m pytest tests/` (currently 807 passing).
+- **Type-check the web side.** `cd web && npx tsc --noEmit`. Avoid `npm run build` (it dirties `.next/` and clashes with `npm run dev`).
+- **Re-run `node web/scripts/copy-rot.mjs`** after any `rot/` change or version bump — the bundled `public/rot_package/*.py` powers the playground via Pyodide.
+- **Action-oriented**: short messages mean "execute the obvious next step." When in doubt, use AskUserQuestion.
+- **No emojis** in files unless explicitly requested.
 - **No `--no-verify`, no force-push, no rewriting published history.**
-- **Run tests before each commit.** `python3 -m pytest tests/` must pass.
-- **Don't auto-update [`paper/`](paper/) or [`web/`](web/) on every code change.** Update them only when a meaningful batch has accumulated (major features, milestone shifts). **The paper is meant to be a final artifact near the end of the project** — leave it mostly alone until the user explicitly signals the end-of-project polish phase. The site can be refreshed when user-visible language surface changes (new keyword needs a docs entry; the [CodeBlock keyword tables in `web/src/components/code-block.tsx`](web/src/components/code-block.tsx) need to stay in sync for highlighting). The version pill on the site auto-updates from [`rot/__init__.py`](rot/__init__.py) via [`scripts/copy-rot.mjs`](web/scripts/copy-rot.mjs).
+- **Don't update [`paper/`](paper/) or major `web/` content** unless explicitly asked. Web/playground UI changes are fine; documentation overhauls aren't.
+- **Use ruflo + jcodemunch MCPs** for non-trivial coding tasks and for codebase queries (per `/Users/omkar/CLAUDE.md`). The codebase is small (~5,000 LOC) so direct grep is also fine.
 
-## Repo conventions
-
-- `funct` not `def`, `cout`/`coutln` not `print`, `|` not `,`, `this` not `self`, `//` for comments, C-style braces.
-- Identifiers: `[A-Za-z_][A-Za-z_0-9]*`.
-- Output style: rot-flavored. `cout`/`coutln` print `null` not `None`, `true`/`false` not `True`/`False`. Lists render as `[a | b | c]`. Dicts as `{"k": v | "k2": v2}`. Instances as `<instance of ClassName>` (overridable via a `to_string()` method).
-- **Closures can mutate enclosing scope** (chain-walking `Environment.set`) — the v2.10.0 intentional design. Use `let name = expr` (v2.16.6) to opt out and create a fresh local.
-- **Method params and `this` use `set_local`** — they don't pollute enclosing scope.
-- **Builtins are immutable** (v2.16.5) — `pi = 3.0` is rejected. Use `let pi = 3.0` to shadow within a local scope.
-- **`break` / `continue`** are lexically scoped to loops in the SAME function body (v2.15.1) — they cannot escape across a function call boundary.
-- **All runtime errors carry source location** (v2.22.3) — `InterpreterError` is rendered rustc-style by the CLI/REPL when source is available.
-- **No Python info leak via member access** (v2.18.x) — `obj.__class__`, `obj._private`, `bytes` returns are all rejected.
+---
 
 ## Quick demo
 
 ```bash
-# Language
-python3 -m rot examples/fizzbuzz.rot   # run a program
+# Tree-walker (default)
+python3 -m rot examples/fizzbuzz.rot
 python3 -m rot                          # REPL
-python3 -m rot --no-run file.rot        # validate
-python3 -m rot --trace file.rot         # show lex / parse / interp stages
-python3 -m pytest tests/                # 628 passing
+python3 -m pytest tests/                # 807 passing
 
-# Web site (Next.js, runs ROT in browser via Pyodide)
-cd web && npm install                   # one-time
-cd web && npm run dev                   # http://localhost:3000
+# Bytecode VM (M2)
+python3 -m rot --vm examples/fizzbuzz.rot
+python3 -m rot --vm examples/counter.rot
+python3 -m rot --vm examples/factorial.rot
 
-# Paper
-cd paper && latexmk -pdf main.tex       # rebuilds main.pdf
+# Playground
+cd web && npm install                    # one-time
+cd web && npm run dev                    # http://localhost:3000
+
+# Paper (don't touch unless asked)
+cd paper && latexmk -pdf main.tex
 ```
 
-## Open items / known follow-ups (small)
-
-These are pre-existing minor items from the v2.13 audit that didn't fit any agent's scope. Not blocking Milestone 1.
-
-- **Closure late-binding.** `for i in [1|2|3] { funct f() { return i } append(fns, f) }` produces three closures that all see `i == 3` (Python footgun, inherited). Either pin current behavior or fix with per-iteration capture.
-- **REPL tab completion** — skipped in v2.19.x as optional.
-- **Inheritance / `super`** — `super` is reserved (v2.25.7) with a clear "not supported" error, but no implementation. Single-inheritance is a natural minor.
-- **Multi-line strings** (triple-quoted).
-- **Integer division `//`** — deferred in v2.25.6 because `//` is the comment marker. Could pick a different syntax (`~/`, `\\`) but a builtin `floor(a / b)` already exists.
-- **TCO** in the interpreter for deep recursion.
-- **Stats on the landing page are hardcoded** — `~3,800` LOC, `628` tests, `81+` commits. Easy to wire to build-time computed values if you want.
-
-## Out of scope (for now)
-
-- **Don't refresh [`paper/`](paper/)** — the paper is final-near-end-of-project. Leave it alone unless explicitly asked.
-- **Don't keep [`web/`](web/) in lockstep with every code change.** Only refresh on big milestones — when a new keyword needs a docs entry, or when a milestone (M1, M2, etc.) ships and the docs need updating. The version pill auto-updates; everything else is manual.
+---
 
 ## TL;DR for a new session
 
-You're picking up ROT at **v2.25.17**, 628 tests passing, all CI green. The language is feature-complete for a small interpreted language. **The next chapter is making compilation visible** — turning the playground at [`web/`](web/) into a live animated compiler explainer where any user can write any program and watch every stage (lex → parse → AST → bytecode → execute) animate, cross-link, and explain itself.
+You're picking up ROT at **v2.27.17**, **807 tests passing**, all CI green. Both major milestones (M1 step-mode playground, M2 bytecode VM) have substantial shipped surface. The tree-walker remains the default execution path; the VM is opt-in via `python -m rot --vm` and runs all the examples that don't use slicing/import/finally/closures.
 
-The path is four milestones. **Start with Milestone 1**: rewrite [`rot/interpreter.py`](rot/interpreter.py)'s `_execute_statement` as a generator that yields a snapshot after each statement. Then build the playground's Env pane and step controls. Concrete deep-dive in [§ Milestone 1 — deep dive](#milestone-1--deep-dive) above. Suggested first commit is **v2.26.0** — the Y bump marks the strategic shift to compilation visibility.
+The playground at [`web/`](web/) has been thoroughly cleaned up: three phases (Read · Parse · Run), pretty-printed code in the Parse stage, opt-in Bytecode pane in animate mode, snapshot scrubbing timeline, keyboard navigation, persistent source + share-by-URL.
 
-Honor the user's conventions. Don't touch [`paper/`](paper/). Don't refresh [`web/`](web/) until M1 actually ships. Ask before any destructive git operation.
+**The headline next-up:** wire VM step mode into the playground so the Bytecode pane animates per opcode (IP marker + stack visualization). That delivers the original HANDOFF promise of "watch your code compile to bytecode and execute opcode-by-opcode."
+
+Also: the user reported "the precode does not show the fizzbuzz that automatically shows in source" right before asking for this handoff. Best guess is the Step Detail's onboarding state before any step — confirm with the user, then a small fix.
+
+Honor conventions: bump version + tag per commit, run tests, run copy-rot, don't touch paper. Ask before any destructive git operation.
