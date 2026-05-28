@@ -53,6 +53,20 @@ class Op(IntEnum):
                      # match ROT's tree-walker since both rely on
                      # Python's bool coercion).
 
+    # ─── Collections ───────────────────────────────────────────────
+    BUILD_LIST = 60  # arg: count. Pops `count` values, builds a list
+                     # (in push order), pushes it.
+    BUILD_DICT = 61  # arg: count (number of key/value pairs). Pops 2N
+                     # values as alternating key, value pairs (in push
+                     # order), builds a dict, pushes it.
+    GET_INDEX = 62   # Pops index, pops target, pushes target[index].
+                     # Lists: negative indices wrap; out-of-bounds is
+                     # an InterpreterError. Dicts: missing key is an
+                     # InterpreterError.
+    SET_INDEX = 63   # Pops value, pops index, pops target; performs
+                     # target[index] = value. Same bounds rules as
+                     # GET_INDEX.
+
     # ─── Control flow ──────────────────────────────────────────────
     # All jumps target an absolute IP (the index into `Chunk.code`).
     # The compiler emits jumps with a placeholder target (`0`) and

@@ -123,6 +123,20 @@ class Compiler:
                 raise InterpreterError("`continue` outside of a loop")
             self.chunk.emit(Op.JUMP, self._loop_stack[-1]["start"])
             return
+        if isinstance(stmt, ast.IndexAssign):
+            # `xs[i] = v` — currently supports plain `=`. Compound
+            # assigns (`xs[i] += 1`) will land alongside the
+            # tree-walker's compound logic in a later Z.
+            if getattr(stmt, "op", "=") != "=":
+                raise NotImplementedError(
+                    f"codegen: compound index assign {stmt.op!r}"
+                    " not yet supported"
+                )
+            self._compile_expr(stmt.target)
+            self._compile_expr(stmt.index)
+            self._compile_expr(stmt.value)
+            self.chunk.emit(Op.SET_INDEX)
+            return
         raise NotImplementedError(
             f"codegen: statement {type(stmt).__name__!r} not yet supported"
         )
@@ -278,6 +292,22 @@ class Compiler:
             raise NotImplementedError(
                 f"codegen: unary op {expr.op!r} not yet supported"
             )
+        if isinstance(expr, ast.ListLit):
+            for elem in expr.elements:
+                self._compile_expr(elem)
+            self.chunk.emit(Op.BUILD_LIST, len(expr.elements))
+            return
+        if isinstance(expr, ast.DictLit):
+            for (k, v) in expr.pairs:
+                self._compile_expr(k)
+                self._compile_expr(v)
+            self.chunk.emit(Op.BUILD_DICT, len(expr.pairs))
+            return
+        if isinstance(expr, ast.Index):
+            self._compile_expr(expr.target)
+            self._compile_expr(expr.index)
+            self.chunk.emit(Op.GET_INDEX)
+            return
         raise NotImplementedError(
             f"codegen: expression {type(expr).__name__!r} not yet supported"
         )

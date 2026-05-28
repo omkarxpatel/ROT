@@ -197,6 +197,88 @@ class VM:
                 if val:
                     self.ip = instr[1]
                 continue
+            if op == Op.BUILD_LIST:
+                n = instr[1]
+                if n == 0:
+                    self.stack.append([])
+                else:
+                    items = self.stack[-n:]
+                    del self.stack[-n:]
+                    self.stack.append(list(items))
+                continue
+            if op == Op.BUILD_DICT:
+                n = instr[1]
+                if n == 0:
+                    self.stack.append({})
+                else:
+                    flat = self.stack[-2 * n:]
+                    del self.stack[-2 * n:]
+                    d: dict = {}
+                    for i in range(0, len(flat), 2):
+                        d[flat[i]] = flat[i + 1]
+                    self.stack.append(d)
+                continue
+            if op == Op.GET_INDEX:
+                idx = self.stack.pop()
+                target = self.stack.pop()
+                if isinstance(target, list):
+                    if not isinstance(idx, int) or isinstance(idx, bool):
+                        raise InterpreterError(
+                            "list indices must be integers"
+                        )
+                    n = len(target)
+                    real = idx + n if idx < 0 else idx
+                    if real < 0 or real >= n:
+                        raise InterpreterError(
+                            f"list index out of range (index {idx}, length {n})"
+                        )
+                    self.stack.append(target[real])
+                elif isinstance(target, dict):
+                    if idx not in target:
+                        raise InterpreterError(
+                            f"dict key not found: {idx!r}"
+                        )
+                    self.stack.append(target[idx])
+                elif isinstance(target, str):
+                    if not isinstance(idx, int) or isinstance(idx, bool):
+                        raise InterpreterError(
+                            "string indices must be integers"
+                        )
+                    n = len(target)
+                    real = idx + n if idx < 0 else idx
+                    if real < 0 or real >= n:
+                        raise InterpreterError(
+                            f"string index out of range"
+                        )
+                    self.stack.append(target[real])
+                else:
+                    raise InterpreterError(
+                        f"cannot index {type(target).__name__}"
+                    )
+                continue
+            if op == Op.SET_INDEX:
+                val = self.stack.pop()
+                idx = self.stack.pop()
+                target = self.stack.pop()
+                if isinstance(target, list):
+                    if not isinstance(idx, int) or isinstance(idx, bool):
+                        raise InterpreterError(
+                            "list indices must be integers"
+                        )
+                    n = len(target)
+                    real = idx + n if idx < 0 else idx
+                    if real < 0 or real >= n:
+                        raise InterpreterError(
+                            f"list index out of range (index {idx}, length {n})"
+                        )
+                    target[real] = val
+                elif isinstance(target, dict):
+                    target[idx] = val
+                else:
+                    raise InterpreterError(
+                        f"cannot index-assign {type(target).__name__}"
+                    )
+                continue
             if op == Op.RETURN:
                 return
             raise InterpreterError(f"unknown opcode {int(op)}")

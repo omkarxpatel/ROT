@@ -165,9 +165,74 @@ def test_compile_identifier_loads_by_name():
 
 
 def test_compile_unsupported_statement_raises_not_implemented():
-    # `ForStmt` isn't supported yet (lands in a later Z).
+    # `ForStmt` isn't supported yet (lands in v2.27.8).
     with pytest.raises(NotImplementedError):
         _compile("for x in [1 | 2] { y = x }")
+
+
+# ─── Collections (v2.27.7) ───────────────────────────────────────
+
+
+def test_compile_empty_list():
+    chunk = _compile("xs = []")
+    ops = [instr[0] for instr in chunk.code]
+    assert ops == [Op.BUILD_LIST, Op.STORE_NAME, Op.RETURN]
+    # BUILD_LIST with count 0.
+    assert chunk.code[0] == (Op.BUILD_LIST, 0)
+
+
+def test_compile_list_literal_pushes_then_builds():
+    chunk = _compile("xs = [1 | 2 | 3]")
+    assert chunk.constants == [1, 2, 3]
+    # 3 LOAD_CONSTs in order, then BUILD_LIST 3.
+    assert chunk.code == [
+        (Op.LOAD_CONST, 0),
+        (Op.LOAD_CONST, 1),
+        (Op.LOAD_CONST, 2),
+        (Op.BUILD_LIST, 3),
+        (Op.STORE_NAME, 0),
+        (Op.RETURN,),
+    ]
+
+
+def test_compile_dict_literal_alternates_key_value():
+    chunk = _compile('d = {"a": 1 | "b": 2}')
+    ops = [instr[0] for instr in chunk.code]
+    # Each pair pushes key then value, BUILD_DICT with count.
+    assert ops == [
+        Op.LOAD_CONST,  # "a"
+        Op.LOAD_CONST,  # 1
+        Op.LOAD_CONST,  # "b"
+        Op.LOAD_CONST,  # 2
+        Op.BUILD_DICT,
+        Op.STORE_NAME,
+        Op.RETURN,
+    ]
+    assert chunk.code[4] == (Op.BUILD_DICT, 2)
+
+
+def test_compile_index_expression():
+    chunk = _compile("y = xs[0]")
+    ops = [instr[0] for instr in chunk.code]
+    assert ops == [
+        Op.LOAD_NAME,
+        Op.LOAD_CONST,
+        Op.GET_INDEX,
+        Op.STORE_NAME,
+        Op.RETURN,
+    ]
+
+
+def test_compile_index_assign_emits_set_index():
+    chunk = _compile("xs[0] = 99")
+    ops = [instr[0] for instr in chunk.code]
+    assert ops == [
+        Op.LOAD_NAME,
+        Op.LOAD_CONST,
+        Op.LOAD_CONST,
+        Op.SET_INDEX,
+        Op.RETURN,
+    ]
 
 
 # ─── Comparison ops (v2.27.1) ────────────────────────────────────

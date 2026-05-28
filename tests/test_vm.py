@@ -315,3 +315,78 @@ def test_vm_and_short_circuits_evaluating_right():
 def test_vm_or_short_circuits_evaluating_right():
     vm = _run("x = true or nope")
     assert vm.env["x"] is True
+
+
+# ─── Collections (v2.27.7) ───────────────────────────────────────
+
+
+def test_vm_builds_empty_list_and_dict():
+    vm = _run("xs = []\nd = {}")
+    assert vm.env == {"xs": [], "d": {}}
+
+
+def test_vm_list_literal_preserves_order():
+    vm = _run("xs = [10 | 20 | 30]")
+    assert vm.env["xs"] == [10, 20, 30]
+
+
+def test_vm_dict_literal_preserves_key_value():
+    vm = _run('d = {"a": 1 | "b": 2 | "c": 3}')
+    assert vm.env["d"] == {"a": 1, "b": 2, "c": 3}
+
+
+def test_vm_get_index_on_list():
+    vm = _run("xs = [10 | 20 | 30]\ny = xs[1]")
+    assert vm.env["y"] == 20
+
+
+def test_vm_get_index_negative_wraps():
+    vm = _run("xs = [10 | 20 | 30]\ny = xs[-1]")
+    assert vm.env["y"] == 30
+
+
+def test_vm_get_index_on_dict():
+    vm = _run('d = {"a": 1 | "b": 2}\ny = d["b"]')
+    assert vm.env["y"] == 2
+
+
+def test_vm_get_index_on_string():
+    vm = _run('s = "hello"\nc = s[1]')
+    assert vm.env["c"] == "e"
+
+
+def test_vm_index_out_of_range_raises():
+    with pytest.raises(InterpreterError) as ei:
+        _run("xs = [1 | 2]\ny = xs[5]")
+    assert "out of range" in str(ei.value)
+
+
+def test_vm_missing_dict_key_raises():
+    with pytest.raises(InterpreterError) as ei:
+        _run('d = {"a": 1}\ny = d["missing"]')
+    assert "missing" in str(ei.value)
+
+
+def test_vm_set_index_on_list_mutates():
+    vm = _run("xs = [1 | 2 | 3]\nxs[1] = 99")
+    assert vm.env["xs"] == [1, 99, 3]
+
+
+def test_vm_set_index_on_dict_inserts_or_updates():
+    vm = _run('d = {"a": 1}\nd["b"] = 2\nd["a"] = 99')
+    assert vm.env["d"] == {"a": 99, "b": 2}
+
+
+def test_vm_set_index_negative_wraps():
+    vm = _run("xs = [1 | 2 | 3]\nxs[-1] = 99")
+    assert vm.env["xs"] == [1, 2, 99]
+
+
+def test_vm_set_index_out_of_range_raises():
+    with pytest.raises(InterpreterError):
+        _run("xs = [1 | 2]\nxs[5] = 9")
+
+
+def test_vm_nested_list_indexing():
+    vm = _run("g = [[1 | 2] | [3 | 4]]\ny = g[1][0]")
+    assert vm.env["y"] == 3

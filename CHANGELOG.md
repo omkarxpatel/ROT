@@ -2,6 +2,45 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.7 — M2: collections (`BUILD_LIST`, `BUILD_DICT`, `GET_INDEX`, `SET_INDEX`)
+
+### Added
+- Four new opcodes:
+  - `BUILD_LIST <count>` — pops `count` values (in push order), wraps
+    them in a list, pushes.
+  - `BUILD_DICT <count>` — pops `2*count` values as alternating key/
+    value pairs, builds a dict, pushes.
+  - `GET_INDEX` — pops index, pops target, pushes `target[index]`.
+    Handles lists (with negative-index wrap), dicts (key must exist),
+    and strings (character at offset).
+  - `SET_INDEX` — pops value, pops index, pops target, performs
+    `target[index] = value`. Same bounds rules as `GET_INDEX`.
+- Codegen for `ListLit` (loops through `elements`, emits
+  `BUILD_LIST`), `DictLit` (loops through `pairs`, emits
+  `BUILD_DICT`), `Index` (target → index → `GET_INDEX`), and
+  `IndexAssign` statement (target → index → value → `SET_INDEX`).
+- Compound `IndexAssign` (`xs[i] += 1`) raises `NotImplementedError`
+  for now — same path will land alongside compound `Assign` later.
+
+### Tests
+- `tests/test_codegen.py`: empty list/dict emission, list literal
+  order, dict alternating key/value, index expression, index-assign
+  statement layout.
+- `tests/test_vm.py`: empty + populated list/dict, list/dict/string
+  indexing, negative-index wrap on get and set, out-of-range error,
+  missing-dict-key error, set-index mutation on list and dict,
+  nested indexing.
+- Tests: 740 → **759 passing**.
+
+### Notes
+- ROT's tree-walker uses Python lists and dicts directly; the VM
+  matches: lists are `list`, dicts are `dict`. Negative-index wrap
+  and the InterpreterError messages on out-of-range / missing-key
+  mirror the existing tree-walker behavior so cross-engine parity
+  holds.
+- StructureView had a typo (`n.values` for `ListLit`'s `elements`
+  field); fixed in the same commit.
+
 ## v2.27.6 — Playground QoL: persist source, share-by-URL
 
 ### Added

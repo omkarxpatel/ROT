@@ -526,11 +526,11 @@ function renderInline(node: AstValue): React.ReactNode {
       );
     }
     case "ListLit": {
-      const values = (n.values as AstNode[]) ?? [];
+      const items = (n.elements as AstNode[]) ?? [];
       return (
         <>
           <Punct>[</Punct>
-          {values.map((v, i) => (
+          {items.map((v, i) => (
             <Fragment key={i}>
               {i > 0 && <Punct>{" | "}</Punct>}
               {renderInline(v)}
