@@ -53,14 +53,25 @@ class VM:
     on every opcode.
     """
 
-    def __init__(self, chunk: Chunk) -> None:
+    def __init__(
+        self,
+        chunk: Chunk,
+        builtins: "dict[str, Any] | None" = None,
+    ) -> None:
         self.chunk = chunk
         self.stack: list[Any] = []
         # Top-level (global) env is `self.env` while in the main
         # frame. CALL switches `self.env` to the function's local
         # env and stashes the globals reference on `self._globals`
         # so LOAD_NAME can fall back to it. RETURN_VALUE restores.
-        self.env: dict[str, Any] = {}
+        #
+        # The `builtins` dict (if provided) is merged into globals at
+        # startup so the CLI's --vm path can hand the VM
+        # `cout`/`coutln` and the rest of the standard library.
+        # Builtins live in the same globals dict as user assignments;
+        # there's no frozen layer yet (the tree-walker's freezing
+        # semantics could land later).
+        self.env: dict[str, Any] = dict(builtins) if builtins else {}
         self._globals: dict[str, Any] = self.env
         self.ip: int = 0
         # Saved-frame stack — each entry is a dict snapshotting the
@@ -330,43 +341,58 @@ class VM:
     # ─── Call / return helpers ─────────────────────────────────────
 
     def _do_call(self, argc: int) -> None:
-        """Handle the CALL opcode: pop args + function, snapshot the
-        caller's state, switch active attrs to the function's chunk
-        and a fresh local env with parameters bound."""
+        """Handle the CALL opcode: pop args + function, then either
+        (a) call a Python callable directly (builtins like
+        `cout`, `len`, `str`, `pi`, …) and push the result, or
+        (b) snapshot the caller and switch active attrs to a
+        `RotFunctionValue`'s body chunk."""
         if argc > 0:
             args = self.stack[-argc:]
             del self.stack[-argc:]
         else:
             args = []
         func = self.stack.pop()
-        if not isinstance(func, RotFunctionValue):
-            raise InterpreterError(
-                f"cannot call {type(func).__name__}"
-            )
-        if len(args) != len(func.params):
-            raise InterpreterError(
-                f"function {func.name!r} takes {len(func.params)} "
-                f"argument(s), got {len(args)}"
-            )
-        # Snapshot the caller. `env_is_globals` records whether the
-        # caller's env IS the globals dict — we need to restore that
-        # exact aliasing so the main frame keeps writing to globals
-        # via STORE_NAME.
-        self._frames.append({
-            "chunk": self.chunk,
-            "ip": self.ip,
-            "stack": self.stack,
-            "env": self.env,
-        })
-        # Switch to callee.
-        assert func.chunk is not None
-        self.chunk = func.chunk
-        self.ip = 0
-        self.stack = []
-        local_env: dict[str, Any] = {}
-        for name, val in zip(func.params, args):
-            local_env[name] = val
-        self.env = local_env
+
+        if isinstance(func, RotFunctionValue):
+            if len(args) != len(func.params):
+                raise InterpreterError(
+                    f"function {func.name!r} takes {len(func.params)} "
+                    f"argument(s), got {len(args)}"
+                )
+            self._frames.append({
+                "chunk": self.chunk,
+                "ip": self.ip,
+                "stack": self.stack,
+                "env": self.env,
+            })
+            assert func.chunk is not None
+            self.chunk = func.chunk
+            self.ip = 0
+            self.stack = []
+            local_env: dict[str, Any] = {}
+            for name, val in zip(func.params, args):
+                local_env[name] = val
+            self.env = local_env
+            return
+
+        if callable(func):
+            # Builtins are plain Python callables. Wrap any
+            # non-InterpreterError into one so the CLI's error
+            # rendering treats it uniformly.
+            try:
+                result = func(*args)
+            except InterpreterError:
+                raise
+            except TypeError as e:
+                # Most likely a builtin arity mismatch — mirror the
+                # tree-walker's surface as best we can.
+                raise InterpreterError(str(e))
+            except Exception as e:
+                raise InterpreterError(str(e))
+            self.stack.append(result)
+            return
+
+        raise InterpreterError(f"cannot call {type(func).__name__}")
 
     def _do_return_value(self) -> bool:
         """Handle the RETURN_VALUE opcode. Returns True if the main

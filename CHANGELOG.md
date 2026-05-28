@@ -2,6 +2,51 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.12 — M2: `python -m rot --vm` runs programs through the bytecode VM
+
+### Added
+- `--vm` CLI flag in [`rot/cli.py`](rot/cli.py). When set, the
+  program is parsed once, compiled via `rot.codegen.Compiler`, and
+  executed by `rot.vm.VM`. The tree-walking interpreter remains
+  the default — `--vm` is opt-in.
+- `VM.__init__(chunk, builtins=…)` — a new `builtins` kwarg
+  pre-populates the VM's globals dict. The CLI's `--vm` path
+  merges `BUILTINS` from `rot.builtins` (`len`, `str`, `pi`,
+  `read_file`, …) with `cout` / `coutln` pulled from
+  `rot.interpreter`, so VM-run programs can print and use the
+  standard library exactly like the tree-walker.
+- `_do_call` now handles plain Python callables alongside
+  `RotFunctionValue`. CALL of a builtin invokes the function
+  directly with the popped args and pushes its return value
+  (Python `None` becomes ROT `null`). `TypeError`s (most often
+  builtin arity mismatches) become `InterpreterError` so the CLI
+  prints them uniformly.
+
+### Verified
+- `python3 -m rot --vm examples/fizzbuzz.rot` produces the same
+  output as the tree-walker — the VM now runs a real ROT program
+  end-to-end with loops, conditionals, modulo, and printing.
+- `python3 -m rot --vm` on small recursion programs (e.g.
+  `funct fac(n) { ... }`) returns the correct value.
+
+### Tests
+- `tests/test_vm.py`: VM calls a Python builtin and the print
+  reaches stdout via `capsys`; VM calls `len([...])` and stores
+  the result; the CLI's `--vm` flag drives a real file end-to-end
+  via `rot.cli.main`.
+- Tests: 789 → **792 passing**.
+
+### Notes
+- Statements the codegen doesn't cover yet (`ClassDef`,
+  `TryCatch`, `ThrowStmt`, `ImportStmt`, `MemberAccess`,
+  `MemberAssign`, `Slice`) raise `NotImplementedError` from the
+  codegen, which surfaces to the CLI as `error: codegen: ...`.
+  Classes land in v2.27.13.
+- The VM's globals are mutable — there's no frozen-builtins layer
+  yet, so a user could shadow `cout` with `cout = 5`. The
+  tree-walker rejects that; the VM doesn't. Could enforce in a
+  follow-up.
+
 ## v2.27.11 — M2: per-instruction line attribution + statement-scoped Bytecode highlight
 
 ### Added

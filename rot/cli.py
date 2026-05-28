@@ -37,11 +37,45 @@ def _build_parser() -> argparse.ArgumentParser:
         help="parse only — validate the program without interpreting it",
     )
     parser.add_argument(
+        "--vm",
+        action="store_true",
+        help=(
+            "run via the bytecode VM (Milestone 2). The tree-walking "
+            "interpreter is still the default; --vm opts into the "
+            "compiled path. Some statements (class, try/catch, throw, "
+            "import, member access, slicing) aren't codegen'd yet — "
+            "the VM will report a clear error if you hit one."
+        ),
+    )
+    parser.add_argument(
         "--repl",
         action="store_true",
         help="start the interactive REPL (equivalent to invoking with no file)",
     )
     return parser
+
+
+def _run_via_vm(compiler: Compiler, source: str) -> None:
+    """Drive the M2 bytecode path: parse → codegen → VM run.
+
+    The VM's globals are pre-populated with the same builtins the
+    tree-walker exposes — `cout`/`coutln` from `rot.interpreter`
+    (which route to stdout when no Interpreter is active) plus the
+    rest of the standard library from `rot.builtins`. Together
+    these make `--vm` runnable on any program whose statements the
+    codegen supports.
+    """
+    from .builtins import BUILTINS
+    from .codegen import Compiler as VMCompiler
+    from .interpreter import _builtin_cout, _builtin_coutln
+    from .vm import VM
+
+    program = compiler.parse(source)
+    vm_builtins: dict = dict(BUILTINS)
+    vm_builtins["cout"] = _builtin_cout
+    vm_builtins["coutln"] = _builtin_coutln
+    chunk = VMCompiler().compile(program)
+    VM(chunk, builtins=vm_builtins).run()
 
 
 def main() -> None:
@@ -77,6 +111,9 @@ def main() -> None:
             compiler.parse(source)
             if not args.trace:
                 print(f"OK — {args.file} parsed cleanly.")
+            return
+        if args.vm:
+            _run_via_vm(compiler, source)
             return
         compiler.run(source, source_path=str(source_path))
     except RotError as err:

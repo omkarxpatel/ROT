@@ -573,3 +573,49 @@ def test_vm_function_value_renders_via_stringify():
     from rot.codegen import RotFunctionValue
     assert isinstance(vm.env["f"], RotFunctionValue)
     assert repr(vm.env["f"]) == "<funct foo>"
+
+
+# ─── Builtins + CLI integration (v2.27.12) ───────────────────────
+
+
+def test_vm_can_call_python_builtin_callable(capsys):
+    # Pre-load the VM with cout/coutln and verify a print actually
+    # reaches stdout via the CALL → Python-callable path.
+    from rot.codegen import Compiler as VMCompiler
+    from rot.interpreter import _builtin_cout, _builtin_coutln
+    from rot.vm import VM as VMClass
+    chunk = VMCompiler().compile(
+        Parser(Lexer().tokenize('coutln("hi from vm")')).parse()
+    )
+    vm = VMClass(chunk, builtins={"coutln": _builtin_coutln, "cout": _builtin_cout})
+    vm.run()
+    captured = capsys.readouterr()
+    assert captured.out == "hi from vm\n"
+
+
+def test_vm_builtin_with_args_returns_value():
+    from rot.codegen import Compiler as VMCompiler
+    from rot.builtins import BUILTINS
+    from rot.vm import VM as VMClass
+    chunk = VMCompiler().compile(
+        Parser(Lexer().tokenize('n = len([1 | 2 | 3])')).parse()
+    )
+    vm = VMClass(chunk, builtins=dict(BUILTINS))
+    vm.run()
+    assert vm.env["n"] == 3
+
+
+def test_vm_cli_vm_flag_runs_program(tmp_path, capsys):
+    # Smoke-test the `--vm` CLI by invoking the same entry point.
+    import sys
+    from rot.cli import main
+    f = tmp_path / "p.rot"
+    f.write_text("x = 7\ncoutln(x + 3)\n")
+    argv_prior = sys.argv
+    sys.argv = ["rot", "--vm", str(f)]
+    try:
+        main()
+    finally:
+        sys.argv = argv_prior
+    captured = capsys.readouterr()
+    assert captured.out == "10\n"
