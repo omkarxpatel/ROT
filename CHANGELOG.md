@@ -2,6 +2,36 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.15 — hotfix: stop the Step Detail panel from auto-scrolling during Play
+
+### Premise
+- During Play, the Step Detail panel kept scrolling itself — the
+  user couldn't read the Read / Parse phases at the top of the
+  card. Two `scrollIntoView` calls were firing on every step and
+  bleeding through to the panel's outer scroll container.
+
+### Fixed
+- **`BindingRow` no longer scrolls itself into view.** The
+  v2.26.23 QoL that called
+  `scrollIntoView({behavior: "smooth", block: "nearest"})` on
+  every change was the main culprit: each new/changed binding
+  during Play dragged the entire Step Detail panel down to the
+  Run phase. The emerald/amber row tint and dot already mark the
+  change; scroll wasn't pulling its weight.
+- **`SnapshotTimeline` switched from `scrollIntoView` to manual
+  `container.scrollTo({left})`.** `scrollIntoView` walks up the
+  ancestor scroll chain — even with `block: "nearest"` it could
+  nudge the surrounding right-column scroll on each step.
+  Computing the horizontal offset manually and writing it to
+  `scrollLeft` keeps the centering strictly inside the timeline
+  strip; nothing else can move.
+
+### Notes
+- The active dot in the timeline still smoothly centers itself
+  horizontally each step — the visual feature is preserved, just
+  contained.
+- No Python changes. 807 tests still passing.
+
 ## v2.27.14 — M2: `try` / `catch` / `throw` in the VM
 
 ### Added

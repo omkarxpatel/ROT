@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import type { RotSnapshot } from "@/lib/pyodide-runtime";
@@ -198,18 +198,14 @@ function BindingRow({
       : change === "changed"
         ? "bg-amber-500/10 ring-1 ring-amber-500/20"
         : "ring-1 ring-transparent";
-  // Auto-scroll into view when this row is the "active" one — i.e.
-  // it just became new or changed. Without this, a binding deep in
-  // a large scope card stays off-screen and the user misses the
-  // env update entirely.
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (!change || !ref.current) return;
-    ref.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [change]);
+  // (v2.27.15) The auto-scrollIntoView added in v2.26.23 dragged
+  // the entire Step Detail panel each time a binding changed during
+  // Play — never letting the user read the Read/Parse stages at the
+  // top of the card. Removed in favor of leaving the user's scroll
+  // position alone. The visual highlight (emerald/amber row + dot)
+  // already calls attention to the change.
   return (
     <motion.div
-      ref={ref}
       layout
       initial={{ opacity: 0, y: 12, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}

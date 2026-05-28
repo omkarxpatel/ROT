@@ -21,12 +21,28 @@ export function SnapshotTimeline({
   onStepChange,
 }: SnapshotTimelineProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 
+  // Keep the active dot horizontally centered by mutating the
+  // container's `scrollLeft` directly. Using `scrollIntoView` here
+  // walks up the ancestor scroll chain and could also nudge the
+  // surrounding card vertically — annoying during Play, since each
+  // step would jerk the Step Detail panel above. Manual scrollLeft
+  // keeps the effect strictly horizontal and confined to this strip.
   useEffect(() => {
-    activeRef.current?.scrollIntoView({
+    const container = scrollContainerRef.current;
+    const dot = activeRef.current;
+    if (!container || !dot) return;
+    const cRect = container.getBoundingClientRect();
+    const dRect = dot.getBoundingClientRect();
+    const offset =
+      dRect.left -
+      cRect.left -
+      container.clientWidth / 2 +
+      dot.offsetWidth / 2;
+    container.scrollTo({
+      left: container.scrollLeft + offset,
       behavior: "smooth",
-      block: "nearest",
-      inline: "center",
     });
   }, [stepIndex]);
 
@@ -48,7 +64,7 @@ export function SnapshotTimeline({
           {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"}
         </span>
       </div>
-      <div className="overflow-x-auto">
+      <div ref={scrollContainerRef} className="overflow-x-auto">
         <div className="flex items-center gap-[2px] py-1">
           {snapshots.map((snap, i) => {
             const isActive = i === stepIndex;
