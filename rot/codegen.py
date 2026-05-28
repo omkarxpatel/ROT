@@ -25,6 +25,28 @@ from .opcodes import Op
 
 
 @dataclass
+class RotFunctionValue:
+    """A compiled function — what `LOAD_CONST` pushes when the VM sees
+    a `FuncDef`. Carries the function's name (for error messages and
+    stringification), parameter list, and the body chunk that gets a
+    new frame when `CALL` fires.
+
+    No closure environment yet — the VM looks up free names in the
+    main frame's globals. Lexical closures land in a later Z.
+    """
+
+    name: str
+    params: list[str] = field(default_factory=list)
+    chunk: "Chunk | None" = None
+
+    def __repr__(self) -> str:
+        # Match the tree-walker's `<funct NAME>` rendering so cross-
+        # engine output of `cout(foo)` matches once cout exists in
+        # the VM.
+        return f"<funct {self.name}>"
+
+
+@dataclass
 class Chunk:
     """A compiled program. Holds the bytecode, the constant pool,
     and the name pool. Compact + JSON-serializable for the future
@@ -125,6 +147,16 @@ class Compiler:
             if not self._loop_stack:
                 raise InterpreterError("`continue` outside of a loop")
             self.chunk.emit(Op.JUMP, self._loop_stack[-1]["start"])
+            return
+        if isinstance(stmt, ast.FuncDef):
+            self._compile_func_def(stmt)
+            return
+        if isinstance(stmt, ast.Return):
+            if stmt.value is not None:
+                self._compile_expr(stmt.value)
+            else:
+                self.chunk.emit(Op.LOAD_NULL)
+            self.chunk.emit(Op.RETURN_VALUE)
             return
         if isinstance(stmt, ast.IndexAssign):
             # `xs[i] = v` — currently supports plain `=`. Compound
@@ -354,9 +386,46 @@ class Compiler:
             self._compile_expr(expr.index)
             self.chunk.emit(Op.GET_INDEX)
             return
+        if isinstance(expr, ast.Call):
+            # Stack at the time of CALL: [function, arg1, ..., argN].
+            self._compile_expr(expr.callee)
+            for arg in expr.args:
+                self._compile_expr(arg)
+            self.chunk.emit(Op.CALL, len(expr.args))
+            return
         raise NotImplementedError(
             f"codegen: expression {type(expr).__name__!r} not yet supported"
         )
+
+    def _compile_func_def(self, stmt: ast.FuncDef) -> None:
+        """Compile a `funct name(p1 | p2) { body }`:
+
+        1. Compile the body into its OWN chunk via a fresh `Compiler`
+           (params get bound by `CALL` when invoked, so we don't emit
+           any setup for them here).
+        2. The body's chunk must end with a `RETURN_VALUE` —
+           functions that fall off the end implicitly return `null`,
+           so we append `LOAD_NULL; RETURN_VALUE` defensively (no
+           harm if a real `Return` statement already emitted one,
+           since IP will have left the chunk before reaching it).
+        3. Wrap into a `RotFunctionValue`, add it to the outer
+           chunk's constant pool, and emit `LOAD_CONST + STORE_NAME`
+           so the function value lands in the surrounding env.
+        """
+        body_compiler = Compiler()
+        body_compiler._compile_block(stmt.body)
+        body_compiler.chunk.emit(Op.LOAD_NULL)
+        body_compiler.chunk.emit(Op.RETURN_VALUE)
+
+        func_val = RotFunctionValue(
+            name=stmt.name,
+            params=list(stmt.params),
+            chunk=body_compiler.chunk,
+        )
+        const_idx = self.chunk.add_const(func_val)
+        self.chunk.emit(Op.LOAD_CONST, const_idx)
+        name_idx = self.chunk.add_name(stmt.name)
+        self.chunk.emit(Op.STORE_NAME, name_idx)
 
 
 _BIN_OP_MAP: dict[str, Op] = {

@@ -1,21 +1,20 @@
 """Stack-based VM for executing bytecode produced by `rot.codegen`.
 
-This is the M2 foundation Z. The dispatch loop currently handles
-literals, variables, basic arithmetic, and the RETURN halt opcode —
-enough to run programs like `x = 1 + 2`. Each subsequent Z extends
-the dispatch with one or two opcodes plus the codegen + tests.
+v2.27.9 added function-call frames. The VM keeps a single set of
+"current" attributes (`self.chunk`, `self.ip`, `self.stack`,
+`self.env`) for cheap dispatch — CALL pushes a snapshot of the
+caller onto `self._frames` and overwrites the current attrs with the
+function's; RETURN_VALUE restores from the saved snapshot.
 
-The VM intentionally mirrors `Interpreter`'s value semantics where
-they overlap (e.g. `+` coerces to string when either side is a
-string). The tree-walking interpreter remains the reference; the
-test suite cross-checks the VM against it as new opcodes land.
+The tree-walking interpreter remains the reference; the VM mirrors
+its value semantics opcode-by-opcode.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from .codegen import Chunk
+from .codegen import Chunk, RotFunctionValue
 from .errors import InterpreterError
 from .opcodes import Op
 
@@ -31,31 +30,47 @@ def _plus(a: Any, b: Any) -> Any:
 
 
 def _stringify(value: Any) -> str:
-    """Compact ROT-style stringifier — for now just a thin wrapper so
-    string-coercion in `_plus` matches the interpreter for primitive
-    types. Will eventually share code with `rot.builtins._stringify`."""
+    """Compact ROT-style stringifier. Used by `_plus` for string
+    coercion; also paths through CALL when a user prints a function
+    value (later — `cout` not yet in the VM)."""
     if value is None:
         return "null"
     if value is True:
         return "true"
     if value is False:
         return "false"
+    if isinstance(value, RotFunctionValue):
+        return f"<funct {value.name}>"
     return str(value)
 
 
 class VM:
-    """Executes a `Chunk` on a value stack with a global env dict."""
+    """Executes a `Chunk`.
+
+    Attributes are intentionally flat for hot-path dispatch. The
+    frame stack only matters at CALL / RETURN_VALUE boundaries, so
+    we save snapshots there instead of dereferencing a Frame object
+    on every opcode.
+    """
 
     def __init__(self, chunk: Chunk) -> None:
         self.chunk = chunk
         self.stack: list[Any] = []
+        # Top-level (global) env is `self.env` while in the main
+        # frame. CALL switches `self.env` to the function's local
+        # env and stashes the globals reference on `self._globals`
+        # so LOAD_NAME can fall back to it. RETURN_VALUE restores.
         self.env: dict[str, Any] = {}
+        self._globals: dict[str, Any] = self.env
         self.ip: int = 0
+        # Saved-frame stack — each entry is a dict snapshotting the
+        # caller's chunk / ip / stack / env at the moment of CALL.
+        # On RETURN_VALUE we pop one of these and restore the attrs.
+        self._frames: list[dict] = []
 
     def run(self) -> None:
-        code = self.chunk.code
-        while self.ip < len(code):
-            instr = code[self.ip]
+        while self.ip < len(self.chunk.code):
+            instr = self.chunk.code[self.ip]
             self.ip += 1
             op = instr[0]
 
@@ -79,9 +94,12 @@ class VM:
                 continue
             if op == Op.LOAD_NAME:
                 name = self.chunk.names[instr[1]]
-                if name not in self.env:
+                if name in self.env:
+                    self.stack.append(self.env[name])
+                elif self.env is not self._globals and name in self._globals:
+                    self.stack.append(self._globals[name])
+                else:
                     raise InterpreterError(f"name {name!r} is not defined")
-                self.stack.append(self.env[name])
                 continue
             if op == Op.STORE_NAME:
                 name = self.chunk.names[instr[1]]
@@ -298,9 +316,75 @@ class VM:
                         f"cannot index-assign {type(target).__name__}"
                     )
                 continue
+            if op == Op.CALL:
+                self._do_call(instr[1])
+                continue
+            if op == Op.RETURN_VALUE:
+                if self._do_return_value():
+                    return  # main frame returned — halt
+                continue
             if op == Op.RETURN:
                 return
             raise InterpreterError(f"unknown opcode {int(op)}")
+
+    # ─── Call / return helpers ─────────────────────────────────────
+
+    def _do_call(self, argc: int) -> None:
+        """Handle the CALL opcode: pop args + function, snapshot the
+        caller's state, switch active attrs to the function's chunk
+        and a fresh local env with parameters bound."""
+        if argc > 0:
+            args = self.stack[-argc:]
+            del self.stack[-argc:]
+        else:
+            args = []
+        func = self.stack.pop()
+        if not isinstance(func, RotFunctionValue):
+            raise InterpreterError(
+                f"cannot call {type(func).__name__}"
+            )
+        if len(args) != len(func.params):
+            raise InterpreterError(
+                f"function {func.name!r} takes {len(func.params)} "
+                f"argument(s), got {len(args)}"
+            )
+        # Snapshot the caller. `env_is_globals` records whether the
+        # caller's env IS the globals dict — we need to restore that
+        # exact aliasing so the main frame keeps writing to globals
+        # via STORE_NAME.
+        self._frames.append({
+            "chunk": self.chunk,
+            "ip": self.ip,
+            "stack": self.stack,
+            "env": self.env,
+        })
+        # Switch to callee.
+        assert func.chunk is not None
+        self.chunk = func.chunk
+        self.ip = 0
+        self.stack = []
+        local_env: dict[str, Any] = {}
+        for name, val in zip(func.params, args):
+            local_env[name] = val
+        self.env = local_env
+
+    def _do_return_value(self) -> bool:
+        """Handle the RETURN_VALUE opcode. Returns True if the main
+        frame just returned (signaling the run loop to halt)."""
+        retval = self.stack.pop() if self.stack else None
+        if not self._frames:
+            # No saved caller → we were in the main frame. Push the
+            # return value back on so `vm.stack[-1]` reflects it after
+            # halt (some callers inspect this), then signal halt.
+            self.stack.append(retval)
+            return True
+        saved = self._frames.pop()
+        self.chunk = saved["chunk"]
+        self.ip = saved["ip"]
+        self.stack = saved["stack"]
+        self.env = saved["env"]
+        self.stack.append(retval)
+        return False
 
 
 __all__ = ["VM"]

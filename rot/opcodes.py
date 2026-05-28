@@ -89,6 +89,17 @@ class Op(IntEnum):
                          # end cleanup site pops it). Else pushes the
                          # next value, keeping the iter underneath.
 
+    # ─── Function calls ────────────────────────────────────────────
+    CALL = 80            # arg: argc. Stack layout at the moment of
+                         # dispatch: [..., function, arg1, ..., argN].
+                         # Pops argc args + the function value, creates
+                         # a new frame whose env binds the function's
+                         # parameters to those args, transfers control.
+    RETURN_VALUE = 81    # Pops the top of the current frame's stack as
+                         # the return value, pops the frame, pushes the
+                         # value onto the caller's stack. If there's no
+                         # caller (the main frame just returned), halts.
+
     # ─── Halt ──────────────────────────────────────────────────────
     RETURN = 90      # Halt execution. Top of stack (if any) is the
                      # program's "result" — for a whole program that's

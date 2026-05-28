@@ -2,6 +2,79 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.9 — M2: function calls (`CALL`, `RETURN_VALUE`) + frame stack
+
+### Premise
+- Functions are the biggest single feature gap between the VM and
+  the tree-walker. This Z lands `funct name(...) { ... }`
+  definitions, calls with positional args, return values, recursion,
+  and function-to-function dispatch — enough that the VM can run
+  recursive factorial parity-tests against the tree-walker.
+
+### Added
+- `RotFunctionValue` dataclass in
+  [`rot/codegen.py`](rot/codegen.py) — what `LOAD_CONST` pushes
+  for a `FuncDef`. Carries the function's name, parameter list,
+  and the body's compiled `Chunk`. `__repr__` is `<funct NAME>`,
+  matching the tree-walker.
+- Two new opcodes:
+  - `CALL <argc>` — stack at dispatch is
+    `[..., function, arg1, ..., argN]`. Pops the args + function,
+    snapshots the caller (`chunk`, `ip`, `stack`, `env`), and
+    switches the VM's active attrs to the function's chunk + a
+    fresh local env with parameters bound.
+  - `RETURN_VALUE` — pops the top of the current frame's stack as
+    the return value, restores the saved caller snapshot, and
+    pushes the value onto the caller's stack. If there's no
+    caller (main frame returned), halts the VM.
+- `Compiler._compile_func_def` compiles the body into its own
+  `Chunk` via a fresh `Compiler` instance, defensively appends
+  `LOAD_NULL + RETURN_VALUE` so functions that fall off the end
+  implicitly return `null`, wraps the result in a
+  `RotFunctionValue`, and emits `LOAD_CONST + STORE_NAME` so the
+  function lands in the surrounding env.
+- `Compiler` handles `Call` expressions (compile callee + each
+  arg + `CALL argc`) and `Return` statements (compile value or
+  `LOAD_NULL`, then `RETURN_VALUE`).
+
+### Changed
+- `VM.__init__` now also tracks `self._globals` (the main frame's
+  env) and `self._frames` (the saved-caller stack). `LOAD_NAME`
+  falls back to `self._globals` when a name isn't in the local
+  env — so functions can reference other top-level functions and
+  variables.
+- `VM.run` was restructured to read `self.chunk.code` per-iteration
+  rather than caching it once at the top — necessary because
+  `CALL` swaps `self.chunk` mid-run.
+- Function locals do NOT leak to globals: `STORE_NAME` always
+  writes to `self.env`, which is the local env during a call and
+  the globals dict only at the top level.
+
+### Tests
+- `tests/test_codegen.py`: `FuncDef` emits `LOAD_CONST + STORE_NAME`
+  with a `RotFunctionValue` constant; `Call` emits
+  `[LOAD_NAME, LOAD_CONST..., CALL argc]`; `Return value` and
+  bare `return` produce the right opcode sequences.
+- `tests/test_vm.py`: simple call returns value, zero-arg call,
+  no-return-yields-null, recursive factorial (5! = 120), function
+  calling another function, locals don't leak to globals, globals
+  readable from inside a function, wrong-argc + non-callable
+  errors, `<funct NAME>` repr matches tree-walker.
+- Tests: 770 → **783 passing**.
+
+### Notes
+- **No closures yet.** A function's free variables resolve to
+  globals only — there's no cell/upvalue mechanism for capturing
+  outer-function locals. Lands in a later Z alongside `STORE_LOCAL`
+  (which will also implement `let`'s fresh-local semantics
+  properly).
+- **No compound assignments to function results.**
+  `xs[i] += foo()` style still raises `NotImplementedError` in
+  codegen.
+- Existing dispatch logic was preserved exactly — only
+  `LOAD_NAME` gained the globals fallback and `STORE_NAME` got
+  the comment about local vs global semantics.
+
 ## v2.27.8 — M2: `for x in <iter>` loops (`GET_ITER`, `ITER_NEXT`)
 
 ### Added

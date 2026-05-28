@@ -477,3 +477,99 @@ def test_vm_nested_for_loops():
     # total = 180
     vm = _run(src)
     assert vm.env["total"] == 180
+
+
+# ─── Function calls (v2.27.9) ────────────────────────────────────
+
+
+def test_vm_simple_function_call_returns_value():
+    src = (
+        "funct add(a | b) {\n"
+        "  return a + b\n"
+        "}\n"
+        "x = add(2 | 3)\n"
+    )
+    vm = _run(src)
+    assert vm.env["x"] == 5
+
+
+def test_vm_function_with_no_args():
+    src = "funct answer() {\n  return 42\n}\nv = answer()\n"
+    vm = _run(src)
+    assert vm.env["v"] == 42
+
+
+def test_vm_function_without_explicit_return_yields_null():
+    src = "funct noop() {\n  x = 1\n}\nresult = noop()\n"
+    vm = _run(src)
+    assert vm.env["result"] is None
+
+
+def test_vm_recursion_factorial():
+    src = (
+        "funct fac(n) {\n"
+        "  if (n <= 1) { return 1 }\n"
+        "  return n * fac(n - 1)\n"
+        "}\n"
+        "r = fac(5)\n"
+    )
+    vm = _run(src)
+    assert vm.env["r"] == 120
+
+
+def test_vm_function_calls_other_function():
+    src = (
+        "funct double(x) { return x * 2 }\n"
+        "funct quad(x) { return double(double(x)) }\n"
+        "v = quad(3)\n"
+    )
+    vm = _run(src)
+    assert vm.env["v"] == 12
+
+
+def test_vm_function_locals_dont_leak_to_globals():
+    src = (
+        "funct foo() {\n"
+        "  local = 99\n"
+        "  return local\n"
+        "}\n"
+        "out = foo()\n"
+    )
+    vm = _run(src)
+    assert vm.env["out"] == 99
+    # `local` was defined inside the function only — global env
+    # should NOT carry it.
+    assert "local" not in vm.env
+
+
+def test_vm_function_can_read_globals():
+    src = (
+        "k = 10\n"
+        "funct add_k(x) { return x + k }\n"
+        "v = add_k(5)\n"
+    )
+    vm = _run(src)
+    assert vm.env["v"] == 15
+
+
+def test_vm_wrong_arg_count_raises():
+    src = "funct one(a) { return a }\nx = one(1 | 2)\n"
+    with pytest.raises(InterpreterError) as ei:
+        _run(src)
+    assert "argument" in str(ei.value)
+
+
+def test_vm_calling_non_function_raises():
+    with pytest.raises(InterpreterError) as ei:
+        _run("x = 5\ny = x(1)")
+    assert "cannot call" in str(ei.value)
+
+
+def test_vm_function_value_renders_via_stringify():
+    # `<funct foo>` matches the tree-walker's repr — important for
+    # cross-engine parity once cout exists in the VM.
+    src = "funct foo() {}\nf = foo\n"
+    vm = _run(src)
+    from rot.codegen import RotFunctionValue
+    assert isinstance(vm.env["f"], RotFunctionValue)
+    assert repr(vm.env["f"]) == "<funct foo>"

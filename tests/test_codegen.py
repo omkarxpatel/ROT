@@ -165,9 +165,9 @@ def test_compile_identifier_loads_by_name():
 
 
 def test_compile_unsupported_statement_raises_not_implemented():
-    # `FuncDef` codegen isn't supported yet (lands in v2.27.9).
+    # `ClassDef` codegen isn't supported yet (lands later).
     with pytest.raises(NotImplementedError):
-        _compile("funct foo() { return 1 }")
+        _compile("class Foo { init() {} }")
 
 
 # ─── Collections (v2.27.7) ───────────────────────────────────────
@@ -266,6 +266,56 @@ def test_compile_for_break_jumps_to_pop_cleanup():
     assert len(forward_jumps) == 1
     break_target = forward_jumps[0][1][1]
     assert chunk.code[break_target][0] == Op.POP
+
+
+# ─── Function definitions and calls (v2.27.9) ────────────────────
+
+
+def test_compile_func_def_emits_load_const_store_name():
+    from rot.codegen import RotFunctionValue
+    chunk = _compile("funct foo() { return 1 }")
+    # Outer chunk: LOAD_CONST (the RotFunctionValue), STORE_NAME foo,
+    # RETURN.
+    ops = [instr[0] for instr in chunk.code]
+    assert ops == [Op.LOAD_CONST, Op.STORE_NAME, Op.RETURN]
+    func = chunk.constants[0]
+    assert isinstance(func, RotFunctionValue)
+    assert func.name == "foo"
+    assert func.params == []
+    # The function's own chunk should contain LOAD_CONST 1 + RETURN_VALUE
+    # (the user's `return 1`), plus the defensive fall-through
+    # LOAD_NULL + RETURN_VALUE the compiler appends.
+    inner_ops = [instr[0] for instr in func.chunk.code]
+    assert inner_ops == [
+        Op.LOAD_CONST,
+        Op.RETURN_VALUE,
+        Op.LOAD_NULL,
+        Op.RETURN_VALUE,
+    ]
+
+
+def test_compile_call_pushes_function_then_args_then_emits_call():
+    chunk = _compile("funct add(a | b) { return a + b }\nx = add(2 | 3)")
+    # Find the CALL instruction. Just before it: the args (2 and 3)
+    # were LOAD_CONSTed; before that, `add` was LOAD_NAMEd.
+    call_idx = next(
+        i for i, instr in enumerate(chunk.code) if instr[0] == Op.CALL
+    )
+    assert chunk.code[call_idx] == (Op.CALL, 2)
+    assert chunk.code[call_idx - 1][0] == Op.LOAD_CONST
+    assert chunk.code[call_idx - 2][0] == Op.LOAD_CONST
+    assert chunk.code[call_idx - 3][0] == Op.LOAD_NAME
+
+
+def test_compile_return_with_value_and_without():
+    chunk = _compile("funct a() { return 7 }\nfunct b() { return }")
+    a, b = chunk.constants[:2]
+    # Function `a` body: LOAD_CONST 7, RETURN_VALUE, then fall-through.
+    assert a.chunk.code[0] == (Op.LOAD_CONST, 0)
+    assert a.chunk.code[1] == (Op.RETURN_VALUE,)
+    # Function `b` body: LOAD_NULL, RETURN_VALUE, then fall-through.
+    assert b.chunk.code[0] == (Op.LOAD_NULL,)
+    assert b.chunk.code[1] == (Op.RETURN_VALUE,)
 
 
 # ─── Comparison ops (v2.27.1) ────────────────────────────────────
