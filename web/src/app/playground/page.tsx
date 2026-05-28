@@ -13,8 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Editor } from "@/components/editor";
 import { ExamplesDropdown } from "@/components/examples-dropdown";
 import { OutputPanel } from "@/components/output-panel";
-import { PipelinePanel } from "@/components/pipeline-panel";
 import { SiteHeader } from "@/components/site-header";
+import { SnapshotTimeline } from "@/components/snapshot-timeline";
 import { StepPanel } from "@/components/step-panel";
 import {
   DEFAULT_EXAMPLE_KEY,
@@ -40,7 +40,6 @@ interface PipelineState {
   ast: AstNode | null;
   output: string;
   error: RotError | null;
-  trace: string;
   runKey: number;
 }
 
@@ -49,7 +48,6 @@ const EMPTY_PIPELINE: PipelineState = {
   ast: null,
   output: "",
   error: null,
-  trace: "",
   runKey: 0,
 };
 
@@ -93,13 +91,11 @@ export default function PlaygroundPage() {
     setRunning(true);
     try {
       const result = await compileAndRun(source);
-      const trace = buildTrace(result);
       setPipeline((prev) => ({
         tokens: result.tokens,
         ast: result.ast,
         output: result.output,
         error: result.error,
-        trace,
         runKey: prev.runKey + 1,
       }));
     } finally {
@@ -118,13 +114,12 @@ export default function PlaygroundPage() {
       setPipeline((prev) => ({
         tokens: result.tokens,
         ast: result.ast,
-        // Run-style aggregate output is the union of every snapshot's
-        // captured output; useful for the pipeline trace pane.
+        // Aggregate output is the union of every snapshot's captured
+        // output — shown in the Output panel.
         output: result.snapshots.map((s) => s.output_since_last).join(""),
         // Lex/parse errors only — runtime errors live on snapshot.error
         // and surface via the OutputPanel below.
         error: result.error,
-        trace: buildStepTrace(result),
         runKey: prev.runKey + 1,
       }));
       return result.snapshots;
@@ -381,21 +376,21 @@ export default function PlaygroundPage() {
               />
             </div>
           )}
-          <div className="flex min-h-[18vh] flex-1 flex-col overflow-hidden rounded-lg border bg-card">
-            <PipelinePanel
-              tokens={pipeline.tokens}
-              ast={pipeline.ast}
-              trace={pipeline.trace}
-              runKey={pipeline.runKey}
-              mode={mode}
-              snapshots={snapshots}
-              stepIndex={stepIndex}
-              onStepChange={(next) => {
-                setPlaying(false);
-                setStepIndex(next);
-              }}
-            />
-          </div>
+          {/* Animate-mode timeline strip — only when snapshots exist.
+              In Run mode there's no bottom card; the Output panel
+              takes the full right column. */}
+          {mode === "animate" && snapshots.length > 0 && (
+            <div className="flex flex-col overflow-hidden rounded-lg border bg-card">
+              <SnapshotTimeline
+                snapshots={snapshots}
+                stepIndex={stepIndex}
+                onStepChange={(next) => {
+                  setPlaying(false);
+                  setStepIndex(next);
+                }}
+              />
+            </div>
+          )}
         </section>
       </main>
     </div>
@@ -669,47 +664,3 @@ function RuntimeBadge({ status }: { status: RotRuntimeStatus }) {
   );
 }
 
-function buildTrace(result: {
-  output: string;
-  error: RotError | null;
-  timings: { lexMs: number; parseMs: number; interpretMs: number };
-}): string {
-  const lines: string[] = [];
-  const { lexMs, parseMs, interpretMs } = result.timings;
-  lines.push(`lex:       ${lexMs.toFixed(3)} ms`);
-  lines.push(`parse:     ${parseMs.toFixed(3)} ms`);
-  lines.push(`interpret: ${interpretMs.toFixed(3)} ms`);
-  lines.push("");
-  if (result.output) {
-    lines.push("--- captured stdout ---");
-    lines.push(result.output.replace(/\n$/, ""));
-  } else {
-    lines.push("(no stdout)");
-  }
-  if (result.error) {
-    lines.push("");
-    lines.push("--- error ---");
-    lines.push(result.error.formatted);
-  }
-  return lines.join("\n");
-}
-
-function buildStepTrace(result: {
-  snapshots: RotSnapshot[];
-  error: RotError | null;
-  timings: { lexMs: number; parseMs: number; interpretMs: number };
-}): string {
-  const lines: string[] = [];
-  const { lexMs, parseMs, interpretMs } = result.timings;
-  lines.push(`lex:       ${lexMs.toFixed(3)} ms`);
-  lines.push(`parse:     ${parseMs.toFixed(3)} ms`);
-  lines.push(`step-run:  ${interpretMs.toFixed(3)} ms`);
-  lines.push("");
-  lines.push(`snapshots: ${result.snapshots.length}`);
-  if (result.error) {
-    lines.push("");
-    lines.push("--- error ---");
-    lines.push(result.error.formatted);
-  }
-  return lines.join("\n");
-}

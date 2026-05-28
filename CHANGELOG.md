@@ -2,6 +2,43 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.27.5 — Playground declutter: drop Pipeline panel entirely
+
+### Premise
+- v2.27.4 cleaned up Step Detail (no Tokens, AST tree → Structure
+  view), but pressing **Run** still expanded a Pipeline card that
+  showed Tokens / AST / Trace accordion sections. Same clutter,
+  different surface.
+
+### Changed
+- **Run mode**: no bottom card. The right column is just the
+  Output panel, full height.
+- **Animate mode**: bottom card is now just the `SnapshotTimeline`
+  scrubber — no AST tree, no Tokens, no Trace. Click any dot to
+  jump to that step.
+- The right column is much calmer overall: Output (always), Step
+  Detail (animate only), Timeline strip (animate only, when
+  snapshots exist).
+- `PipelineState` shape dropped the `trace` field.
+  `buildTrace` / `buildStepTrace` helpers deleted — they only fed
+  the now-removed Trace accordion.
+
+### Removed
+- `web/src/components/pipeline-panel.tsx`
+- `web/src/components/ast-view.tsx` (orphaned — Step Detail's
+  Parse phase uses the new `StructureView`; nothing else
+  consumed `AstView`)
+
+### Notes
+- Type-check clean. No Python changes; 740 tests still passing.
+- `tokens-view.tsx` is preserved — `tokenTextColor` is still
+  imported by `step-panel.tsx` to color the Read phase's source
+  line. The TokensView component itself isn't rendered anywhere
+  now, but the helper export is useful and the file is small.
+- Run mode is now: edit source → Run → see output. No
+  intermediate UI. Animate mode is where you go to see anything
+  about how the program compiles / executes.
+
 ## v2.27.4 — Step Detail redesign: three phases, drop Tokens, AST tree → Structure view
 
 ### Premise
