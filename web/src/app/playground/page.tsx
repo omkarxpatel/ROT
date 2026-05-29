@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
+  Compass,
   Link2,
   Loader2,
   Pause,
@@ -10,6 +11,7 @@ import {
   RotateCcw,
   SkipForward,
 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 
 import { Button } from "@/components/ui/button";
 import { BytecodeView } from "@/components/bytecode-view";
@@ -21,10 +23,18 @@ import { SiteHeader } from "@/components/site-header";
 import { SnapshotTimeline } from "@/components/snapshot-timeline";
 import { StepPanel } from "@/components/step-panel";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   DEFAULT_EXAMPLE_KEY,
   DEFAULT_EXAMPLE_SOURCE,
   loadExamples,
 } from "@/lib/examples";
+import { TOURS, captionFor, findTour, type Tour } from "@/lib/tours";
 import {
   compileAndRun,
   compileAndStep,
@@ -169,6 +179,21 @@ export default function PlaygroundPage() {
     getRuntimeStatus(),
   );
 
+  // Tour state. When a tour key is set, the playground:
+  //   - loads the tour's source
+  //   - flips to Animate mode
+  //   - uses the tour's suggested speed
+  //   - renders a caption banner above Step Detail
+  // Editing the source (or selecting an example) clears the tour.
+  const [tourKey, setTourKey] = useState<string | null>(null);
+  const activeTour = useMemo(() => findTour(tourKey), [tourKey]);
+  // Tour stays "active" only while the editor source still matches the
+  // tour's program. If the user types into the editor, the tour bails
+  // out (a useEffect below handles this — defensive double-check here).
+  const tourEffective = activeTour && activeTour.source === source
+    ? activeTour
+    : null;
+
   // Animate-mode state.
   const [snapshots, setSnapshots] = useState<RotSnapshot[]>([]);
   // Source the snapshots were computed for. If the user edits the
@@ -261,6 +286,29 @@ export default function PlaygroundPage() {
   const handleClearOutput = useCallback(() => {
     setPipeline(EMPTY_PIPELINE);
   }, []);
+
+  // --- Tour mode ---
+
+  // Start a tour: load its source, flip to Animate, set its speed,
+  // drop stale step state so the next Play fetches fresh snapshots.
+  const handleStartTour = useCallback((tour: Tour) => {
+    setSource(tour.source);
+    setMode("animate");
+    setSpeedMs(tour.speedMs ?? 900);
+    setTourKey(tour.key);
+    setSnapshots([]);
+    setSnapshotsSource("");
+    setStepIndex(-1);
+    setPlaying(false);
+  }, []);
+
+  // Auto-bail: if the user edits the source so it no longer matches
+  // the tour's program, clear the tour. We don't show a warning;
+  // selecting a tour again restores it.
+  useEffect(() => {
+    if (!activeTour) return;
+    if (source !== activeTour.source) setTourKey(null);
+  }, [source, activeTour]);
 
   // --- Animate mode ---
 
@@ -399,6 +447,20 @@ export default function PlaygroundPage() {
       ? snapshots[stepIndex]?.statement_line ?? null
       : null;
 
+  // Current tour caption — looks up the active snapshot's
+  // `statement_line` against the tour's caption table, falling back
+  // to the nearest registered earlier line so the banner stays stable
+  // across follow-up steps without their own caption entry.
+  const tourCaption = useMemo(() => {
+    if (!tourEffective) return null;
+    if (stepIndex < 0) {
+      return "Press Play (or Step) to start the tour.";
+    }
+    const line = snapshots[stepIndex]?.statement_line ?? null;
+    if (line === null) return null;
+    return captionFor(tourEffective, line);
+  }, [tourEffective, stepIndex, snapshots]);
+
   // Cursor jump request — incremented per click on a token chip so
   // the editor's useEffect re-fires even for repeated jumps to the
   // same coordinates.
@@ -502,6 +564,8 @@ export default function PlaygroundPage() {
         onSelectExample={(_key, src) => {
           setSource(src);
         }}
+        activeTourKey={tourEffective?.key ?? null}
+        onStartTour={handleStartTour}
         mode={mode}
         onSwitchMode={switchMode}
         running={running}
@@ -559,6 +623,16 @@ export default function PlaygroundPage() {
                 timings={pipeline.timings}
               />
             </div>
+          )}
+          {/* Tour caption banner — only when a tour is active and we
+              have something to say about the current step. Lives just
+              above the Step Detail card. */}
+          {mode === "animate" && tourEffective && (
+            <TourCaptionBanner
+              tour={tourEffective}
+              caption={tourCaption}
+              onExit={() => setTourKey(null)}
+            />
           )}
           {mode === "animate" && (
             <div className="flex min-h-[36vh] flex-[1.8] flex-col overflow-hidden rounded-lg border border-amber-500/30 bg-card shadow-[0_0_0_1px_rgba(245,158,11,0.05)]">
@@ -650,6 +724,8 @@ interface PlaygroundToolbarProps {
   runtimeStatus: RotRuntimeStatus;
   currentExample: string;
   onSelectExample: (key: string, source: string) => void;
+  activeTourKey: string | null;
+  onStartTour: (tour: Tour) => void;
   mode: Mode;
   onSwitchMode: (next: Mode) => void;
   running: boolean;
@@ -672,6 +748,8 @@ function PlaygroundToolbar(props: PlaygroundToolbarProps) {
     runtimeStatus,
     currentExample,
     onSelectExample,
+    activeTourKey,
+    onStartTour,
     mode,
     onSwitchMode,
     running,
@@ -700,6 +778,10 @@ function PlaygroundToolbar(props: PlaygroundToolbarProps) {
       </div>
       <div className="flex items-center gap-2">
         <ShareButton state={shareState} onClick={onShare} />
+        <TourDropdown
+          activeKey={activeTourKey}
+          onStartTour={onStartTour}
+        />
         <ExamplesDropdown
           currentKey={currentExample}
           onSelect={onSelectExample}
@@ -736,6 +818,43 @@ function PlaygroundToolbar(props: PlaygroundToolbarProps) {
         )}
       </div>
     </div>
+  );
+}
+
+function TourDropdown({
+  activeKey,
+  onStartTour,
+}: {
+  activeKey: string | null;
+  onStartTour: (tour: Tour) => void;
+}) {
+  return (
+    <Select
+      value={activeKey ?? ""}
+      onValueChange={(key) => {
+        const t = findTour(key);
+        if (t) onStartTour(t);
+      }}
+    >
+      <SelectTrigger
+        className={cn(
+          "h-8 w-[160px] gap-1.5 text-xs",
+          activeKey &&
+            "border-amber-500/40 text-amber-200 shadow-[0_0_0_1px_rgba(245,158,11,0.1)]",
+        )}
+      >
+        <Compass className="h-3.5 w-3.5 opacity-80" />
+        <SelectValue placeholder="Take a tour" />
+      </SelectTrigger>
+      <SelectContent>
+        {TOURS.map((t) => (
+          <SelectItem key={t.key} value={t.key} className="text-xs">
+            <span className="font-medium">{t.label}</span>
+            <span className="ml-2 text-muted-foreground">{t.blurb}</span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -882,6 +1001,62 @@ function SpeedSlider({
       />
       <span className="font-mono tabular-nums">{value}ms</span>
     </label>
+  );
+}
+
+function TourCaptionBanner({
+  tour,
+  caption,
+  onExit,
+}: {
+  tour: Tour;
+  caption: string | null;
+  onExit: () => void;
+}) {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-lg border border-amber-500/30 bg-amber-500/5">
+      <div className="flex items-center justify-between border-b border-amber-500/20 px-3 py-1.5">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-amber-300">
+          <Compass className="h-3 w-3" />
+          <span>Tour</span>
+          <span className="text-muted-foreground">·</span>
+          <span className="normal-case text-amber-200/90">{tour.label}</span>
+        </div>
+        <button
+          type="button"
+          onClick={onExit}
+          className="text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+          title="Exit tour (keeps source loaded)"
+        >
+          exit
+        </button>
+      </div>
+      <div className="min-h-[2rem] px-3 py-2 text-[12.5px] leading-relaxed text-foreground/90">
+        <AnimatePresence mode="wait">
+          {caption ? (
+            <motion.div
+              key={caption}
+              initial={{ opacity: 0, y: 3 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -3 }}
+              transition={{ duration: 0.2 }}
+            >
+              {caption}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="text-muted-foreground"
+            >
+              {tour.blurb}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </div>
   );
 }
 

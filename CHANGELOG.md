@@ -2,6 +2,46 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.28.2 — playground: Tour Mode (guided, captioned walkthroughs)
+
+Phase 2.4 of [`VISUAL_LEARNING_PLAN.md`](VISUAL_LEARNING_PLAN.md). The
+playground now ships with three guided tours that narrate
+statement-by-statement what the interpreter is doing.
+
+### Added
+- **`web/src/lib/tours.ts`** — three tour definitions:
+  - **Counting to three** — variables, while loops, stdout.
+  - **Functions and call frames** — recursive factorial; watch new
+    call frames push onto the scope chain.
+  - **Classes and instances** — a small Counter class; method
+    dispatch + `this` binding + field updates.
+  - Captions are line-keyed (matched against the active snapshot's
+    `statement_line`) so they're robust to minor interpreter changes
+    that don't reshape the AST. The `captionFor()` helper falls back
+    to the nearest registered earlier line, so banners stay stable
+    across follow-up steps that share a logical phase.
+- **`TourDropdown`** in the playground toolbar (next to the
+  Examples dropdown). Selecting a tour:
+  - loads the tour's source into the editor
+  - flips to Animate mode
+  - sets the tour's suggested speed (typically 900-1000ms / step)
+  - drops stale step state so the next Play fetches fresh snapshots
+- **`TourCaptionBanner`** above the Step Detail card (Animate mode
+  only, when a tour is active). Shows a "Tour · {label}" header, the
+  current caption (animated transition via framer-motion's
+  `AnimatePresence`), and an "exit" button.
+
+### Changed
+- Editing the source so it no longer matches the tour's program
+  auto-clears the tour. Selecting a tour again restores it.
+
+### Notes
+- Web-only. 807 tests still passing. `tsc --noEmit` clean.
+- Tours are stateless content data, no Pyodide changes needed.
+- The caption persistence model (last-seen caption persists until a
+  newer line registers one) means tours don't have to caption every
+  single line — just the interesting ones.
+
 ## v2.28.1 — per-stage micro-animations on the homepage + in internals
 
 Phase 2 continuation of [`VISUAL_LEARNING_PLAN.md`](VISUAL_LEARNING_PLAN.md).
