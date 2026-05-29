@@ -1,62 +1,96 @@
 import Link from "next/link";
-import { ArrowRight, ExternalLink, Github } from "lucide-react";
+import { ArrowRight, ExternalLink, Github, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { CodeBlock } from "@/components/code-block";
+import { HeroAnimation } from "@/components/hero-animation";
+import { PipelineDiagram } from "@/components/pipeline-diagram";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
+import {
+  LexerAnimation,
+  ParserAnimation,
+  VMAnimation,
+} from "@/components/stage-animations";
 import { ROT_VERSION } from "@/lib/rot-version";
 
 const GITHUB_URL = "https://github.com/omkarxpatel/ROT";
 
-const HERO_SNIPPET = `funct fizzbuzz(n) {
-    for i in range(1 | n + 1) {
-        if (i % 15 == 0) {
-            coutln("FizzBuzz")
-        } elseif (i % 3 == 0) {
-            coutln("Fizz")
-        } elseif (i % 5 == 0) {
-            coutln("Buzz")
-        } else {
-            coutln(i)
-        }
-    }
+interface InsideFile {
+  name: string;
+  loc: string;
+  blurb: string;
+  href: string;
 }
-fizzbuzz(15)`;
 
-const ROT_GREETING = `funct greet(name) {
-    coutln(f"hello, {name}")
+// Pulled from HANDOFF.md "project layout" section. LOC figures are
+// rough — they shift commit-by-commit but the orders of magnitude
+// are stable enough for marketing copy.
+const INSIDE_ROT: InsideFile[] = [
+  {
+    name: "lexer.py",
+    loc: "~360 LOC",
+    blurb: "Hand-rolled, char-by-char tokenizer. Emits Tokens with line + col.",
+    href: `${GITHUB_URL}/blob/main/rot/lexer.py`,
+  },
+  {
+    name: "syntax.py",
+    loc: "~700 LOC",
+    blurb: "Recursive-descent statements; Pratt expressions. Builds the AST.",
+    href: `${GITHUB_URL}/blob/main/rot/syntax.py`,
+  },
+  {
+    name: "interpreter.py",
+    loc: "~1,100 LOC",
+    blurb:
+      "Tree-walking evaluator. Snapshot-per-statement for the playground's step mode.",
+    href: `${GITHUB_URL}/blob/main/rot/interpreter.py`,
+  },
+  {
+    name: "codegen.py",
+    loc: "~700 LOC",
+    blurb: "AST → bytecode chunks. The M2 compiler. Per-instruction line attribution.",
+    href: `${GITHUB_URL}/blob/main/rot/codegen.py`,
+  },
+  {
+    name: "vm.py",
+    loc: "~500 LOC",
+    blurb: "Stack-based bytecode VM. Frames, handlers, ~35 opcodes.",
+    href: `${GITHUB_URL}/blob/main/rot/vm.py`,
+  },
+  {
+    name: "errors.py",
+    loc: "~150 LOC",
+    blurb: "RotError + rustc-style rendering — source line, caret, hints.",
+    href: `${GITHUB_URL}/blob/main/rot/errors.py`,
+  },
+];
+
+interface DemoCard {
+  name: string;
+  example: string;
+  blurb: string;
 }
-greet("world")`;
 
-const PYTHON_GREETING = `def greet(name):
-    print(f"hello, {name}")
-greet("world")`;
-
-const HIGHLIGHTS: Array<{ title: string; body: string }> = [
+const DEMOS: DemoCard[] = [
   {
-    title: "rustc-style errors",
-    body: "Every runtime error renders with the source line, a caret under the offending token, and Python-ism hints — `print` suggests `cout`, `def` suggests `funct`.",
+    name: "FizzBuzz",
+    example: "fizzbuzz",
+    blurb: "Loops, if/elseif/else, and the classic interview prompt.",
   },
   {
-    title: "let for explicit shadowing",
-    body: "Bare `=` walks the scope chain (closures can mutate enclosing state). `let name = expr` opts out and declares a fresh local, mirroring the v2.16.6 design.",
+    name: "Factorial",
+    example: "factorial",
+    blurb: "Recursion + return value. Watch the call frame stack grow.",
   },
   {
-    title: "try / catch / finally",
-    body: "Full error-handling surface. `finally` runs through return, break, continue, and re-thrown exceptions — same semantics you'd expect from Python or Java.",
+    name: "Counter",
+    example: "counter",
+    blurb: "Classes, init, methods, and `this`. Object-oriented in ROT.",
   },
   {
-    title: "Slicing",
-    body: "`s[a:b:c]` works on strings and lists. Negative bounds wrap from the end, step controls direction, omitted bounds clamp. `xs[::-1]` reverses.",
-  },
-  {
-    title: "f-string format specs",
-    body: "`f\"{pi:.2f}\"`, `f\"{n:>5}\"`, `f\"{255:x}\"` — the full Python format-spec mini-language, with ROT-style fallbacks for booleans, `null`, lists, and instances.",
-  },
-  {
-    title: "Immutable builtins",
-    body: "`pi = 3.0` is rejected at runtime; the builtin layer is frozen. Use `let pi = 3.0` to shadow locally — explicit, opt-in, no accidental clobber.",
+    name: "Sum List",
+    example: "sum_list",
+    blurb: "Lists + for-in + compound assignment.",
   },
 ];
 
@@ -66,10 +100,11 @@ export default function LandingPage() {
       <SiteHeader />
       <main className="flex-1">
         <Hero />
+        <Pipeline />
+        <WatchEachStage />
         <Stats />
-        <WhatIsRot />
-        <QuickTaste />
-        <Highlights />
+        <WhatsInside />
+        <Demos />
       </main>
       <SiteFooter />
     </div>
@@ -78,29 +113,34 @@ export default function LandingPage() {
 
 function Hero() {
   return (
-    <section className="mx-auto max-w-6xl px-4 pt-16 sm:px-6 sm:pt-24">
-      <div className="grid items-start gap-12 lg:grid-cols-2 lg:gap-16">
-        <div>
-          <h1 className="font-mono text-6xl font-semibold tracking-tighter sm:text-7xl">
-            ROT
+    <section className="mx-auto max-w-6xl px-4 pt-12 sm:px-6 sm:pt-20">
+      <div className="grid items-start gap-10 lg:grid-cols-5 lg:gap-12">
+        <div className="lg:col-span-2">
+          <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/5 px-2.5 py-1 text-[10px] uppercase tracking-wider text-amber-300">
+            <Sparkles className="h-3 w-3" />
+            v{ROT_VERSION} · 807 tests passing
+          </div>
+          <h1 className="mt-5 font-mono text-5xl font-semibold tracking-tighter text-foreground sm:text-6xl">
+            Watch a programming language work.
           </h1>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed text-foreground/90 sm:text-xl">
-            A hand-rolled programming language. C++/Python-flavored, written in
-            Python, ~3,800 lines.
+          <p className="mt-6 max-w-xl text-base leading-relaxed text-foreground/90 sm:text-lg">
+            ROT is a small, hand-rolled language. Every step it takes —
+            tokenize, parse, execute, compile to bytecode — happens in
+            front of you.
           </p>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Built as a learning project. Tree-walking interpreter; bytecode VM
-            coming next.
+            ~3,800 lines of Python, no <code className="font-mono">exec()</code>,
+            no compile-to-Python. The whole pipeline is yours to read.
           </p>
-          <div className="mt-8 flex flex-wrap items-center gap-3">
+          <div className="mt-7 flex flex-wrap items-center gap-3">
             <Button asChild size="lg">
               <Link href="/playground">
-                Try the playground
+                Try it yourself
                 <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>
             <Button asChild size="lg" variant="outline">
-              <Link href="/docs">Read the docs</Link>
+              <Link href="#pipeline">How does it work?</Link>
             </Button>
           </div>
           <div className="mt-6 flex items-center gap-4 text-xs text-muted-foreground">
@@ -123,15 +163,74 @@ function Hero() {
               Paper (PDF)
               <ExternalLink className="h-3 w-3 opacity-60" />
             </a>
+            <span className="text-border">{"·"}</span>
+            <Link href="/docs" className="hover:text-foreground">
+              Docs
+            </Link>
           </div>
         </div>
-        <div className="lg:pt-2">
-          <CodeBlock
-            code={HERO_SNIPPET}
-            language="rot"
-            filename="fizzbuzz.rot"
-          />
+        <div className="lg:col-span-3 lg:pt-2">
+          <HeroAnimation />
         </div>
+      </div>
+    </section>
+  );
+}
+
+function Pipeline() {
+  return (
+    <section
+      id="pipeline"
+      className="mx-auto mt-24 max-w-6xl scroll-mt-20 px-4 sm:px-6"
+    >
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+            The pipeline
+          </h2>
+          <p className="mt-2 max-w-2xl text-base leading-relaxed text-foreground/90">
+            Six stages, from raw characters to printed output. The
+            playground animates every one of them.
+          </p>
+        </div>
+        <Link
+          href="/playground"
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          Open the playground →
+        </Link>
+      </div>
+      <div className="mt-8">
+        <PipelineDiagram />
+      </div>
+    </section>
+  );
+}
+
+function WatchEachStage() {
+  return (
+    <section className="mx-auto mt-24 max-w-6xl px-4 sm:px-6">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+            Watch each stage
+          </h2>
+          <p className="mt-2 max-w-2xl text-base leading-relaxed text-foreground/90">
+            Self-contained loops, one per major pipeline stage. The
+            full playground threads them together.
+          </p>
+        </div>
+        <Link
+          href="/docs/internals"
+          className="text-xs text-muted-foreground hover:text-foreground"
+        >
+          Read the internals docs →
+        </Link>
+      </div>
+      <div className="mt-8 grid gap-4 lg:grid-cols-3">
+        <LexerAnimation />
+        <ParserAnimation />
+        <VMAnimation />
       </div>
     </section>
   );
@@ -141,8 +240,8 @@ function Stats() {
   const stats: Array<{ label: string; value: string }> = [
     { label: "Version", value: `v${ROT_VERSION}` },
     { label: "Lines of code", value: "~3,800" },
-    { label: "Tests passing", value: "628" },
-    { label: "Commits this year", value: "81" },
+    { label: "Tests passing", value: "807" },
+    { label: "Opcodes (M2 VM)", value: "~35" },
   ];
   return (
     <section className="mx-auto mt-20 max-w-6xl px-4 sm:px-6">
@@ -165,89 +264,82 @@ function Stats() {
   );
 }
 
-function WhatIsRot() {
-  return (
-    <section className="mx-auto mt-24 max-w-3xl px-4 sm:px-6">
-      <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-        What is ROT?
-      </h2>
-      <div className="mt-4 space-y-5 text-base leading-relaxed text-foreground/90">
-        <p>
-          ROT is a custom programming language built from scratch in Python. It
-          has its own surface syntax (`funct` for `def`, `cout`/`coutln` for
-          `print`, `|` as the argument separator, `this` not `self`, C-style
-          braces, `//` comments) and its own runtime — no Python `exec()` is
-          involved.
-        </p>
-        <p>
-          The pipeline is hand-rolled end to end. A character-by-character lexer
-          produces tokens; a recursive-descent parser (Pratt for expressions)
-          produces an AST; a tree-walking interpreter evaluates it directly.
-          Every AST node carries source coordinates so runtime errors render in
-          a rustc style — source line, caret, and a hint when the failure looks
-          like a Python-ism.
-        </p>
-        <p>
-          The feature surface is intentionally focused: `let` for explicit
-          shadowing, `try`/`catch`/`finally` for error handling, slicing,
-          f-string format specs, immutable builtins, info-leak hardening against
-          Python attribute access, and 628 tests across Python 3.9-3.12 in CI.
-          This is a learning project and portfolio piece — the next direction
-          is a bytecode VM.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function QuickTaste() {
+function WhatsInside() {
   return (
     <section className="mx-auto mt-24 max-w-6xl px-4 sm:px-6">
-      <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-        Quick taste
-      </h2>
-      <p className="mt-2 text-sm text-muted-foreground">
-        A side-by-side with Python to ground the surface.
-      </p>
-      <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <CodeBlock code={ROT_GREETING} language="rot" label="ROT" />
-        <CodeBlock code={PYTHON_GREETING} language="python" label="Python" />
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+            What&apos;s inside
+          </h2>
+          <p className="mt-2 max-w-2xl text-base leading-relaxed text-foreground/90">
+            The whole language lives in six files. Each one is small
+            enough to read in a sitting.
+          </p>
+        </div>
       </div>
-      <p className="mt-4 text-xs text-muted-foreground">
-        Different surface: <code className="font-mono">funct</code> not{" "}
-        <code className="font-mono">def</code>,{" "}
-        <code className="font-mono">cout</code>/
-        <code className="font-mono">coutln</code> not{" "}
-        <code className="font-mono">print</code>,{" "}
-        <code className="font-mono">|</code> not{" "}
-        <code className="font-mono">,</code> for arg separators,{" "}
-        <code className="font-mono">this</code> not{" "}
-        <code className="font-mono">self</code>,{" "}
-        <code className="font-mono">//</code> comments, C-style braces.
-      </p>
-    </section>
-  );
-}
-
-function Highlights() {
-  return (
-    <section className="mx-auto mt-24 max-w-6xl px-4 sm:px-6">
-      <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
-        Highlights
-      </h2>
-      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {HIGHLIGHTS.map((h) => (
-          <div
-            key={h.title}
-            className="rounded-lg border border-border/60 bg-card/40 p-5"
+      <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {INSIDE_ROT.map((f) => (
+          <a
+            key={f.name}
+            href={f.href}
+            target="_blank"
+            rel="noreferrer"
+            className="group rounded-lg border border-border/60 bg-card/40 p-4 transition-colors hover:border-border hover:bg-card/60"
           >
-            <h3 className="font-mono text-sm font-semibold tracking-tight">
-              {h.title}
-            </h3>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              {h.body}
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-mono text-sm text-foreground">
+                {f.name}
+              </span>
+              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                {f.loc}
+              </span>
+            </div>
+            <p className="mt-3 text-[12.5px] leading-relaxed text-muted-foreground">
+              {f.blurb}
             </p>
-          </div>
+            <div className="mt-3 flex items-center gap-1 text-[11px] text-muted-foreground/70 group-hover:text-foreground">
+              View on GitHub
+              <ExternalLink className="h-3 w-3 opacity-60" />
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Demos() {
+  return (
+    <section className="mx-auto mb-24 mt-24 max-w-6xl px-4 sm:px-6">
+      <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="font-mono text-xs uppercase tracking-wider text-muted-foreground">
+            Demos
+          </h2>
+          <p className="mt-2 max-w-2xl text-base leading-relaxed text-foreground/90">
+            Open a sample in the playground and step through it
+            statement by statement.
+          </p>
+        </div>
+      </div>
+      <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {DEMOS.map((d) => (
+          <Link
+            key={d.example}
+            href={`/playground?example=${d.example}`}
+            className="group rounded-lg border border-border/60 bg-card/40 p-4 transition-all hover:border-amber-500/40 hover:bg-card/60"
+          >
+            <div className="flex items-baseline justify-between">
+              <span className="font-mono text-sm font-semibold tracking-tight text-foreground">
+                {d.name}
+              </span>
+              <ArrowRight className="h-3.5 w-3.5 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-amber-300" />
+            </div>
+            <p className="mt-3 text-[12.5px] leading-relaxed text-muted-foreground">
+              {d.blurb}
+            </p>
+          </Link>
         ))}
       </div>
     </section>

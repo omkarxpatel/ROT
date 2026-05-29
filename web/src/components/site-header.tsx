@@ -29,6 +29,7 @@ export function SiteHeader({ showVersion = true }: SiteHeaderProps) {
         </div>
         <nav className="flex items-center gap-1 sm:gap-2">
           <NavLink href="/docs">Docs</NavLink>
+          <NavLink href="/docs/internals">Internals</NavLink>
           <NavLink href="/playground">Playground</NavLink>
           <NavExternalLink href="/paper/main.pdf">Paper</NavExternalLink>
           <a

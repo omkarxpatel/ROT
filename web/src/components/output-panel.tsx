@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, Loader2, Terminal } from "lucide-react";
+import { AlertCircle, Eraser, Loader2, Terminal } from "lucide-react";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { RotError } from "@/lib/pyodide-runtime";
@@ -14,6 +14,10 @@ interface OutputPanelProps {
   running: boolean;
   // Only set when running === true.
   loadingMessage?: string;
+  // Optional handler — when provided, the panel renders a Clear button
+  // in its header that becomes active whenever there's output or an
+  // error to wipe. Pass undefined to hide the button.
+  onClear?: () => void;
 }
 
 // Streaming rate. ~12ms/char makes ~20-char outputs stream in ~240ms,
@@ -22,11 +26,25 @@ interface OutputPanelProps {
 const STREAM_MS_PER_CHAR = 12;
 const STREAM_MAX_CHARS = 120;
 
+// Hard cap on the number of output characters we render. A pathological
+// loop (e.g. `while (true) { coutln(i) }`) can fill state with megabytes
+// of stdout, and rendering one giant <pre> trashes the browser. We slice
+// the displayed portion to this cap and append a small "truncated"
+// notice. The full string stays in state so the Run Stats card can still
+// report the true `output chars` total.
+const MAX_DISPLAY_CHARS = 50_000;
+
+// Number formatter for the truncation notice (US locale, thousands
+// separators). Reused per-render — cheap to construct but pulling it
+// out keeps the JSX clean.
+const NUMBER_FORMAT = new Intl.NumberFormat("en-US");
+
 export function OutputPanel({
   output,
   error,
   running,
   loadingMessage,
+  onClear,
 }: OutputPanelProps) {
   // What's currently painted in the panel — may lag behind `output`
   // while streaming. After streaming completes, `shown === output`.
@@ -85,7 +103,19 @@ export function OutputPanel({
   }, [output]);
 
   const hasContent = Boolean(shown) || Boolean(error);
-  const oldEnd = newRange?.start ?? shown.length;
+  // Apply the display cap. `displayShown` is what we actually render;
+  // `shown` (the full string) is what we use for diffing the new range.
+  const exceedsLimit = shown.length > MAX_DISPLAY_CHARS;
+  const displayShown = exceedsLimit ? shown.slice(0, MAX_DISPLAY_CHARS) : shown;
+  const oldEnd = Math.min(
+    newRange?.start ?? displayShown.length,
+    displayShown.length,
+  );
+  // Clip the streaming-new range so we don't render past the cap.
+  const visibleNewRange =
+    newRange && newRange.start < displayShown.length
+      ? { ...newRange, end: Math.min(newRange.end, displayShown.length) }
+      : null;
 
   return (
     <div className="flex h-full flex-col">
@@ -94,12 +124,25 @@ export function OutputPanel({
           <Terminal className="h-3.5 w-3.5" />
           <span>Output</span>
         </div>
-        {running && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            <span>{loadingMessage ?? "running..."}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {running && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              <span>{loadingMessage ?? "running..."}</span>
+            </div>
+          )}
+          {!running && onClear && hasContent && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
+              title="Clear the output panel"
+            >
+              <Eraser className="h-3 w-3" />
+              <span>Clear</span>
+            </button>
+          )}
+        </div>
       </div>
       <ScrollArea className="min-h-0 flex-1">
         <div className="p-3 font-mono text-[13px] leading-relaxed">
@@ -108,27 +151,75 @@ export function OutputPanel({
               Press Run to execute. Output will appear here.
             </div>
           )}
+          {!hasContent && running && (
+            <RunningBlock message={loadingMessage} />
+          )}
           {shown && (
             <pre className="whitespace-pre-wrap text-foreground">
               {/* Old portion — regular foreground color, no animation */}
-              {shown.slice(0, oldEnd)}
+              {displayShown.slice(0, oldEnd)}
               {/* New portion — starts emerald, fades to foreground via
                   the rot-output-new keyframe. Re-keyed per step so the
                   animation re-fires for each chunk. */}
-              {newRange && shown.length > newRange.start && (
-                <span
-                  key={`new-${newRange.key}`}
-                  className="rot-output-new"
-                >
-                  {shown.slice(newRange.start)}
-                </span>
-              )}
+              {visibleNewRange &&
+                displayShown.length > visibleNewRange.start && (
+                  <span
+                    key={`new-${visibleNewRange.key}`}
+                    className="rot-output-new"
+                  >
+                    {displayShown.slice(
+                      visibleNewRange.start,
+                      visibleNewRange.end,
+                    )}
+                  </span>
+                )}
             </pre>
+          )}
+          {exceedsLimit && (
+            <div className="mt-2 rounded border border-border/60 bg-muted/30 px-2 py-1.5 text-[11px] text-muted-foreground">
+              Output truncated — showing{" "}
+              <span className="font-mono tabular-nums text-foreground">
+                {NUMBER_FORMAT.format(MAX_DISPLAY_CHARS)}
+              </span>{" "}
+              of{" "}
+              <span className="font-mono tabular-nums text-foreground">
+                {NUMBER_FORMAT.format(shown.length)}
+              </span>{" "}
+              characters. The Run Stats card reports the true total.
+            </div>
           )}
           {error && <ErrorBlock error={error} />}
         </div>
       </ScrollArea>
     </div>
+  );
+}
+
+function RunningBlock({ message }: { message?: string }) {
+  // Static — Pyodide.runPython is synchronous and blocks the main
+  // thread, so even a CSS-animated spinner won't move during a long
+  // run. We still want a clearly visible "we're working on it" cue,
+  // so this renders before the block (the page yields one rAF to
+  // ensure a paint happens) and then sits frozen until the result
+  // arrives.
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.18 }}
+      className="flex flex-col items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/5 p-3"
+    >
+      <div className="flex items-center gap-2 text-amber-300">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span className="text-xs uppercase tracking-wider">
+          {message ?? "running..."}
+        </span>
+      </div>
+      <span className="text-[11px] text-muted-foreground">
+        Long scripts block the UI until the run completes. Output will
+        appear here when done.
+      </span>
+    </motion.div>
   );
 }
 

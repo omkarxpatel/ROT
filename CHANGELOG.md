@@ -2,6 +2,190 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.28.1 — per-stage micro-animations on the homepage + in internals
+
+Phase 2 continuation of [`VISUAL_LEARNING_PLAN.md`](VISUAL_LEARNING_PLAN.md).
+Three small, self-contained, looping framer-motion animations — one
+per major pipeline stage. Each is a fixed, hand-curated phase
+sequence (no Pyodide, no runtime) so they load instantly.
+
+### Added
+- **`stage-animations.tsx`** with three exports:
+  - `LexerAnimation` — characters in `coutln("hi")` highlight in
+    sequence as the lexer "consumes" them; the corresponding token
+    chips emerge below.
+  - `ParserAnimation` — a flat token list for `1 + 2 * 3` folds into
+    a precedence-correct AST tree over three phases.
+  - `VMAnimation` — a four-opcode chunk (`LOAD_CONST 42 · STORE_NAME
+    i · LOAD_NAME i · RETURN`) executes with an animated IP marker,
+    a live stack visualization, and an env diff strip.
+- **"Watch each stage" section** on the homepage between the
+  pipeline diagram and the stats grid; renders the three animations
+  side-by-side, links to `/docs/internals`.
+- **Embeds** of all three animations in the matching sections of the
+  internals page (`/docs/internals`).
+
+### Notes
+- Web-only. 807 tests still passing. `tsc --noEmit` clean.
+- Each animation runs on its own `setInterval` phase timer keyed off
+  a single `usePhase` hook — no shared global timer or imperative
+  animation loop.
+- No Pyodide load required — animations are pure declarative motion
+  over hand-curated data, so they render before any runtime is
+  fetched.
+
+## v2.28.0 — homepage reframe: "Watch a programming language work" + animated pipeline
+
+This is the opening volley of Milestone 3 — repositioning the web
+surface around visual learning. Phase 1 of
+[`VISUAL_LEARNING_PLAN.md`](VISUAL_LEARNING_PLAN.md), with the hero
+animation from Phase 2.1 pulled forward.
+
+### Added
+- **Hero pipeline animation** ([`hero-animation.tsx`](web/src/components/hero-animation.tsx)).
+  A self-contained, looping framer-motion sequence that walks a small
+  FizzBuzz(3) program through 14 statement-execution steps. Shows the
+  active source line, three "Read / Parse / Run" cards that update
+  per step (tokens fade in, AST label transitions, env diff /
+  condition / output appear), and an Output panel that accumulates
+  stdout. ~13s loop with play / pause / reset controls.
+- **Pipeline diagram component**
+  ([`pipeline-diagram.tsx`](web/src/components/pipeline-diagram.tsx)).
+  Six cards — Source, Tokens, AST, Snapshots, Bytecode, Output —
+  arranged horizontally on desktop, stacked on mobile, each with an
+  icon, blurb, mini-example, and link to its `/docs/internals#stage`
+  section. Cards lift in via framer-motion `whileInView`.
+- **`/docs/internals` route**
+  ([`page.tsx`](web/src/app/docs/internals/page.tsx)). Walks the same
+  FizzBuzz through every pipeline stage with prose + sample
+  tokens/AST/bytecode + GitHub links to each implementing file.
+  Embeds the hero animation and the pipeline diagram at the top.
+- **`?example=<key>` query-param support** in the playground
+  ([`page.tsx`](web/src/app/playground/page.tsx)). Deep-links from
+  the homepage Demos cards now load the chosen example after the
+  examples manifest resolves. `?src=` still wins if both are present.
+- **Internals nav link** in the site header.
+
+### Changed
+- **Homepage rewrite** ([`page.tsx`](web/src/app/page.tsx)).
+  - Hero copy: "Watch a programming language work." Subhead names
+    the pipeline phases. CTAs are "Try it yourself" + "How does it
+    work?" (anchor to the new Pipeline section).
+  - Static FizzBuzz CodeBlock in the hero replaced with the new
+    `HeroAnimation`.
+  - Old "Highlights" feature grid replaced with a "What's inside"
+    file tour — six cards naming `lexer.py`, `syntax.py`,
+    `interpreter.py`, `codegen.py`, `vm.py`, `errors.py` with rough
+    LOC + GitHub links.
+  - Old "Quick taste" Python-vs-ROT comparison removed; the new
+    Pipeline + Demos sections replace it.
+  - Stats card "Tests passing" updated from 628 → 807; "Commits this
+    year" replaced with "Opcodes (M2 VM): ~35".
+  - New Demos section: four cards (FizzBuzz / Factorial / Counter /
+    Sum List) that deep-link into the playground.
+- **Meta tags** ([`layout.tsx`](web/src/app/layout.tsx)) rewritten
+  to lead with the visual-learning pitch. OG tags added.
+
+### Notes
+- Web-only change. 807 tests still passing. `tsc --noEmit` clean.
+- Minor version bump — this is a deliberate strategic reframe of
+  the public surface, not a patch.
+- Old `HIGHLIGHTS` / Quick-Taste content is gone. The same material
+  lives in the new `/docs/internals` page and the
+  `WhatsInside` section.
+
+## v2.27.21 — playground: visible loading state + 50k console-output cap
+
+### Premise
+- Long scripts (tight loops, big iteration counts) made the UI feel
+  dead — the run button spinner is set synchronously and then
+  `pyodide.runPython` blocks the main thread, so React never got a
+  chance to paint the loading state. Users had no indication the
+  page was working.
+- Pathological output (`while (true) { coutln(i) }`) could shovel
+  megabytes of text into a single `<pre>`, which is slow to render
+  and easy to do by accident.
+
+### Added
+- **`RunningBlock` panel** in `OutputPanel`: when a Run is in
+  progress and no output has streamed in yet, a clear amber
+  "Running…" card appears in the body. Includes a static spinner
+  (CSS animations don't tick during a blocked main thread, but the
+  card itself is visible) and a one-line hint about long scripts.
+- **`MAX_DISPLAY_CHARS = 50_000` cap** on the console output panel.
+  Anything beyond is sliced off and a small footer notice reports
+  "showing X of Y characters." The full string still lives in
+  state, so the Run Stats card continues to report the true total.
+
+### Changed
+- `handleRun` and `fetchSnapshots` now `await` one
+  `requestAnimationFrame` between `setRunning(true)` /
+  `setStepping(true)` and the `pyodide.runPython` call. This
+  guarantees a paint cycle happens before the main thread blocks,
+  so the loading state is actually visible during long runs.
+- `OutputPanel`'s streaming-new range and "old portion" slice both
+  respect the display cap, so the emerald-flash highlight no longer
+  bleeds past the truncation boundary.
+
+### Notes
+- Web-only change. 807 tests still passing. `tsc --noEmit` clean.
+- This is a UI-side cap; the underlying string stays in JS memory.
+  A pyodide-bridge-level cap would also bound JSON-parse cost and
+  memory, but is deferred until the symptom warrants it.
+
+## v2.27.20 — playground: Run Stats card + Clear-output button
+
+### Added
+- **Run Stats card** in Run mode, rendered below the Output panel
+  after the first Run. Surfaces the trace data the runtime was
+  already collecting but the UI was throwing away:
+  - `total` = `lex + parse + interpret` (ms)
+  - per-phase `lex`, `parse`, `interpret` ms
+  - `tokens`, `ast nodes` (recursive count)
+  - `source` lines, `output` lines · chars
+  - Time formatting auto-scales: ms with appropriate precision
+    above 1 ms, µs below.
+- **Clear button** in the Output panel header (Run mode only —
+  Animate mode already has Reset). Wipes output, error, and stats
+  back to the empty state; source in the editor is untouched.
+
+### Changed
+- `PipelineState` now carries `timings` alongside tokens/ast/output
+  so the stats card can render without an extra runtime call.
+- `OutputPanel` accepts an optional `onClear` prop; the Clear chip
+  only renders when there's content to wipe.
+
+### Notes
+- Web-only change. 807 tests still passing. `tsc --noEmit` clean.
+
+## v2.27.19 — hotfix: examples dropdown reflects the source actually in the editor
+
+### Premise
+- Reload the playground and the editor restores its source from
+  localStorage (introduced in v2.26.x). Even when that source
+  matched a bundled example exactly — e.g. the default fizzbuzz
+  the page boots with — the dropdown rendered empty and the
+  `SOURCE (xxx.rot)` label said `CUSTOM.ROT`.
+
+### Cause
+- [`web/src/app/playground/page.tsx`](web/src/app/playground/page.tsx)
+  tracked `currentExample` as separate state and force-set it to
+  `"custom"` whenever it loaded a source from URL/localStorage —
+  regardless of whether that source matched a known example.
+
+### Fix
+- `currentExample` is now derived from `source` by matching
+  against every loaded example's text. If the editor's source is
+  byte-identical to e.g. fizzbuzz, the dropdown shows `FizzBuzz`
+  and the label says `FIZZBUZZ.ROT`. Edit the source and it
+  cleanly falls back to `custom`.
+- `loadExamples()` is now also called from the page (in addition
+  to the dropdown component); the module-level cache makes the
+  duplicate call free.
+
+### Notes
+- Web-only change. 807 tests still passing. `tsc --noEmit` clean.
+
 ## v2.27.18 — handoff: full rewrite covering v2.26.0 → v2.27.17
 
 ### Changed

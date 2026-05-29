@@ -16,12 +16,14 @@ import { BytecodeView } from "@/components/bytecode-view";
 import { Editor } from "@/components/editor";
 import { ExamplesDropdown } from "@/components/examples-dropdown";
 import { OutputPanel } from "@/components/output-panel";
+import { RunStats } from "@/components/run-stats";
 import { SiteHeader } from "@/components/site-header";
 import { SnapshotTimeline } from "@/components/snapshot-timeline";
 import { StepPanel } from "@/components/step-panel";
 import {
   DEFAULT_EXAMPLE_KEY,
   DEFAULT_EXAMPLE_SOURCE,
+  loadExamples,
 } from "@/lib/examples";
 import {
   compileAndRun,
@@ -46,6 +48,9 @@ interface PipelineState {
   output: string;
   error: RotError | null;
   runKey: number;
+  // Set on Run; carried into RunStats below the Output panel. Stays at
+  // zeros before the first run.
+  timings: { lexMs: number; parseMs: number; interpretMs: number };
 }
 
 const EMPTY_PIPELINE: PipelineState = {
@@ -54,6 +59,7 @@ const EMPTY_PIPELINE: PipelineState = {
   output: "",
   error: null,
   runKey: 0,
+  timings: { lexMs: 0, parseMs: 0, interpretMs: 0 },
 };
 
 // Default 400ms per auto-step — fast enough to feel responsive, slow
@@ -69,31 +75,26 @@ const LS_SOURCE_KEY = "rot-playground:source";
 // Read URL + localStorage for an alternate initial source. Returns
 // null when neither is set — the page should fall back to the
 // bundled default. Browser-only (called from useEffect).
-function readClientStoredSource():
-  | { source: string; example: string }
-  | null {
+function readClientStoredSource(): string | null {
   try {
     const params = new URLSearchParams(window.location.search);
     const src = params.get("src");
     if (src) {
       // base64 → utf-8. atob alone doesn't round-trip non-ASCII; use
       // the standard decode-via-percent-encoding trick.
-      const decoded = decodeURIComponent(
+      return decodeURIComponent(
         atob(src)
           .split("")
           .map((c) => `%${("00" + c.charCodeAt(0).toString(16)).slice(-2)}`)
           .join(""),
       );
-      return { source: decoded, example: "custom" };
     }
   } catch {
     // bad ?src= — fall through.
   }
   try {
     const stored = window.localStorage.getItem(LS_SOURCE_KEY);
-    if (stored && stored.length > 0) {
-      return { source: stored, example: "custom" };
-    }
+    if (stored && stored.length > 0) return stored;
   } catch {
     // localStorage blocked — fall through.
   }
@@ -108,18 +109,59 @@ export default function PlaygroundPage() {
   // the bundled default on BOTH, then swap in a useEffect after
   // mount.
   const [source, setSource] = useState<string>(DEFAULT_EXAMPLE_SOURCE);
-  const [currentExample, setCurrentExample] = useState<string>(
-    DEFAULT_EXAMPLE_KEY,
+  // Loaded example sources keyed by example name. Used to detect which
+  // example (if any) the current editor source matches — that drives
+  // the dropdown selection and the SOURCE (xxx.rot) label.
+  const [examplesByKey, setExamplesByKey] = useState<Record<string, string>>(
+    () => ({ [DEFAULT_EXAMPLE_KEY]: DEFAULT_EXAMPLE_SOURCE }),
   );
   // After mount, check URL / localStorage and switch source if
   // there's a saved or shared one. Runs once (empty deps).
   useEffect(() => {
     const found = readClientStoredSource();
-    if (!found) return;
-    setSource(found.source);
-    setCurrentExample(found.example);
+    if (found !== null) setSource(found);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Load every example's source so we can identify which one (if any)
+  // the current source matches. Also handle `?example=<key>` deep
+  // links from the homepage Demos cards — we resolve the key once the
+  // sources are in hand. `?src=` (handled above) wins over `?example=`
+  // if both are present.
+  useEffect(() => {
+    let cancelled = false;
+    loadExamples()
+      .then((e) => {
+        if (cancelled) return;
+        setExamplesByKey(e);
+        try {
+          const params = new URLSearchParams(window.location.search);
+          // `?src=` was already applied in the first useEffect; don't
+          // clobber it here.
+          if (params.get("src")) return;
+          const key = params.get("example");
+          if (key && e[key]) setSource(e[key]);
+        } catch {
+          // bad URL — leave source as-is.
+        }
+      })
+      .catch(() => {
+        // Non-fatal: fall back to the bundled default for matching.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  // Derive the current example from the source. If the source matches
+  // a known example exactly, show that example's key; otherwise show
+  // "custom". This way the dropdown stays in sync with the editor no
+  // matter how the source got there (default, URL, localStorage, user
+  // selection, hand edit).
+  const currentExample = useMemo(() => {
+    for (const [key, src] of Object.entries(examplesByKey)) {
+      if (src === source) return key;
+    }
+    return "custom";
+  }, [source, examplesByKey]);
   const [mode, setMode] = useState<Mode>("run");
   const [running, setRunning] = useState<boolean>(false);
   const [pipeline, setPipeline] = useState<PipelineState>(EMPTY_PIPELINE);
@@ -191,6 +233,13 @@ export default function PlaygroundPage() {
   const handleRun = useCallback(async () => {
     if (running) return;
     setRunning(true);
+    // Yield one animation frame so React paints `running=true` BEFORE
+    // pyodide.runPython (which is synchronous) blocks the main thread.
+    // Without this, long scripts freeze the UI on the pre-run state and
+    // the user never sees a loading indicator.
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
     try {
       const result = await compileAndRun(source);
       setPipeline((prev) => ({
@@ -199,16 +248,30 @@ export default function PlaygroundPage() {
         output: result.output,
         error: result.error,
         runKey: prev.runKey + 1,
+        timings: result.timings,
       }));
     } finally {
       setRunning(false);
     }
   }, [running, source]);
 
+  // Clear the Output panel — wipes output/error/timings and resets
+  // runKey so the RunStats card hides until the next Run. Source is
+  // untouched; the editor keeps whatever the user has there.
+  const handleClearOutput = useCallback(() => {
+    setPipeline(EMPTY_PIPELINE);
+  }, []);
+
   // --- Animate mode ---
 
   const fetchSnapshots = useCallback(async (): Promise<RotSnapshot[]> => {
     setStepping(true);
+    // Same rAF yield as handleRun — let the "stepping..." indicator
+    // paint before pyodide.runPython blocks the main thread on large
+    // programs (e.g. a loop that produces hundreds of snapshots).
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
     try {
       const result = await compileAndStep(source);
       setSnapshots(result.snapshots);
@@ -223,6 +286,7 @@ export default function PlaygroundPage() {
         // and surface via the OutputPanel below.
         error: result.error,
         runKey: prev.runKey + 1,
+        timings: result.timings,
       }));
       return result.snapshots;
     } finally {
@@ -435,8 +499,7 @@ export default function PlaygroundPage() {
       <PlaygroundToolbar
         runtimeStatus={runtimeStatus}
         currentExample={currentExample}
-        onSelectExample={(key, src) => {
-          setCurrentExample(key);
+        onSelectExample={(_key, src) => {
           setSource(src);
         }}
         mode={mode}
@@ -481,8 +544,22 @@ export default function PlaygroundPage() {
               error={displayError}
               running={displayRunning}
               loadingMessage={loadingMessage}
+              onClear={mode === "run" ? handleClearOutput : undefined}
             />
           </div>
+          {/* Run-mode stats card — only after the first Run. Animate
+              mode has its own per-step instrumentation in Step Detail. */}
+          {mode === "run" && pipeline.runKey > 0 && (
+            <div className="flex flex-col overflow-hidden rounded-lg border bg-card">
+              <RunStats
+                tokens={pipeline.tokens}
+                ast={pipeline.ast}
+                output={pipeline.output}
+                source={source}
+                timings={pipeline.timings}
+              />
+            </div>
+          )}
           {mode === "animate" && (
             <div className="flex min-h-[36vh] flex-[1.8] flex-col overflow-hidden rounded-lg border border-amber-500/30 bg-card shadow-[0_0_0_1px_rgba(245,158,11,0.05)]">
               <StepPanel

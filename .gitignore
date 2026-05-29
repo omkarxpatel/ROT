@@ -4,3 +4,14 @@ output.py
 .venv/
 .DS_Store
 .pytest_cache/
+# Working docs — sessions notes, plans, audits, scratch. These stay on
+# disk for the current session but aren't tracked. Explicit entries
+# below; the patterns at the bottom catch future ones.
+BUG_REPORT.md
+HANDOFF.md
+VISUAL_LEARNING_PLAN.md
+/*_PLAN.md
+/*_NOTES.md
+/*_REPORT.md
+/SCRATCH.md
+/scratch/
