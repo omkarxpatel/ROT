@@ -2,11 +2,18 @@
 
 import { useEffect, useRef } from "react";
 
-import type { RotSnapshot } from "@/lib/pyodide-runtime";
 import { cn } from "@/lib/utils";
 
+// Minimal entry shape — both tree-walker snapshots and VM snapshots
+// can be projected into this. The page maps the active engine's
+// snapshot list down to TimelineEntry[] before handing it over.
+export interface TimelineEntry {
+  error: string | null;
+  tooltip: string;
+}
+
 interface SnapshotTimelineProps {
-  snapshots: RotSnapshot[];
+  entries: TimelineEntry[];
   stepIndex: number;
   onStepChange: (next: number) => void;
 }
@@ -16,7 +23,7 @@ interface SnapshotTimelineProps {
 // Click any dot to jump to that step. Auto-scrolls the current dot
 // into view so you don't lose it on long programs.
 export function SnapshotTimeline({
-  snapshots,
+  entries,
   stepIndex,
   onStepChange,
 }: SnapshotTimelineProps) {
@@ -46,7 +53,7 @@ export function SnapshotTimeline({
     });
   }, [stepIndex]);
 
-  if (snapshots.length === 0) {
+  if (entries.length === 0) {
     return (
       <div className="px-3 py-2 text-xs text-muted-foreground">
         Click <span className="font-mono text-foreground/80">Step</span> or{" "}
@@ -61,21 +68,21 @@ export function SnapshotTimeline({
       <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-muted-foreground">
         <span>Timeline</span>
         <span className="font-mono normal-case">
-          {snapshots.length} snapshot{snapshots.length === 1 ? "" : "s"}
+          {entries.length} snapshot{entries.length === 1 ? "" : "s"}
         </span>
       </div>
       <div ref={scrollContainerRef} className="overflow-x-auto">
         <div className="flex items-center gap-[2px] py-1">
-          {snapshots.map((snap, i) => {
+          {entries.map((entry, i) => {
             const isActive = i === stepIndex;
             const isPast = i < stepIndex;
-            const hasError = Boolean(snap.error);
+            const hasError = Boolean(entry.error);
             return (
               <button
                 key={i}
                 ref={isActive ? activeRef : null}
                 onClick={() => onStepChange(i)}
-                title={`Step ${i + 1}: ${snap.statement_kind} at line ${snap.statement_line}:${snap.statement_col}${hasError ? " — error" : ""}`}
+                title={`Step ${i + 1}: ${entry.tooltip}${hasError ? " — error" : ""}`}
                 className={cn(
                   "h-5 w-[6px] flex-shrink-0 rounded-sm transition-all hover:scale-110",
                   hasError && isActive && "bg-red-400 ring-2 ring-red-300",

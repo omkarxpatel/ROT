@@ -20,8 +20,12 @@ import { ExamplesDropdown } from "@/components/examples-dropdown";
 import { OutputPanel } from "@/components/output-panel";
 import { RunStats } from "@/components/run-stats";
 import { SiteHeader } from "@/components/site-header";
-import { SnapshotTimeline } from "@/components/snapshot-timeline";
+import {
+  SnapshotTimeline,
+  type TimelineEntry,
+} from "@/components/snapshot-timeline";
 import { StepPanel } from "@/components/step-panel";
+import { VMStepPanel } from "@/components/vm-step-panel";
 import {
   Select,
   SelectContent,
@@ -38,6 +42,7 @@ import { TOURS, captionFor, findTour, type Tour } from "@/lib/tours";
 import {
   compileAndRun,
   compileAndStep,
+  compileAndStepVM,
   compileToChunk,
   getRuntimeStatus,
   onRuntimeStatus,
@@ -47,10 +52,12 @@ import {
   type RotRuntimeStatus,
   type RotSnapshot,
   type RotToken,
+  type RotVMSnapshot,
 } from "@/lib/pyodide-runtime";
 import { cn } from "@/lib/utils";
 
 type Mode = "run" | "animate";
+type Engine = "tree-walker" | "vm";
 
 interface PipelineState {
   tokens: RotToken[];
@@ -206,6 +213,22 @@ export default function PlaygroundPage() {
   const [speedMs, setSpeedMs] = useState<number>(DEFAULT_SPEED_MS);
   const [stepping, setStepping] = useState<boolean>(false);
 
+  // M3 — engine toggle for animate mode. Tree-walker is the default
+  // (statement-level snapshots, the original v2.26 path); VM swaps
+  // in opcode-level snapshots from the bytecode VM. State for each
+  // engine lives side-by-side so flipping back and forth doesn't
+  // re-fetch.
+  const [engine, setEngine] = useState<Engine>("tree-walker");
+  const [vmSnapshots, setVmSnapshots] = useState<RotVMSnapshot[]>([]);
+  const [vmChunksById, setVmChunksById] = useState<Record<string, RotChunkDump>>(
+    {},
+  );
+  const [vmSnapshotsSource, setVmSnapshotsSource] = useState<string>("");
+  // Currently active list length — used to bound stepIndex math
+  // engine-agnostically.
+  const activeSnapshotCount =
+    engine === "vm" ? vmSnapshots.length : snapshots.length;
+
   useEffect(() => {
     return onRuntimeStatus((s) => setRuntimeStatus(s));
   }, []);
@@ -312,6 +335,40 @@ export default function PlaygroundPage() {
 
   // --- Animate mode ---
 
+  const fetchVMSnapshots = useCallback(async (): Promise<RotVMSnapshot[]> => {
+    setStepping(true);
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => resolve()),
+    );
+    try {
+      const result = await compileAndStepVM(source);
+      setVmSnapshots(result.snapshots);
+      setVmChunksById(result.chunks_by_id);
+      setVmSnapshotsSource(source);
+      setPipeline((prev) => ({
+        tokens: result.tokens,
+        // VM mode skips the AST view — the rendered chunk replaces it.
+        ast: null,
+        output: result.snapshots
+          .map((s) => s.output_since_last)
+          .join(""),
+        error: result.error,
+        runKey: prev.runKey + 1,
+        timings: {
+          lexMs: result.timings.lexMs,
+          parseMs: result.timings.parseMs,
+          // Best-shape mapping: report compile+run as the interpret
+          // bar in the Run Stats card.
+          interpretMs:
+            result.timings.compileMs + result.timings.runMs,
+        },
+      }));
+      return result.snapshots;
+    } finally {
+      setStepping(false);
+    }
+  }, [source]);
+
   const fetchSnapshots = useCallback(async (): Promise<RotSnapshot[]> => {
     setStepping(true);
     // Same rAF yield as handleRun — let the "stepping..." indicator
@@ -343,22 +400,45 @@ export default function PlaygroundPage() {
   }, [source]);
 
   // Advance one step. If snapshots are stale (source changed or empty),
-  // (re)fetch first, then snap to index 0.
+  // (re)fetch first, then snap to index 0. Dispatches on `engine` so
+  // tree-walker and VM each fetch from their own bridge function.
   const handleStep = useCallback(async () => {
     if (stepping) return;
+    if (engine === "vm") {
+      if (vmSnapshots.length === 0 || source !== vmSnapshotsSource) {
+        const fresh = await fetchVMSnapshots();
+        if (fresh.length > 0) setStepIndex(0);
+        return;
+      }
+      setStepIndex((i) => Math.min(i + 1, vmSnapshots.length - 1));
+      return;
+    }
     if (snapshots.length === 0 || source !== snapshotsSource) {
       const fresh = await fetchSnapshots();
       if (fresh.length > 0) setStepIndex(0);
       return;
     }
     setStepIndex((i) => Math.min(i + 1, snapshots.length - 1));
-  }, [stepping, snapshots.length, source, snapshotsSource, fetchSnapshots]);
+  }, [
+    stepping,
+    engine,
+    snapshots.length,
+    snapshotsSource,
+    vmSnapshots.length,
+    vmSnapshotsSource,
+    source,
+    fetchSnapshots,
+    fetchVMSnapshots,
+  ]);
 
   const handleReset = useCallback(() => {
     setPlaying(false);
     setStepIndex(-1);
     setSnapshots([]);
     setSnapshotsSource("");
+    setVmSnapshots([]);
+    setVmChunksById({});
+    setVmSnapshotsSource("");
   }, []);
 
   const togglePlay = useCallback(async () => {
@@ -366,15 +446,41 @@ export default function PlaygroundPage() {
       setPlaying(false);
       return;
     }
-    // If we haven't loaded snapshots yet (or source changed), do that
-    // before starting auto-play.
+    if (engine === "vm") {
+      if (vmSnapshots.length === 0 || source !== vmSnapshotsSource) {
+        const fresh = await fetchVMSnapshots();
+        if (fresh.length === 0) return;
+        setStepIndex(0);
+      }
+      setPlaying(true);
+      return;
+    }
     if (snapshots.length === 0 || source !== snapshotsSource) {
       const fresh = await fetchSnapshots();
       if (fresh.length === 0) return;
       setStepIndex(0);
     }
     setPlaying(true);
-  }, [playing, snapshots.length, source, snapshotsSource, fetchSnapshots]);
+  }, [
+    playing,
+    engine,
+    snapshots.length,
+    snapshotsSource,
+    vmSnapshots.length,
+    vmSnapshotsSource,
+    source,
+    fetchSnapshots,
+    fetchVMSnapshots,
+  ]);
+
+  // Switching engine drops stale step state and restarts the
+  // counter — the two engines' snapshot lists aren't aligned so
+  // sharing stepIndex across them would land on nonsense.
+  const handleEngineChange = useCallback((next: Engine) => {
+    setEngine(next);
+    setPlaying(false);
+    setStepIndex(-1);
+  }, []);
 
   // Auto-step loop. Re-scheduled per render when (playing, stepIndex,
   // snapshots, speedMs) changes; that gives the speed slider a
@@ -383,31 +489,43 @@ export default function PlaygroundPage() {
   // past it (if there's anything left) and click Play to continue.
   useEffect(() => {
     if (!playing) return;
-    if (stepIndex >= snapshots.length - 1) {
+    const total = activeSnapshotCount;
+    if (stepIndex >= total - 1) {
       setPlaying(false);
       return;
     }
-    if (snapshots[stepIndex]?.error) {
+    const errorAtCurrent =
+      engine === "vm"
+        ? vmSnapshots[stepIndex]?.error
+        : snapshots[stepIndex]?.error;
+    if (errorAtCurrent) {
       setPlaying(false);
       return;
     }
     const id = window.setTimeout(() => {
-      setStepIndex((i) => Math.min(i + 1, snapshots.length - 1));
+      setStepIndex((i) => Math.min(i + 1, total - 1));
     }, speedMs);
     return () => window.clearTimeout(id);
-  }, [playing, stepIndex, snapshots, speedMs]);
+  }, [playing, engine, stepIndex, snapshots, vmSnapshots, activeSnapshotCount, speedMs]);
 
   // When the user edits source after a step session, drop stale state
   // so the next Step/Play refetches. We don't auto-fetch here — the
   // user signals intent by clicking.
   useEffect(() => {
-    if (snapshots.length > 0 && source !== snapshotsSource) {
+    const sourceMatch =
+      engine === "vm"
+        ? source === vmSnapshotsSource
+        : source === snapshotsSource;
+    if (activeSnapshotCount > 0 && !sourceMatch) {
       setPlaying(false);
-      // Keep snapshots/stepIndex displayed but mark them stale; the
-      // next Step/Play will refetch. This avoids a visual flash to
-      // empty on every keystroke.
     }
-  }, [source, snapshotsSource, snapshots.length]);
+  }, [
+    engine,
+    source,
+    snapshotsSource,
+    vmSnapshotsSource,
+    activeSnapshotCount,
+  ]);
 
   // Switching modes invalidates the "current step" UX but leaves the
   // pipeline display intact so the user can still see tokens/AST.
@@ -420,15 +538,32 @@ export default function PlaygroundPage() {
 
   const animateOutput = useMemo(() => {
     if (mode !== "animate" || stepIndex < 0) return "";
+    if (engine === "vm") {
+      return vmSnapshots
+        .slice(0, stepIndex + 1)
+        .map((s) => s.output_since_last)
+        .join("");
+    }
     return snapshots
       .slice(0, stepIndex + 1)
       .map((s) => s.output_since_last)
       .join("");
-  }, [mode, stepIndex, snapshots]);
+  }, [mode, engine, stepIndex, snapshots, vmSnapshots]);
 
   const animateError: RotError | null = useMemo(() => {
     if (mode !== "animate" || stepIndex < 0) return null;
     if (pipeline.error) return pipeline.error;
+    if (engine === "vm") {
+      const snap = vmSnapshots[stepIndex];
+      if (!snap?.error) return null;
+      return {
+        message: snap.error,
+        line: snap.line,
+        col: 0,
+        formatted: snap.error,
+        stage: "interpret",
+      };
+    }
     const snap = snapshots[stepIndex];
     if (!snap?.error) return null;
     return {
@@ -438,14 +573,19 @@ export default function PlaygroundPage() {
       formatted: snap.error,
       stage: "interpret",
     };
-  }, [mode, stepIndex, snapshots, pipeline.error]);
+  }, [mode, engine, stepIndex, snapshots, vmSnapshots, pipeline.error]);
 
   // Editor line-highlight: in animate mode point at the current
-  // snapshot's statement. Null in run mode (no decoration drawn).
-  const highlightLine =
-    mode === "animate" && stepIndex >= 0
-      ? snapshots[stepIndex]?.statement_line ?? null
-      : null;
+  // snapshot's statement (tree-walker) or the source line that
+  // produced the current opcode (VM). Null in run mode.
+  const highlightLine = useMemo(() => {
+    if (mode !== "animate" || stepIndex < 0) return null;
+    if (engine === "vm") {
+      const snap = vmSnapshots[stepIndex];
+      return snap?.line || null;
+    }
+    return snapshots[stepIndex]?.statement_line ?? null;
+  }, [mode, engine, stepIndex, snapshots, vmSnapshots]);
 
   // Current tour caption — looks up the active snapshot's
   // `statement_line` against the tour's caption table, falling back
@@ -511,6 +651,20 @@ export default function PlaygroundPage() {
     (mode === "run" && running) ||
     (mode === "animate" && stepping);
 
+  // Timeline entries — projected from whichever engine is active.
+  const timelineEntries: TimelineEntry[] = useMemo(() => {
+    if (engine === "vm") {
+      return vmSnapshots.map((s) => ({
+        error: s.error,
+        tooltip: `${s.op_name} @ ip ${s.prev_ip} (chunk ${s.chunk_id}, line ${s.line || "?"})`,
+      }));
+    }
+    return snapshots.map((s) => ({
+      error: s.error,
+      tooltip: `${s.statement_kind} at line ${s.statement_line}:${s.statement_col}`,
+    }));
+  }, [engine, snapshots, vmSnapshots]);
+
   // Keyboard shortcuts:
   //   Cmd/Ctrl+Enter — Run (run mode) or Step (animate mode). Works
   //                    even when the editor is focused.
@@ -568,9 +722,11 @@ export default function PlaygroundPage() {
         onStartTour={handleStartTour}
         mode={mode}
         onSwitchMode={switchMode}
+        engine={engine}
+        onEngineChange={handleEngineChange}
         running={running}
         onRun={handleRun}
-        snapshots={snapshots}
+        activeSnapshotCount={activeSnapshotCount}
         stepIndex={stepIndex}
         stepping={stepping}
         playing={playing}
@@ -634,7 +790,7 @@ export default function PlaygroundPage() {
               onExit={() => setTourKey(null)}
             />
           )}
-          {mode === "animate" && (
+          {mode === "animate" && engine === "tree-walker" && (
             <div className="flex min-h-[36vh] flex-[1.8] flex-col overflow-hidden rounded-lg border border-amber-500/30 bg-card shadow-[0_0_0_1px_rgba(245,158,11,0.05)]">
               <StepPanel
                 source={source}
@@ -651,6 +807,25 @@ export default function PlaygroundPage() {
                 onJumpToSource={handleJumpToSource}
                 playing={playing}
                 speedMs={speedMs}
+              />
+            </div>
+          )}
+          {mode === "animate" && engine === "vm" && (
+            <div className="flex min-h-[36vh] flex-[1.8] flex-col overflow-hidden rounded-lg border border-amber-500/30 bg-card shadow-[0_0_0_1px_rgba(245,158,11,0.05)]">
+              <VMStepPanel
+                snapshot={
+                  stepIndex >= 0 ? vmSnapshots[stepIndex] ?? null : null
+                }
+                previousSnapshot={
+                  stepIndex > 0 ? vmSnapshots[stepIndex - 1] ?? null : null
+                }
+                stepIndex={stepIndex}
+                totalSteps={vmSnapshots.length}
+                chunkId={
+                  stepIndex >= 0
+                    ? vmSnapshots[stepIndex]?.chunk_id ?? "main"
+                    : "main"
+                }
               />
             </div>
           )}
@@ -702,10 +877,10 @@ export default function PlaygroundPage() {
           {/* Animate-mode timeline strip — only when snapshots exist.
               In Run mode there's no bottom card; the Output panel
               takes the full right column. */}
-          {mode === "animate" && snapshots.length > 0 && (
+          {mode === "animate" && timelineEntries.length > 0 && (
             <div className="flex flex-col overflow-hidden rounded-lg border bg-card">
               <SnapshotTimeline
-                snapshots={snapshots}
+                entries={timelineEntries}
                 stepIndex={stepIndex}
                 onStepChange={(next) => {
                   setPlaying(false);
@@ -728,9 +903,11 @@ interface PlaygroundToolbarProps {
   onStartTour: (tour: Tour) => void;
   mode: Mode;
   onSwitchMode: (next: Mode) => void;
+  engine: Engine;
+  onEngineChange: (next: Engine) => void;
   running: boolean;
   onRun: () => void;
-  snapshots: RotSnapshot[];
+  activeSnapshotCount: number;
   stepIndex: number;
   stepping: boolean;
   playing: boolean;
@@ -752,9 +929,11 @@ function PlaygroundToolbar(props: PlaygroundToolbarProps) {
     onStartTour,
     mode,
     onSwitchMode,
+    engine,
+    onEngineChange,
     running,
     onRun,
-    snapshots,
+    activeSnapshotCount,
     stepIndex,
     stepping,
     playing,
@@ -775,6 +954,9 @@ function PlaygroundToolbar(props: PlaygroundToolbarProps) {
         </span>
         <RuntimeBadge status={runtimeStatus} />
         <ModeToggle mode={mode} onSwitch={onSwitchMode} />
+        {mode === "animate" && (
+          <EngineToggle engine={engine} onSwitch={onEngineChange} />
+        )}
       </div>
       <div className="flex items-center gap-2">
         <ShareButton state={shareState} onClick={onShare} />
@@ -805,7 +987,7 @@ function PlaygroundToolbar(props: PlaygroundToolbarProps) {
           </Button>
         ) : (
           <AnimateControls
-            snapshots={snapshots}
+            snapshotCount={activeSnapshotCount}
             stepIndex={stepIndex}
             stepping={stepping}
             playing={playing}
@@ -858,6 +1040,38 @@ function TourDropdown({
   );
 }
 
+function EngineToggle({
+  engine,
+  onSwitch,
+}: {
+  engine: Engine;
+  onSwitch: (next: Engine) => void;
+}) {
+  return (
+    <div
+      className="inline-flex overflow-hidden rounded-md border border-amber-500/30"
+      title="Pick the execution engine — Tree-walker steps statements, VM steps bytecode opcodes."
+    >
+      {(["tree-walker", "vm"] as Engine[]).map((e) => (
+        <button
+          key={e}
+          type="button"
+          onClick={() => onSwitch(e)}
+          aria-pressed={engine === e}
+          className={cn(
+            "px-2 py-0.5 text-[10px] uppercase tracking-wider transition-colors",
+            engine === e
+              ? "bg-amber-500/80 text-background"
+              : "bg-transparent text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {e === "tree-walker" ? "tree-walker" : "VM"}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ModeToggle({
   mode,
   onSwitch,
@@ -888,7 +1102,7 @@ function ModeToggle({
 }
 
 interface AnimateControlsProps {
-  snapshots: RotSnapshot[];
+  snapshotCount: number;
   stepIndex: number;
   stepping: boolean;
   playing: boolean;
@@ -900,7 +1114,7 @@ interface AnimateControlsProps {
 }
 
 function AnimateControls({
-  snapshots,
+  snapshotCount,
   stepIndex,
   stepping,
   playing,
@@ -910,11 +1124,11 @@ function AnimateControls({
   onTogglePlay,
   onReset,
 }: AnimateControlsProps) {
-  const hasSnapshots = snapshots.length > 0;
-  const atEnd = hasSnapshots && stepIndex >= snapshots.length - 1;
+  const hasSnapshots = snapshotCount > 0;
+  const atEnd = hasSnapshots && stepIndex >= snapshotCount - 1;
   // Step counter: "0 / 0" before first step; "N / total" after.
   const counter = hasSnapshots
-    ? `${Math.max(stepIndex + 1, 1)} / ${snapshots.length}`
+    ? `${Math.max(stepIndex + 1, 1)} / ${snapshotCount}`
     : "— / —";
 
   return (

@@ -139,6 +139,43 @@ export interface RotCompileResult {
   timings: { lexMs: number; parseMs: number; compileMs: number };
 }
 
+// --- VM step-mode (Milestone 3) ---
+
+export interface RotVMSnapshot {
+  prev_ip: number;
+  ip: number;
+  chunk_id: string;
+  op_name: string;
+  op_args: Array<number | string | boolean | null>;
+  // Stack and env values are already stringified on the Python side.
+  stack: string[];
+  frame_depth: number;
+  globals_view: Record<string, string>;
+  locals_view: Record<string, string>;
+  line: number;
+  output_since_last: string;
+  error: string | null;
+  halted: boolean;
+}
+
+export interface RotVMStepResult {
+  tokens: RotToken[];
+  // Every reachable chunk, keyed by chunk_id. "main" is the
+  // top-level chunk. Other entries match VMSnapshot.chunk_id.
+  chunks_by_id: Record<string, RotChunkDump>;
+  main_chunk_id: string;
+  snapshots: RotVMSnapshot[];
+  // Set on lex / parse / compile failures or interpreter bugs.
+  // User-level runtime errors live on snapshots[-1].error.
+  error: RotError | null;
+  timings: {
+    lexMs: number;
+    parseMs: number;
+    compileMs: number;
+    runMs: number;
+  };
+}
+
 export interface RotRuntimeStatus {
   state: "idle" | "loading" | "ready" | "error";
   message?: string;
@@ -482,6 +519,132 @@ def rot_compile_and_run(source):
     result["timings"]["interpretMs"] = (time.perf_counter() - t0) * 1000
     result["output"] = buf.getvalue()
     return _json.dumps(result)
+
+
+def _collect_chunks(chunk, chunks_by_id):
+    """Walk \`chunk\`'s constant pool, register every reachable
+    function/method chunk into \`chunks_by_id\` under the same keys
+    that VM.iter_execute hands out as snapshot.chunk_id. Recursive."""
+    from rot.codegen import RotFunctionValue, RotClassValue
+    for const in chunk.constants:
+        if isinstance(const, RotFunctionValue):
+            if const.chunk is not None:
+                key = const.name or "<anonymous>"
+                if key not in chunks_by_id:
+                    chunks_by_id[key] = const.chunk.to_dict()
+                    _collect_chunks(const.chunk, chunks_by_id)
+        elif isinstance(const, RotClassValue):
+            for method in const.methods.values():
+                if method.chunk is None:
+                    continue
+                key = f"{const.name}.{method.name}" if method.name else const.name
+                if key not in chunks_by_id:
+                    chunks_by_id[key] = method.chunk.to_dict()
+                    _collect_chunks(method.chunk, chunks_by_id)
+
+
+def rot_step_vm(source):
+    """Lex / parse / compile / step-execute via the bytecode VM.
+    Yields one snapshot per opcode for the playground's M3
+    opcode-level visualization. Returns a JSON string with:
+
+        - tokens:       lexer output
+        - chunks_by_id: flat map { chunk_id -> chunk dump } including
+                        "main" and every reachable function/method
+                        chunk
+        - main_chunk_id: always "main" — kept explicit so the UI
+                        doesn't hard-code the sentinel
+        - snapshots:    list of VMSnapshot.to_dict()
+        - error:        null EXCEPT on lex/parse/compile failures or
+                        interpreter bugs; user-level runtime errors
+                        live on snapshots[-1].error
+        - timings:      {lexMs, parseMs, compileMs, runMs}
+    """
+    from rot.codegen import Compiler as _Compiler
+    from rot.vm import VM as _VM
+    from rot.builtins import BUILTINS as _BUILTINS
+    from rot.interpreter import _builtin_cout, _builtin_coutln
+
+    result = {
+        "tokens": [],
+        "chunks_by_id": {},
+        "main_chunk_id": "main",
+        "snapshots": [],
+        "error": None,
+        "timings": {
+            "lexMs": 0.0,
+            "parseMs": 0.0,
+            "compileMs": 0.0,
+            "runMs": 0.0,
+        },
+    }
+
+    # --- lex ---
+    t0 = time.perf_counter()
+    try:
+        tokens = Lexer().tokenize(source)
+    except Exception as e:
+        result["timings"]["lexMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["lexMs"] = (time.perf_counter() - t0) * 1000
+    result["tokens"] = [
+        {"lexeme": t.lexeme, "kind": t.kind, "line": t.line, "col": t.col}
+        for t in tokens
+    ]
+
+    # --- parse ---
+    t0 = time.perf_counter()
+    try:
+        program = Parser(tokens).parse()
+    except Exception as e:
+        result["timings"]["parseMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["parseMs"] = (time.perf_counter() - t0) * 1000
+
+    # --- compile ---
+    t0 = time.perf_counter()
+    try:
+        chunk = _Compiler().compile(program)
+    except NotImplementedError as e:
+        result["timings"]["compileMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = {
+            "message": str(e),
+            "line": 0,
+            "col": 0,
+            "formatted": f"codegen: {e}",
+            "stage": "interpret",
+        }
+        return _json.dumps(result)
+    except Exception as e:
+        result["timings"]["compileMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["compileMs"] = (time.perf_counter() - t0) * 1000
+
+    # Snapshot every reachable chunk so the UI can swap views when
+    # the active chunk_id changes (e.g. during a function call).
+    result["chunks_by_id"]["main"] = chunk.to_dict()
+    _collect_chunks(chunk, result["chunks_by_id"])
+
+    # --- step-execute ---
+    vm_builtins = dict(_BUILTINS)
+    vm_builtins["cout"] = _builtin_cout
+    vm_builtins["coutln"] = _builtin_coutln
+    vm = _VM(chunk, builtins=vm_builtins)
+    buf = io.StringIO()
+    t0 = time.perf_counter()
+    try:
+        with contextlib.redirect_stdout(buf):
+            for snap in vm.iter_execute(capture=buf):
+                result["snapshots"].append(snap.to_dict())
+    except Exception as e:
+        result["timings"]["runMs"] = (time.perf_counter() - t0) * 1000
+        result["error"] = _error_dict(e, source)
+        return _json.dumps(result)
+    result["timings"]["runMs"] = (time.perf_counter() - t0) * 1000
+    return _json.dumps(result)
 `;
 
 async function initRuntime(): Promise<PyodideInterface> {
@@ -641,6 +804,53 @@ const EMPTY_COMPILE_RESULT: RotCompileResult = {
   error: null,
   timings: { lexMs: 0, parseMs: 0, compileMs: 0 },
 };
+
+const EMPTY_VM_STEP_RESULT: RotVMStepResult = {
+  tokens: [],
+  chunks_by_id: {},
+  main_chunk_id: "main",
+  snapshots: [],
+  error: null,
+  timings: { lexMs: 0, parseMs: 0, compileMs: 0, runMs: 0 },
+};
+
+export async function compileAndStepVM(
+  source: string,
+): Promise<RotVMStepResult> {
+  let pyodide: PyodideInterface;
+  try {
+    pyodide = await loadRotRuntime();
+  } catch (e) {
+    return {
+      ...EMPTY_VM_STEP_RESULT,
+      error: {
+        message: e instanceof Error ? e.message : String(e),
+        line: 0,
+        col: 0,
+        formatted: `error: ${e instanceof Error ? e.message : String(e)}`,
+        stage: "internal",
+      },
+    };
+  }
+  pyodide.globals.set("__rot_source__", source);
+  const jsonStr = pyodide.runPython(
+    `rot_step_vm(__rot_source__)`,
+  ) as string;
+  try {
+    return JSON.parse(jsonStr) as RotVMStepResult;
+  } catch (e) {
+    return {
+      ...EMPTY_VM_STEP_RESULT,
+      error: {
+        message: `json decode failed: ${e instanceof Error ? e.message : String(e)}`,
+        line: 0,
+        col: 0,
+        formatted: `error: json decode failed`,
+        stage: "internal",
+      },
+    };
+  }
+}
 
 export async function compileToChunk(
   source: string,

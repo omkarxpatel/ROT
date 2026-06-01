@@ -12,7 +12,9 @@ its value semantics opcode-by-opcode.
 
 from __future__ import annotations
 
-from typing import Any
+import io
+from dataclasses import dataclass
+from typing import Any, Iterator
 
 from .codegen import (
     Chunk,
@@ -70,6 +72,58 @@ def _stringify(value: Any) -> str:
     return str(value)
 
 
+@dataclass
+class VMSnapshot:
+    """A frozen view of the VM after executing a single opcode.
+
+    Used by `VM.iter_execute()` to power the playground's opcode-level
+    step mode. Snapshots are JSON-safe via `to_dict()` — stack and env
+    values are stringified through `_stringify`, identical to the
+    runtime renderer everywhere else.
+
+    `prev_ip` is the IP the just-executed opcode sat at; `ip` is where
+    the VM will fetch its next instruction. `chunk_id` reflects the
+    chunk that owned the executed opcode — the "main" sentinel for the
+    top-level program, otherwise the function (or qualified method)
+    name. After a CALL opcode the next snapshot's `chunk_id` will
+    differ; after RETURN_VALUE it'll revert.
+    """
+
+    prev_ip: int
+    ip: int
+    chunk_id: str
+    op_name: str
+    op_args: list[Any]
+    # Stack and env are stringified once on snapshot creation. Cheaper
+    # to do once than to ferry live Python references through the
+    # JSON bridge.
+    stack: list[str]
+    frame_depth: int
+    globals_view: dict[str, str]
+    locals_view: dict[str, str]
+    line: int
+    output_since_last: str
+    error: "str | None"
+    halted: bool
+
+    def to_dict(self) -> dict:
+        return {
+            "prev_ip": self.prev_ip,
+            "ip": self.ip,
+            "chunk_id": self.chunk_id,
+            "op_name": self.op_name,
+            "op_args": list(self.op_args),
+            "stack": list(self.stack),
+            "frame_depth": self.frame_depth,
+            "globals_view": dict(self.globals_view),
+            "locals_view": dict(self.locals_view),
+            "line": self.line,
+            "output_since_last": self.output_since_last,
+            "error": self.error,
+            "halted": self.halted,
+        }
+
+
 class VM:
     """Executes a `Chunk`.
 
@@ -108,6 +162,16 @@ class VM:
         # pops normally, _handle_throw pops one when unwinding.
         # Each entry: {catch_ip, frame_depth, stack_depth}.
         self._handlers: list[dict] = []
+        # Step-mode bookkeeping. `_chunk_id` is "main" at the top
+        # level, or the function/method name while inside a CALL
+        # frame. Saved into / restored from `_frames` at CALL /
+        # RETURN_VALUE boundaries; also restored by `_handle_throw`.
+        # `_builtin_keys` remembers which names the host installed
+        # so `iter_execute` can filter them out of the globals view
+        # (so the playground doesn't render every builtin function
+        # under every snapshot).
+        self._chunk_id: str = "main"
+        self._builtin_keys: set[str] = set(builtins.keys()) if builtins else set()
 
     def run(self) -> None:
         """Drive the dispatch loop. Wraps each instruction in a
@@ -547,6 +611,7 @@ class VM:
             "ip": self.ip,
             "stack": self.stack,
             "env": self.env,
+            "chunk_id": self._chunk_id,
         })
         assert func.chunk is not None
         self.chunk = func.chunk
@@ -555,6 +620,11 @@ class VM:
         local_env: dict[str, Any] = {}
         if this is not None:
             local_env["this"] = this
+            self._chunk_id = (
+                f"{this.cls.name}.{func.name}" if func.name else this.cls.name
+            )
+        else:
+            self._chunk_id = func.name or "<anonymous>"
         for name, val in zip(func.params, args):
             local_env[name] = val
         self.env = local_env
@@ -571,6 +641,7 @@ class VM:
         self.ip = saved["ip"]
         self.stack = saved["stack"]
         self.env = saved["env"]
+        self._chunk_id = saved.get("chunk_id", "main")
         # Drop any handlers that belonged to the frame we just left.
         # They were pushed inside the function and aren't reachable
         # anymore. (BEGIN_TRY without a matching END_TRY in a
@@ -603,6 +674,7 @@ class VM:
             self.ip = saved["ip"]
             self.stack = saved["stack"]
             self.env = saved["env"]
+            self._chunk_id = saved.get("chunk_id", "main")
         # Truncate the value stack to its depth at BEGIN_TRY so any
         # partial values the try body pushed are cleaned up.
         del self.stack[handler["stack_depth"]:]
@@ -613,4 +685,93 @@ class VM:
         return True
 
 
-__all__ = ["VM"]
+    def iter_execute(
+        self,
+        capture: "io.StringIO | None" = None,
+    ) -> Iterator[VMSnapshot]:
+        """Step-mode entry point. Yields one `VMSnapshot` per opcode.
+
+        Mirrors the run loop's dispatch behavior — same try/except
+        for `_VMThrowSignal`, same halt semantics on `RETURN_VALUE`
+        of the main frame — but pauses after every instruction so
+        the playground can render an animated IP marker and stack.
+
+        `capture` is an optional `StringIO`. When passed, the bridge
+        sets up `contextlib.redirect_stdout(capture)` around this
+        call; `output_since_last` on each snapshot reports the slice
+        of `capture` that was written by *this* opcode (so the UI
+        can stream output panel updates one print at a time).
+
+        Like `iter_execute` on the tree-walker, user errors are
+        attached to a snapshot's `error` field rather than raised;
+        only genuinely impossible-to-handle bugs propagate as
+        Python exceptions.
+        """
+        while self.ip < len(self.chunk.code):
+            prev_ip = self.ip
+            chunk_id_before = self._chunk_id
+            instr = self.chunk.code[prev_ip]
+            raw_op = instr[0]
+            op_name = (
+                Op(raw_op).name if isinstance(raw_op, (Op, int)) else str(raw_op)
+            )
+            op_args = list(instr[1:])
+            line = (
+                self.chunk.lines[prev_ip]
+                if prev_ip < len(self.chunk.lines)
+                else 0
+            )
+            prev_buf_len = capture.tell() if capture else 0
+
+            err: "str | None" = None
+            halted = False
+            try:
+                halted = self._run_one_instruction()
+            except _VMThrowSignal as signal:
+                if not self._handle_throw(signal.value):
+                    err = f"uncaught throw: {_stringify(signal.value)}"
+                    halted = True
+            except InterpreterError as e:
+                err = str(e)
+                halted = True
+
+            output_since_last = (
+                capture.getvalue()[prev_buf_len:] if capture else ""
+            )
+
+            # Locals view: only meaningful when we're inside a
+            # function frame (env distinct from globals). Skip the
+            # implicit `this` from the user-visible diff — it stays
+            # constant within a method and crowds the panel.
+            locals_view: dict[str, str] = {}
+            if self.env is not self._globals:
+                for k, v in self.env.items():
+                    locals_view[k] = _stringify(v)
+
+            globals_view: dict[str, str] = {}
+            for k, v in self._globals.items():
+                if k in self._builtin_keys:
+                    continue
+                globals_view[k] = _stringify(v)
+
+            yield VMSnapshot(
+                prev_ip=prev_ip,
+                ip=self.ip,
+                chunk_id=chunk_id_before,
+                op_name=op_name,
+                op_args=op_args,
+                stack=[_stringify(v) for v in self.stack],
+                frame_depth=len(self._frames),
+                globals_view=globals_view,
+                locals_view=locals_view,
+                line=line,
+                output_since_last=output_since_last,
+                error=err,
+                halted=halted,
+            )
+
+            if halted:
+                return
+
+
+__all__ = ["VM", "VMSnapshot"]

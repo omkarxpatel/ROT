@@ -2,6 +2,65 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.29.0 — Milestone 3 headline: VM step mode in the playground
+
+Phase 3 of [`VISUAL_LEARNING_PLAN.md`](VISUAL_LEARNING_PLAN.md). The
+bytecode VM can now be stepped opcode-by-opcode from the playground.
+Tree-walker mode is unchanged and remains the default.
+
+### Added — Python
+- **`VMSnapshot`** dataclass and **`VM.iter_execute()`** generator in
+  [`rot/vm.py`](rot/vm.py). Yields one snapshot per executed opcode
+  with `prev_ip`, `ip`, `chunk_id`, `op_name`, `op_args`, stack,
+  frame depth, globals + locals view, source line,
+  `output_since_last`, error, and a halted flag.
+- **`_chunk_id` tracking** threaded through `_enter_function_frame`,
+  `_do_return_value`, and `_handle_throw` so each opcode's snapshot
+  reports which chunk it ran in (`"main"`, function name, or
+  `"ClassName.methodName"`).
+- **`_builtin_keys`** tracking on the VM so step mode's globals view
+  filters out the host-installed standard library (cout/coutln/len/
+  etc.) — the user sees only their own bindings.
+- **12 new tests** in `tests/test_vm_step.py` exercising opcode
+  ordering, stack effects, line attribution, chunk_id transitions on
+  CALL/RETURN_VALUE, recursive frame depth, output capture,
+  uncaught/caught throws, and JSON round-trip of `VMSnapshot.to_dict()`.
+
+### Added — Web
+- **`compileAndStepVM(source)`** bridge function in
+  [`pyodide-runtime.ts`](web/src/lib/pyodide-runtime.ts) and the
+  corresponding `rot_step_vm` Python function. Returns tokens,
+  `chunks_by_id` (every reachable chunk for future polish), the
+  snapshot list, error, and timings.
+- **Engine toggle** (Tree-walker / VM) in the playground toolbar,
+  visible in Animate mode. Switching engines resets `stepIndex` and
+  rebuilds snapshots on next Step/Play.
+- **`VMStepPanel`** component
+  ([`vm-step-panel.tsx`](web/src/components/vm-step-panel.tsx)).
+  Header: chunk + frame depth + step counter. Body: the executed
+  opcode + args + line, an animated stack visualization (top of
+  stack at the top, framer-motion enter/exit), an env card
+  separating locals + globals with change-highlighting, and inline
+  print + error cards.
+
+### Changed
+- **`SnapshotTimeline`** now takes a generic
+  `entries: TimelineEntry[]` array instead of `RotSnapshot[]`. The
+  page projects either engine's snapshots into the entry shape, so
+  the timeline works for both opcode-level and statement-level
+  steps.
+- Auto-step `useEffect`, `handleStep`, `togglePlay`, `handleReset`,
+  `displayOutput`, `displayError`, `highlightLine` are all engine-
+  aware. State for each engine lives side-by-side; switching back
+  and forth doesn't re-fetch the other engine's snapshots.
+
+### Notes
+- 819 tests passing (807 + 12 new VM step). `tsc --noEmit` clean.
+- Minor version bump — this is the headline M3 feature, not a patch.
+- Polish deferred to follow-ups: animated IP marker in the bytecode
+  pane, engine comparison view (3.6), chunk-switching in the
+  bytecode pane when `chunk_id` changes.
+
 ## v2.28.2 — playground: Tour Mode (guided, captioned walkthroughs)
 
 Phase 2.4 of [`VISUAL_LEARNING_PLAN.md`](VISUAL_LEARNING_PLAN.md). The
