@@ -2,6 +2,55 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.29.1 — docs: runnable inline examples + grouped TOC + callouts
+
+Phase 2.3 of [`VISUAL_LEARNING_PLAN.md`](VISUAL_LEARNING_PLAN.md). The
+language reference now runs in place — every meaningful example is
+interactive without leaving the page.
+
+### Added
+- **`MiniPlayground`** component
+  ([`mini-playground.tsx`](web/src/components/mini-playground.tsx)).
+  Fixed source, syntax-highlighted code block, **Run** button, inline
+  output panel with framer-motion entry, **Reset** button, and a "Try
+  in playground" link that base64-encodes the source so the full
+  playground opens with the snippet pre-loaded. Shares the Pyodide
+  singleton — no per-embed runtime fetch.
+- **`Callout`** component
+  ([`callout.tsx`](web/src/components/callout.tsx)) — four variants
+  (note / warning / tip / context) with matching icons, accent
+  colors, and default titles.
+- **Quick-links tile row** at the top of `/docs` linking to the
+  playground, internals docs, the seven runnable demos anchor, and
+  GitHub.
+
+### Changed — `/docs`
+- **Grouped TOC sidebar.** Sections cluster into four groups
+  (Basics / Flow & shape / Beyond basics / Reference) with small
+  group labels.
+- **Hello world, Variables, Literals, Control flow, Functions,
+  Classes, Error handling, F-strings, Slicing, Error messages** —
+  every runnable example swapped from a static `CodeFrame` to a
+  `MiniPlayground`. Code is editable in spirit (links into the full
+  playground); inline execution shows real output beneath each block.
+- **Callouts placed strategically:**
+  - Variables: "Why two forms?" (context), "Builtins are frozen" (warning)
+  - Literals: "Why `|` and not `,`?" (note)
+  - Control flow: "Step through it visually" (tip)
+  - Functions: "How does the closure remember `count`?" (context)
+  - Classes: "`this`, not `self`" (note), "No inheritance yet" (warning)
+  - Error handling: "Throws carry values, not types" (tip)
+  - Imports: "CLI-only" (warning)
+  - Errors: "What you'll see" (context)
+- **Examples section** is now a 3-column grid of cards, each
+  deep-linking via `?example=<key>` into the playground.
+
+### Notes
+- Web-only change. 819 tests still passing. `tsc --noEmit` clean.
+- The Operators section, Builtins reference, Reserved words, and
+  the REPL transcript stay as static code blocks — they're
+  reference material, not runnable demos.
+
 ## v2.29.0 — Milestone 3 headline: VM step mode in the playground
 
 Phase 3 of [`VISUAL_LEARNING_PLAN.md`](VISUAL_LEARNING_PLAN.md). The
