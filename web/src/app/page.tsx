@@ -54,7 +54,7 @@ const INSIDE_ROT: InsideFile[] = [
   {
     name: "vm.py",
     loc: "~500 LOC",
-    blurb: "Stack-based bytecode VM. Frames, handlers, ~35 opcodes.",
+    blurb: "Stack-based bytecode VM. Frames, handlers, 38 opcodes.",
     href: `${GITHUB_URL}/blob/main/rot/vm.py`,
   },
   {
@@ -118,7 +118,7 @@ function Hero() {
         <div className="lg:col-span-2">
           <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/5 px-2.5 py-1 text-[10px] uppercase tracking-wider text-amber-300">
             <Sparkles className="h-3 w-3" />
-            v{ROT_VERSION} · 807 tests passing
+            v{ROT_VERSION} · 819 tests passing
           </div>
           <h1 className="mt-5 font-mono text-5xl font-semibold tracking-tighter text-foreground sm:text-6xl">
             Watch a programming language work.
@@ -129,7 +129,7 @@ function Hero() {
             front of you.
           </p>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            ~3,800 lines of Python, no <code className="font-mono">exec()</code>,
+            ~5,700 lines of Python, no <code className="font-mono">exec()</code>,
             no compile-to-Python. The whole pipeline is yours to read.
           </p>
           <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -233,9 +233,9 @@ function WatchEachStage() {
 function Stats() {
   const stats: Array<{ label: string; value: string }> = [
     { label: "Version", value: `v${ROT_VERSION}` },
-    { label: "Lines of code", value: "~3,800" },
-    { label: "Tests passing", value: "807" },
-    { label: "Opcodes (M2 VM)", value: "~35" },
+    { label: "Lines of code", value: "~5,700" },
+    { label: "Tests passing", value: "819" },
+    { label: "Opcodes (M2 VM)", value: "38" },
   ];
   return (
     <section className="mx-auto mt-20 max-w-6xl px-4 sm:px-6">

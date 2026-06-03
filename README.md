@@ -82,30 +82,28 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the deep dive and [paper/main.pdf](pa
 ## Repo layout
 
 ```
-rot/                  the language package (~3,800 LOC across lexer / syntax / interpreter / builtins / repl)
-tests/                628 tests across per-layer, end-to-end, CLI, REPL, compiler
+rot/                  the language package (~5,700 LOC across lexer / syntax / interpreter / codegen / vm / builtins / repl)
+tests/                819 tests across per-layer, end-to-end, CLI, REPL, compiler, VM
 examples/             7 working .rot programs paired with .expected golden outputs
 paper/                10-page LaTeX design retrospective (compiled main.pdf included)
-web/                  Next.js 15 + Pyodide site: landing / docs / playground / paper PDF
+web/                  Next.js 15 + Pyodide site: landing / docs / playground
 ARCHITECTURE.md       deep architecture doc
 CHANGELOG.md          per-release notes
-HANDOFF.md            session-to-session snapshot
-BUG_REPORT.md         v2.13.0 exhaustive audit (most findings fixed across v2.14 → v2.25)
 ```
 
 ## Tests
 
 ```bash
-python -m pytest tests/                  # 628 passing
+python -m pytest tests/                  # 819 passing
 ```
 
 CI runs on Python 3.9 / 3.10 / 3.11 / 3.12 via GitHub Actions ([workflow](.github/workflows/tests.yml)).
 
 ## Roadmap
 
-The v2.x cut took the language from "regex transpiler" (v1.0.0) to a feature-complete tree-walking interpreter (v2.25.15) with `let`, `finally`, slicing, f-string format specs, rustc-style errors, and 628 tests.
+The v2.x cut took the language from "regex transpiler" (v1.0.0) to a feature-complete tree-walking interpreter (v2.25.15) with `let`, `finally`, slicing, f-string format specs, rustc-style errors, and 819 tests.
 
-- **v2.x — bytecode VM**. A small stack-based VM with ~30 opcodes (Phase 4 in [ARCHITECTURE.md](ARCHITECTURE.md)). The tree-walking interpreter stays as the reference; bytecode is the fast path. Following *Crafting Interpreters* Part III as the rough guide.
+- **v2.27.x — bytecode VM**. A stack-based VM with 38 opcodes (Milestone 2, shipped). The tree-walking interpreter remains the reference; bytecode is the fast path. Following *Crafting Interpreters* Part III as the rough guide.
 - **v3.0 (?) — native codegen**. LLVM IR via `llvmlite`. `rot build hello.rot` produces a binary.
 
 The original v1 (`.rot` → Python via `exec()`) is preserved in git history at [`v1.9.0`](https://github.com/omkarxpatel/ROT/releases/tag/v1.9.0) and earlier tags.

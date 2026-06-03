@@ -322,7 +322,7 @@ function Bytecode() {
       <SectionHeading id="bytecode">Bytecode — opcodes</SectionHeading>
       <p className="mt-3 max-w-3xl text-base leading-relaxed text-foreground/90">
         ROT also ships an opt-in bytecode compiler and stack VM. The
-        compiler lowers the same AST into a flat array of ~35 opcodes;
+        compiler lowers the same AST into a flat array of 38 opcodes;
         the VM executes them with a value stack and a frame stack — the
         same model CPython, Lua, and the JVM use, just smaller.
       </p>
@@ -419,7 +419,7 @@ function WhereNext() {
             The source on GitHub
             <ExternalLink className="h-4 w-4" />
           </a>{" "}
-          — ~3,800 lines of Python. The lexer fits in one sitting.
+          — ~5,700 lines of Python. The lexer fits in one sitting.
         </li>
       </ul>
     </section>

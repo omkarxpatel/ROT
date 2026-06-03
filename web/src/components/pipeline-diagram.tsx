@@ -69,7 +69,7 @@ const STAGES: Stage[] = [
     key: "bytecode",
     icon: Binary,
     label: "Bytecode",
-    blurb: "A separate compiler lowers the AST to ~35 opcodes that run on a stack VM.",
+    blurb: "A separate compiler lowers the AST to 38 opcodes that run on a stack VM.",
     example: "LOAD_CONST 1 · STORE_NAME i",
     href: "/docs/internals#bytecode",
     accent: "amber",

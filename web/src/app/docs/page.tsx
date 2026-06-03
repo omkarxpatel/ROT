@@ -230,7 +230,7 @@ function QuickLinks() {
       href: "https://github.com/omkarxpatel/ROT",
       icon: GitBranch,
       label: "Source on GitHub",
-      blurb: "~3,800 lines of Python. Read the lexer in one sitting.",
+      blurb: "~5,700 lines of Python. Read the lexer in one sitting.",
       accent: "border-emerald-500/30 hover:border-emerald-500/50",
     },
   ];

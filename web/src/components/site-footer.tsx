@@ -15,7 +15,7 @@ export function SiteFooter() {
             </div>
             <p className="mt-2 max-w-xs text-xs text-muted-foreground">
               A hand-rolled programming language. C++/Python-flavored, written
-              in Python, ~3,800 lines.
+              in Python, ~5,700 lines.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-6 md:col-span-2 md:grid-cols-3">

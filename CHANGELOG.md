@@ -2,6 +2,35 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.29.3 — refresh stale metrics + add site icon
+
+### Changed
+- **Refreshed every public-facing metric** that had drifted across
+  Milestones 1 and 2:
+  - Lines of code: `~3,800` → `~5,700` (actual: 5,706, counted across
+    `rot/*.py`).
+  - Tests passing: `807` → **819**.
+  - Bytecode opcodes: `~35` → **38** (actual count in
+    [`rot/opcodes.py`](rot/opcodes.py)).
+  - Touched files: [`page.tsx`](web/src/app/page.tsx) (hero pill,
+    "What is ROT?" copy, Stats grid, "What's inside" card),
+    [`site-footer.tsx`](web/src/components/site-footer.tsx),
+    [`docs/internals/page.tsx`](web/src/app/docs/internals/page.tsx),
+    [`docs/page.tsx`](web/src/app/docs/page.tsx) (QuickLinks blurb),
+    [`pipeline-diagram.tsx`](web/src/components/pipeline-diagram.tsx),
+    and [`README.md`](README.md) (Repo layout + Tests + Roadmap).
+
+### Added
+- **Site icon.** [`app/icon.svg`](web/src/app/icon.svg) — a rounded
+  charcoal square with an amber play-triangle, matching the
+  "Watch a programming language work" pitch.
+  [`app/apple-icon.svg`](web/src/app/apple-icon.svg) — larger
+  iOS-friendly variant with a "ROT" wordmark below the triangle.
+  Next.js auto-emits the `<link rel="icon">` / `<link rel="apple-touch-icon">` tags.
+
+### Notes
+- Web-only change. 819 tests still passing. `tsc --noEmit` clean.
+
 ## v2.29.2 — drop paper PDF from the deployed site
 
 ### Removed
