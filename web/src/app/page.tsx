@@ -154,18 +154,12 @@ function Hero() {
               GitHub
             </a>
             <span className="text-border">{"·"}</span>
-            <a
-              href="/paper/main.pdf"
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 hover:text-foreground"
-            >
-              Paper (PDF)
-              <ExternalLink className="h-3 w-3 opacity-60" />
-            </a>
-            <span className="text-border">{"·"}</span>
             <Link href="/docs" className="hover:text-foreground">
               Docs
+            </Link>
+            <span className="text-border">{"·"}</span>
+            <Link href="/docs/internals" className="hover:text-foreground">
+              Internals
             </Link>
           </div>
         </div>

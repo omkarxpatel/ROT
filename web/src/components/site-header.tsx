@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Github, ExternalLink } from "lucide-react";
+import { Github } from "lucide-react";
 
 import { ROT_VERSION } from "@/lib/rot-version";
 
@@ -31,7 +31,6 @@ export function SiteHeader({ showVersion = true }: SiteHeaderProps) {
           <NavLink href="/docs">Docs</NavLink>
           <NavLink href="/docs/internals">Internals</NavLink>
           <NavLink href="/playground">Playground</NavLink>
-          <NavExternalLink href="/paper/main.pdf">Paper</NavExternalLink>
           <a
             href={GITHUB_URL}
             target="_blank"
@@ -64,22 +63,3 @@ function NavLink({
   );
 }
 
-function NavExternalLink({
-  href,
-  children,
-}: {
-  href: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-    >
-      {children}
-      <ExternalLink className="h-3 w-3 opacity-60" />
-    </a>
-  );
-}

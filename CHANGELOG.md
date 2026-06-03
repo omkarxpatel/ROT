@@ -2,6 +2,30 @@
 
 All notable changes to ROT are documented here. The project follows [Semantic Versioning](https://semver.org/).
 
+## v2.29.2 — drop paper PDF from the deployed site
+
+### Removed
+- All in-app links to the design-retrospective paper:
+  - `Paper` nav item in [`site-header.tsx`](web/src/components/site-header.tsx)
+  - `Paper (PDF)` link in the homepage hero
+    ([`page.tsx`](web/src/app/page.tsx))
+  - Paper link in the internals page's "Where to look next"
+    ([`docs/internals/page.tsx`](web/src/app/docs/internals/page.tsx))
+  - Paper link in the footer
+    ([`site-footer.tsx`](web/src/components/site-footer.tsx))
+- The `PAPER_SRC` / `PAPER_DEST` paths and copy logic in
+  [`copy-rot.mjs`](web/scripts/copy-rot.mjs). The PDF no longer
+  ships with the production bundle.
+
+### Changed
+- Footer's "Read" column gains an `Internals` link in place of the
+  removed paper link.
+
+### Notes
+- `paper/main.pdf` and the LaTeX source stay in the repo. Just
+  not surfaced from the site any more.
+- 819 tests still passing. `tsc --noEmit` clean.
+
 ## v2.29.1 — docs: runnable inline examples + grouped TOC + callouts
 
 Phase 2.3 of [`VISUAL_LEARNING_PLAN.md`](VISUAL_LEARNING_PLAN.md). The

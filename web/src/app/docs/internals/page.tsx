@@ -411,15 +411,15 @@ function WhereNext() {
         </li>
         <li>
           <a
-            href="/paper/main.pdf"
+            href="https://github.com/omkarxpatel/ROT"
             target="_blank"
             rel="noreferrer"
             className="inline-flex items-center gap-1 text-foreground underline-offset-4 hover:underline"
           >
-            The design retrospective paper
+            The source on GitHub
             <ExternalLink className="h-4 w-4" />
           </a>{" "}
-          — ten pages on what was harder than it looked.
+          — ~3,800 lines of Python. The lexer fits in one sitting.
         </li>
       </ul>
     </section>

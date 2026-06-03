@@ -20,11 +20,8 @@ const REPO_ROOT = dirname(WEB_ROOT); // /
 
 const ROT_SRC = join(REPO_ROOT, "rot");
 const EXAMPLES_SRC = join(REPO_ROOT, "examples");
-const PAPER_SRC = join(REPO_ROOT, "paper", "main.pdf");
 const ROT_DEST = join(WEB_ROOT, "public", "rot_package");
 const EXAMPLES_DEST = join(WEB_ROOT, "public", "rot_examples");
-const PAPER_DEST_DIR = join(WEB_ROOT, "public", "paper");
-const PAPER_DEST = join(PAPER_DEST_DIR, "main.pdf");
 
 async function copyDir(srcDir, destDir, filter) {
   if (!existsSync(srcDir)) {
@@ -79,23 +76,9 @@ async function main() {
       `export const ROT_VERSION = ${JSON.stringify(version)};\n`,
   );
 
-  // 4. Copy the design-retrospective paper PDF so it's reachable at
-  //    /paper/main.pdf from the static site. Missing source is a soft
-  //    warning, not a hard error — the paper isn't required for the
-  //    rest of the site to work.
-  let paperCopied = false;
-  if (existsSync(PAPER_SRC)) {
-    await mkdir(PAPER_DEST_DIR, { recursive: true });
-    await copyFile(PAPER_SRC, PAPER_DEST);
-    paperCopied = true;
-  } else {
-    console.warn(`[copy-rot] paper not found at ${PAPER_SRC} (skipping)`);
-  }
-
   console.log(
     `[copy-rot] copied ${pyFiles.length} .py file(s) -> public/rot_package, ` +
       `${rotFiles.length} .rot example(s) -> public/rot_examples, ` +
-      `${paperCopied ? "paper -> public/paper/main.pdf, " : ""}` +
       `rot version ${version}.`,
   );
 }

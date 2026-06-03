@@ -25,9 +25,7 @@ export function SiteFooter() {
             </FooterColumn>
             <FooterColumn title="Read">
               <FooterLink href="/docs">Docs</FooterLink>
-              <FooterExternalLink href="/paper/main.pdf">
-                Paper (PDF)
-              </FooterExternalLink>
+              <FooterLink href="/docs/internals">Internals</FooterLink>
               <FooterExternalLink href={CHANGELOG_URL}>
                 Changelog
               </FooterExternalLink>
