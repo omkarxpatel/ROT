@@ -1,4 +1,5 @@
 # R.O.T
+[Beta Website](https://rot-theta.vercel.app/)
 
 [![tests](https://github.com/omkarxpatel/ROT/actions/workflows/tests.yml/badge.svg)](https://github.com/omkarxpatel/ROT/actions/workflows/tests.yml)
 [![version](https://img.shields.io/github/v/tag/omkarxpatel/ROT?label=version&sort=semver&color=blue)](https://github.com/omkarxpatel/ROT/tags)
