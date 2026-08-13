@@ -3,6 +3,9 @@ import Link from "next/link";
 const GITHUB_URL = "https://github.com/omkarxpatel/ROT";
 const CHANGELOG_URL = `${GITHUB_URL}/blob/main/CHANGELOG.md`;
 const ARCHITECTURE_URL = `${GITHUB_URL}/blob/main/ARCHITECTURE.md`;
+const PAPER_URL = `${GITHUB_URL}/blob/main/paper/main.pdf`;
+const GITHUB_PROFILE_URL = "https://github.com/omkarxpatel";
+const EMAIL = "patel.omka@northeastern.edu";
 
 export function SiteFooter() {
   return (
@@ -15,8 +18,30 @@ export function SiteFooter() {
             </div>
             <p className="mt-2 max-w-xs text-xs text-muted-foreground">
               A hand-rolled programming language. C++/Python-flavored, written
-              in Python, ~5,700 lines.
+              in Python. ~25,000 lines across language and site.
             </p>
+            <div className="mt-5">
+              <div className="text-xs uppercase tracking-wider text-muted-foreground/80">
+                Built by Omkar Patel
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                <a
+                  href={`mailto:${EMAIL}`}
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  Email
+                </a>
+                <span className="text-border">{"·"}</span>
+                <a
+                  href={GITHUB_PROFILE_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  GitHub
+                </a>
+              </div>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-6 md:col-span-2 md:grid-cols-3">
             <FooterColumn title="Try">
@@ -26,6 +51,9 @@ export function SiteFooter() {
             <FooterColumn title="Read">
               <FooterLink href="/docs">Docs</FooterLink>
               <FooterLink href="/docs/internals">Internals</FooterLink>
+              <FooterExternalLink href={PAPER_URL}>
+                Design retrospective
+              </FooterExternalLink>
               <FooterExternalLink href={CHANGELOG_URL}>
                 Changelog
               </FooterExternalLink>
@@ -38,9 +66,8 @@ export function SiteFooter() {
             </FooterColumn>
           </div>
         </div>
-        <div className="mt-10 flex flex-col gap-2 border-t border-border/60 pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-10 border-t border-border/60 pt-6 text-xs text-muted-foreground">
           <span>{`(c) ${new Date().getFullYear()} Omkar Patel`}</span>
-          <span>Built by Omkar Patel with Claude.</span>
         </div>
       </div>
     </footer>

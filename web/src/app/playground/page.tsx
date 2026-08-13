@@ -31,7 +31,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import {
   DEFAULT_EXAMPLE_KEY,
@@ -169,15 +168,17 @@ export default function PlaygroundPage() {
     };
   }, []);
   // Derive the current example from the source. If the source matches
-  // a known example exactly, show that example's key; otherwise show
-  // "custom". This way the dropdown stays in sync with the editor no
-  // matter how the source got there (default, URL, localStorage, user
-  // selection, hand edit).
+  // a known example exactly, show that example's key; otherwise clear
+  // the selection so the dropdown falls back to its placeholder. (An
+  // unmatched sentinel like "custom" would leave the trigger blank —
+  // Radix only renders the placeholder for an empty value.) This way
+  // the dropdown stays in sync with the editor no matter how the
+  // source got there (default, URL, localStorage, tour, hand edit).
   const currentExample = useMemo(() => {
     for (const [key, src] of Object.entries(examplesByKey)) {
       if (src === source) return key;
     }
-    return "custom";
+    return "";
   }, [source, examplesByKey]);
   const [mode, setMode] = useState<Mode>("run");
   const [running, setRunning] = useState<boolean>(false);
@@ -1019,18 +1020,31 @@ function TourDropdown({
       }}
     >
       <SelectTrigger
+        aria-label="Start a guided tour"
         className={cn(
-          "h-8 w-[160px] gap-1.5 text-xs",
+          "h-8 w-[142px] gap-1.5 text-xs",
           activeKey &&
             "border-amber-500/40 text-amber-200 shadow-[0_0_0_1px_rgba(245,158,11,0.1)]",
         )}
       >
-        <Compass className="h-3.5 w-3.5 opacity-80" />
-        <SelectValue placeholder="Take a tour" />
+        <Compass className="h-3.5 w-3.5 shrink-0 opacity-80" />
+        {/* Own span instead of <SelectValue> — see examples-dropdown.tsx.
+            The default mirrors the selected SelectItem's ItemText, which
+            is label *and* blurb, and that blows out the toolbar. The
+            active tour is already named in the caption banner, so the
+            trigger only has to report on/off. */}
+        <span className={cn("truncate", !activeKey && "text-muted-foreground")}>
+          {activeKey ? "Touring" : "Take a tour"}
+        </span>
       </SelectTrigger>
       <SelectContent>
         {TOURS.map((t) => (
-          <SelectItem key={t.key} value={t.key} className="text-xs">
+          <SelectItem
+            key={t.key}
+            value={t.key}
+            textValue={t.label}
+            className="text-xs"
+          >
             <span className="font-medium">{t.label}</span>
             <span className="ml-2 text-muted-foreground">{t.blurb}</span>
           </SelectItem>

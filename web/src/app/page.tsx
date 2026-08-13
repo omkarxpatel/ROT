@@ -14,6 +14,7 @@ import {
 import { ROT_VERSION } from "@/lib/rot-version";
 
 const GITHUB_URL = "https://github.com/omkarxpatel/ROT";
+const PAPER_URL = `${GITHUB_URL}/blob/main/paper/main.pdf`;
 
 interface InsideFile {
   name: string;
@@ -22,44 +23,44 @@ interface InsideFile {
   href: string;
 }
 
-// Pulled from HANDOFF.md "project layout" section. LOC figures are
-// rough — they shift commit-by-commit but the orders of magnitude
-// are stable enough for marketing copy.
+// LOC figures are rounded from the actual files — they shift
+// commit-by-commit but the orders of magnitude are stable enough
+// for marketing copy.
 const INSIDE_ROT: InsideFile[] = [
   {
     name: "lexer.py",
-    loc: "~360 LOC",
+    loc: "~320 LOC",
     blurb: "Hand-rolled, char-by-char tokenizer. Emits Tokens with line + col.",
     href: `${GITHUB_URL}/blob/main/rot/lexer.py`,
   },
   {
     name: "syntax.py",
-    loc: "~700 LOC",
+    loc: "~870 LOC",
     blurb: "Recursive-descent statements; Pratt expressions. Builds the AST.",
     href: `${GITHUB_URL}/blob/main/rot/syntax.py`,
   },
   {
     name: "interpreter.py",
-    loc: "~1,100 LOC",
+    loc: "~1,300 LOC",
     blurb:
       "Tree-walking evaluator. Snapshot-per-statement for the playground's step mode.",
     href: `${GITHUB_URL}/blob/main/rot/interpreter.py`,
   },
   {
     name: "codegen.py",
-    loc: "~700 LOC",
+    loc: "~690 LOC",
     blurb: "AST → bytecode chunks. The M2 compiler. Per-instruction line attribution.",
     href: `${GITHUB_URL}/blob/main/rot/codegen.py`,
   },
   {
     name: "vm.py",
-    loc: "~500 LOC",
+    loc: "~780 LOC",
     blurb: "Stack-based bytecode VM. Frames, handlers, 38 opcodes.",
     href: `${GITHUB_URL}/blob/main/rot/vm.py`,
   },
   {
     name: "errors.py",
-    loc: "~150 LOC",
+    loc: "~90 LOC",
     blurb: "RotError + rustc-style rendering — source line, caret, hints.",
     href: `${GITHUB_URL}/blob/main/rot/errors.py`,
   },
@@ -100,9 +101,11 @@ export default function LandingPage() {
       <SiteHeader />
       <main className="flex-1">
         <Hero />
+        {/* Directly under the hero: the hardest numbers should land in
+            the first screen, not 1,100px down the page. */}
+        <Stats />
         <Pipeline />
         <WatchEachStage />
-        <Stats />
         <WhatsInside />
         <Demos />
       </main>
@@ -113,37 +116,43 @@ export default function LandingPage() {
 
 function Hero() {
   return (
-    <section className="mx-auto max-w-6xl px-4 pt-12 sm:px-6 sm:pt-20">
-      <div className="grid items-start gap-10 lg:grid-cols-5 lg:gap-12">
+    <section className="mx-auto max-w-6xl px-4 pt-10 sm:px-6 sm:pt-14">
+      <div className="grid items-start gap-8 lg:grid-cols-5 lg:gap-12">
         <div className="lg:col-span-2">
           <div className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/5 px-2.5 py-1 text-[10px] uppercase tracking-wider text-amber-300">
             <Sparkles className="h-3 w-3" />
             v{ROT_VERSION} · 819 tests passing
           </div>
-          <h1 className="mt-5 font-mono text-5xl font-semibold tracking-tighter text-foreground sm:text-6xl">
+          {/* text-balance evens out the rag; the mono face at 6xl in a
+              2/5 column breaks badly otherwise. */}
+          <h1 className="mt-4 text-balance font-mono text-[2.5rem] font-semibold leading-[1.05] tracking-tighter text-foreground sm:text-5xl lg:text-6xl">
             Watch a programming language work.
           </h1>
-          <p className="mt-6 max-w-xl text-base leading-relaxed text-foreground/90 sm:text-lg">
-            ROT is a small, hand-rolled language. Every step it takes —
-            tokenize, parse, execute, compile to bytecode — happens in
-            front of you.
+          <p className="mt-5 max-w-xl text-base leading-relaxed text-foreground/90 sm:text-lg">
+            A small, hand-rolled language — tokenize, parse, execute,
+            compile to bytecode — with every step animated in front of
+            you. ~25,000 lines, no <code className="font-mono">exec()</code>,
+            no compile-to-Python.
           </p>
-          <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            ~5,700 lines of Python, no <code className="font-mono">exec()</code>,
-            no compile-to-Python. The whole pipeline is yours to read.
-          </p>
-          <div className="mt-7 flex flex-wrap items-center gap-3">
-            <Button asChild size="lg">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <Button asChild size="lg" className="px-5 sm:px-8">
               <Link href="/playground">
                 Try it yourself
                 <ArrowRight className="ml-1 h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline">
+            <Button
+              asChild
+              size="lg"
+              variant="outline"
+              className="px-5 sm:px-8"
+            >
               <Link href="#pipeline">How does it work?</Link>
             </Button>
           </div>
-          <div className="mt-6 flex items-center gap-4 text-xs text-muted-foreground">
+          {/* Redundant with the header nav on phones, and it costs the
+              hero ~44px of height that the demo card needs. */}
+          <div className="mt-6 hidden items-center gap-4 text-xs text-muted-foreground sm:flex">
             <a
               href={GITHUB_URL}
               target="_blank"
@@ -233,12 +242,12 @@ function WatchEachStage() {
 function Stats() {
   const stats: Array<{ label: string; value: string }> = [
     { label: "Version", value: `v${ROT_VERSION}` },
-    { label: "Lines of code", value: "~5,700" },
+    { label: "Lines of code", value: "~25,000" },
     { label: "Tests passing", value: "819" },
     { label: "Opcodes (M2 VM)", value: "38" },
   ];
   return (
-    <section className="mx-auto mt-20 max-w-6xl px-4 sm:px-6">
+    <section className="mx-auto mt-10 max-w-6xl px-4 sm:px-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map((s) => (
           <div
@@ -271,6 +280,15 @@ function WhatsInside() {
             enough to read in a sitting.
           </p>
         </div>
+        <a
+          href={PAPER_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          Read the design retrospective (PDF)
+          <ExternalLink className="h-3 w-3 opacity-60" />
+        </a>
       </div>
       <div className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {INSIDE_ROT.map((f) => (

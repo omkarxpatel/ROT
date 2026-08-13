@@ -87,10 +87,12 @@ rot/                  the language package (~5,700 LOC across lexer / syntax / i
 tests/                819 tests across per-layer, end-to-end, CLI, REPL, compiler, VM
 examples/             7 working .rot programs paired with .expected golden outputs
 paper/                10-page LaTeX design retrospective (compiled main.pdf included)
-web/                  Next.js 15 + Pyodide site: landing / docs / playground
+web/                  Next.js 15 + Pyodide site: landing / docs / playground (~10,200 LOC)
 ARCHITECTURE.md       deep architecture doc
 CHANGELOG.md          per-release notes
 ```
+
+~25,000 LOC total — ~14,100 Python (package + tests), ~10,200 TypeScript/CSS (site), plus build config, CI, and paper source.
 
 ## Tests
 

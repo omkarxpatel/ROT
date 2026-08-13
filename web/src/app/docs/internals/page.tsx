@@ -419,7 +419,8 @@ function WhereNext() {
             The source on GitHub
             <ExternalLink className="h-4 w-4" />
           </a>{" "}
-          — ~5,700 lines of Python. The lexer fits in one sitting.
+          — ~25,000 lines across language and site. The lexer fits in one
+          sitting.
         </li>
       </ul>
     </section>
